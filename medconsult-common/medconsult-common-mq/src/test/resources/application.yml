@@ -1,0 +1,28 @@
+# 测试用：RabbitMQ + Redis + H2
+# 启动：docker run -d -p 5672:5672 rabbitmq:3-management-alpine
+#       docker run -d -p 16379:6379 redis:7-alpine
+spring:
+  datasource:
+    url: jdbc:h2:mem:medconsult_mq_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: guest
+    password: guest
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      timeout: 2000ms
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID

@@ -14,8 +14,54 @@
     <artifactId>medconsult-common-mq</artifactId>
 
     <name>medconsult-common-mq</name>
-    <description>本地消息表 / RabbitMQ 可靠投递 / 消费者幂等（待实现，架构文档 §3.2 §6）</description>
+    <description>本地消息表 + RabbitMQ 可靠投递 + 消费者幂等（架构文档 §3.2 §6）</description>
 
-    <!-- TODO(第0阶段后续): 引入 spring-boot-starter-amqp，
-         实现 LocalMessage 实体/Mapper、MessageDispatcher（扫描 PENDING 投递）、IdempotentConsumer 基类、Exchange/Queue 声明 -->
+    <dependencies>
+        <!-- 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-core</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus：LocalMessage 实体/Mapper 用 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-mybatis</artifactId>
+        </dependency>
+        <!-- Redis：消费者幂等去重用（§6.1 Redis SETNX） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-redis</artifactId>
+        </dependency>
+
+        <!-- RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- Jackson（MessageConverter 序列化消息体必需） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试：H2 持久化 + RabbitMQ + Redis 端到端 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
 </project>
