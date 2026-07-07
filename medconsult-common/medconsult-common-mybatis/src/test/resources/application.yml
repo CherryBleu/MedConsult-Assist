@@ -1,0 +1,23 @@
+# H2 内存库 + MySQL 兼容模式，供 MybatisPlusFlowTest。
+# MP 逻辑删除/自动填充在 H2 下与 MySQL 行为一致。
+spring:
+  datasource:
+    url: jdbc:h2:mem:medconsult_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+# MyBatis-Plus 配置：日志开（便于调试），逻辑删除值
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      id-type: ASSIGN_ID

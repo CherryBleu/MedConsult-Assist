@@ -14,8 +14,45 @@
     <artifactId>medconsult-common-mybatis</artifactId>
 
     <name>medconsult-common-mybatis</name>
-    <description>MyBatis-Plus 配置 / 自动填充 / 逻辑删除 / JSON 字段处理器（待实现，架构文档 §3.2）</description>
+    <description>MyBatis-Plus 配置 / 自动填充 / 逻辑删除 / JSON 字段处理器（架构文档 §3.2）</description>
 
-    <!-- TODO(第0阶段后续): 引入 mybatis-plus-spring-boot3-starter + mysql-connector-j，
-         实现 AutoFillMetaHandler（created_at/updated_at/deleted）、逻辑删除配置、JsonTypeHandler 基类 -->
+    <dependencies>
+        <!-- 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-core</artifactId>
+        </dependency>
+
+        <!-- MyBatis-Plus（Boot 3 专用 starter，版本由 parent BOM 锁定 3.5.5） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+
+        <!-- MySQL 驱动（runtime） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试：用 H2 替代真实 MySQL，让集成测试无外部依赖即可跑 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
 </project>
