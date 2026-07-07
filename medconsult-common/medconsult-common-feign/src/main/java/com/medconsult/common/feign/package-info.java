@@ -1,17 +1,24 @@
 /**
- * common-feign：服务间通信的公共能力（待实现，对应架构文档 §2.4 / §3.2）。
+ * common-feign：服务间通信公共能力（对应架构文档 §2.4 / §3.2）。
  *
- * <p>计划内容：
+ * <p>已实现：
  * <ul>
- *   <li>{@code AuthRelayInterceptor} - 双模鉴权拦截器：用户触发链路透传用户 Token；
- *       自动/无用户链路注入服务自身 JWT；永远透传 traceId（架构文档 §2.4）</li>
- *   <li>{@code FeignErrorDecoder} - 把 4xx/5xx 错误响应解码回 {@link com.medconsult.common.core.BusinessException}</li>
- *   <li>{@code RequestContext} - 当前调用链的身份/traceId 持有器（ThreadLocal 或虚拟线程友好实现）</li>
- *   <li>内部接口 DTO 契约（PatientContext、DrugRiskInfo、RecordFullText 等，跨服务共享）</li>
+ *   <li>{@link com.medconsult.common.feign.AuthRelayInterceptor} - 双模鉴权拦截器
+ *       （用户链路透传 token + 身份头 / 服务链路注入服务 JWT / 永远透传 traceId，§2.4）</li>
+ *   <li>{@link com.medconsult.common.feign.FeignErrorDecoder} - 下游错误响应→BusinessException</li>
+ *   <li>{@link com.medconsult.common.feign.RequestContext} - 调用链上下文（身份/traceId/caller）</li>
+ *   <li>{@link com.medconsult.common.feign.dto.PatientContextDTO} / {@link com.medconsult.common.feign.dto.DrugRiskInfoDTO} -
+ *       内部接口共享 DTO 契约（§2.3）</li>
+ *   <li>{@link com.medconsult.common.feign.MedConsultFeignAutoConfiguration} - 自动装配</li>
  * </ul>
  *
- * <p>关键约束（架构文档 §2.5）：ai-service 不允许持有任何写类 Feign 客户端，禁止循环依赖。
+ * <p><b>双模鉴权</b>（§2.4 关键）：
+ * <ul>
+ *   <li>用户触发（医生开方→drug）→ 透传用户 token，被调方审计挂医生名下</li>
+ *   <li>自动/无用户（定时任务、MQ 消费）→ 注入服务自身 JWT（sys_service_account.scope）</li>
+ * </ul>
  *
- * <p>本模块当前为占位。
+ * <p><b>红线 10</b>（§2.5 无循环依赖）：ai-service 不允许持有写类 Feign 客户端。
+ * 内部接口 DTO 只含只读查询契约。
  */
 package com.medconsult.common.feign;

@@ -14,8 +14,49 @@
     <artifactId>medconsult-common-feign</artifactId>
 
     <name>medconsult-common-feign</name>
-    <description>Feign 鉴权拦截器 / 错误解码器 / 内部接口 DTO 契约（待实现，架构文档 §2.4 §3.2）</description>
+    <description>Feign 双模鉴权拦截器 / 错误解码器 / 内部接口 DTO 契约（架构文档 §2.4 §3.2）</description>
 
-    <!-- TODO(第0阶段后续): 引入 spring-cloud-starter-openfeign,
-         实现 AuthRelayInterceptor（双模鉴权，架构文档 §2.4）、FeignErrorDecoder、RequestContext、内部接口 DTO 契约 -->
+    <dependencies>
+        <!-- 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-core</artifactId>
+        </dependency>
+        <!-- security：JwtPayload / SecurityContext（身份信息来源） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-security</artifactId>
+        </dependency>
+
+        <!-- OpenFeign -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
+        <!-- Jackson（FeignErrorDecoder 解析下游 Result body 必需） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
 </project>
