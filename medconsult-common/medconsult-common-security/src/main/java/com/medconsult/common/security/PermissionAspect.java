@@ -9,7 +9,6 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.AnnotationUtils;
 
 import java.lang.reflect.Method;
@@ -31,7 +30,6 @@ import java.util.Set;
  * 写入 JWT scope；本切面只读 JWT 内的 scope，不再远程查 auth-service——避免每次鉴权都走 Feign。
  */
 @Aspect
-@Configuration
 public class PermissionAspect {
 
     private static final Logger log = LoggerFactory.getLogger(PermissionAspect.class);

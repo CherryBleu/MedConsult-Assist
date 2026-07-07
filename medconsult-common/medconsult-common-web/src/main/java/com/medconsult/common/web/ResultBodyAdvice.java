@@ -36,9 +36,20 @@ public class ResultBodyAdvice implements ResponseBodyAdvice<Object> {
 
     @Override
     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
-        // 不拦截 String.class 原始字符串（如健康检查）；不拦截 void；
-        // 其他 POJO/PageResult/Result 都进入 beforeBody
-        // 这里返回 true，具体过滤在 beforeBody 里按 produces 类型判断
+        // 关键：不拦截 String 返回类型。Spring 对 String 返回值会优先选 StringHttpMessageConverter，
+        // 若此处包装成 Result 对象再交给 StringHttpMessageConverter 序列化，会抛 ClassCastException /
+        // HttpMessageNotWritableException（String converter 只能写 String，不认识 Result）。
+        // 因此 String 返回的接口由业务自行 return Result<String>，advice 不介入。
+        // 同理排除 byte[]（原始字节）、Resource（文件下载）等原生类型。
+        //
+        // 注意：不排除 ResponseEntity。@ExceptionHandler 返回的 ResponseEntity<Result> 仍需经本 advice
+        // 回填 traceId/timestamp；ResponseEntity 只是携带状态码的容器，其 body 仍是普通对象。
+        Class<?> paramType = returnType.getParameterType();
+        if (paramType == String.class
+                || paramType == byte[].class
+                || org.springframework.core.io.Resource.class.isAssignableFrom(paramType)) {
+            return false;
+        }
         return true;
     }
 

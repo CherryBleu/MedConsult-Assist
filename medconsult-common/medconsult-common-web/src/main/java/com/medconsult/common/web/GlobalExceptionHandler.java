@@ -59,32 +59,34 @@ public class GlobalExceptionHandler {
     // ===== 参数校验失败：400 + 字段级 detail =====
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Result<Void>> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
+    public ResponseEntity<Result<Map<String, Object>>> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         Map<String, Object> fieldErrors = new LinkedHashMap<>();
         for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
             fieldErrors.put(fe.getField(), fe.getDefaultMessage());
         }
         log.warn("[{}] 参数校验失败: {}", request.getRequestURI(), fieldErrors);
-        Result<Void> body = Result.fail(ErrorCode.PARAM_ERROR, "请求参数校验失败");
-        // 用 with 把字段错误塞进 data——但 Result.fail 不带 data，这里改用带 detail 的包装
-        Result<Map<String, Object>> withDetail = new Result<>(
-                ErrorCode.PARAM_ERROR.getCode(),
-                "请求参数校验失败",
-                fieldErrors,
-                null, null);
-        return ResponseEntity.status(400).body(Result.class.cast(withDetail));
+        return ResponseEntity.status(400).body(failWithDetail(fieldErrors));
     }
 
     @ExceptionHandler(BindException.class)
-    public ResponseEntity<Result<Void>> handleBind(BindException ex, HttpServletRequest request) {
+    public ResponseEntity<Result<Map<String, Object>>> handleBind(BindException ex, HttpServletRequest request) {
         Map<String, Object> fieldErrors = new LinkedHashMap<>();
         for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
             fieldErrors.put(fe.getField(), fe.getDefaultMessage());
         }
         log.warn("[{}] 表单绑定校验失败: {}", request.getRequestURI(), fieldErrors);
-        Result<Map<String, Object>> withDetail = new Result<>(
-                ErrorCode.PARAM_ERROR.getCode(), "请求参数校验失败", fieldErrors, null, null);
-        return ResponseEntity.status(400).body(Result.class.cast(withDetail));
+        return ResponseEntity.status(400).body(failWithDetail(fieldErrors));
+    }
+
+    /**
+     * 构造带字段级错误详情的失败响应。data 字段为 {field: message} 映射，供前端做字段标红。
+     */
+    private static Result<Map<String, Object>> failWithDetail(Map<String, Object> fieldErrors) {
+        return new Result<>(
+                ErrorCode.PARAM_ERROR.getCode(),
+                "请求参数校验失败",
+                fieldErrors,
+                null, null);
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

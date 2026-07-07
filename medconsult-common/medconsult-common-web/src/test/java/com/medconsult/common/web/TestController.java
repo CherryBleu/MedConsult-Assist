@@ -42,4 +42,14 @@ public class TestController {
     public String requiredParam(@RequestParam String id) {
         return "ok:" + id;
     }
+
+    /**
+     * 回归测试桩：返回 String，produces JSON。
+     * 验证 ResultBodyAdvice 不把 String 包成 Result（否则 StringHttpMessageConverter 写 Result 抛异常）。
+     * 期望：200 + body 原样为 "plain-text"，不被包装。
+     */
+    @GetMapping(value = "/test/plain-string", produces = org.springframework.http.MediaType.APPLICATION_JSON_VALUE)
+    public String plainString() {
+        return "plain-text";
+    }
 }

@@ -98,6 +98,20 @@ class GlobalWebFlowTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty());
     }
 
+    /**
+     * 回归：String 返回 + produces JSON 不应被 advice 包装。
+     * 修复前会因 StringHttpMessageConverter 写 Result 对象而抛 ClassCastException→500。
+     * 修复后期望 200 + body 为 JSON 字符串字面量（Spring 默认会加引号）。
+     */
+    @Test
+    void stringReturn_notWrapped_avoidsConverterMismatch() throws Exception {
+        // String 返回不进 advice 包装：避免 StringHttpMessageConverter 写 Result 抛 ClassCastException。
+        // 期望 200，body 为原始字符串（StringHttpMessageConverter 按 text/plain 写，不加引号）。
+        mvc.perform(get("/test/plain-string"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.equalTo("plain-text")));
+    }
+
     @Test
     void mask_appliedOnSensitiveFields() throws Exception {
         mvc.perform(get("/test/pojo"))

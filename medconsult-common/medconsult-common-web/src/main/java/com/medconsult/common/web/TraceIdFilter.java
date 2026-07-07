@@ -46,11 +46,13 @@ public class TraceIdFilter extends OncePerRequestFilter {
         String traceId = request.getHeader(TRACE_ID_HEADER);
         if (traceId == null || traceId.isBlank()) {
             traceId = generateTraceId();
-        }
-        // 规整：去首尾空白、限长（防恶意超长头）
-        traceId = traceId.trim();
-        if (traceId.length() > 64) {
-            traceId = traceId.substring(0, 64);
+        } else {
+            // 规整 + 净化：去首尾空白、限长 64、只保留 URL 安全字符集 [A-Za-z0-9._-]
+            // 防止恶意 X-Trace-Id 注入换行/控制字符到 MDC 与日志行（log injection）
+            traceId = sanitize(traceId);
+            if (traceId.isBlank()) {
+                traceId = generateTraceId();
+            }
         }
 
         // 2. 写 MDC + request attribute + 响应头
@@ -71,5 +73,26 @@ public class TraceIdFilter extends OncePerRequestFilter {
      */
     protected String generateTraceId() {
         return UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /**
+     * 净化外部传入的 traceId：仅保留 [A-Za-z0-9._-]，限长 64。
+     * 消除换行/控制字符，防日志注入。全非法字符则返回空串（触发本地兜底）。
+     */
+    private static String sanitize(String raw) {
+        String trimmed = raw.trim();
+        if (trimmed.length() > 64) {
+            trimmed = trimmed.substring(0, 64);
+        }
+        StringBuilder sb = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-') {
+                sb.append(c);
+            }
+            // 其余字符丢弃（含换行、空格、控制字符等）
+        }
+        return sb.toString();
     }
 }
