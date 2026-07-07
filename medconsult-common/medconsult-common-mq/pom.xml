@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>medconsult-common-mq</artifactId>
+
+    <name>medconsult-common-mq</name>
+    <description>本地消息表 / RabbitMQ 可靠投递 / 消费者幂等（待实现，架构文档 §3.2 §6）</description>
+
+    <!-- TODO(第0阶段后续): 引入 spring-boot-starter-amqp，
+         实现 LocalMessage 实体/Mapper、MessageDispatcher（扫描 PENDING 投递）、IdempotentConsumer 基类、Exchange/Queue 声明 -->
+</project>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- medconsult-common：公共模块聚合（7 子模块）。
+         是所有 7 个微服务的地基，详见 docs/架构设计文档.md §3。 -->
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>medconsult-common</artifactId>
+    <packaging>pom</packaging>
+
+    <name>medconsult-common</name>
+    <description>公共模块聚合：core/web/security/mybatis/mq/redis/feign（架构文档 §3）</description>
+
+    <modules>
+        <module>medconsult-common-core</module>
+        <module>medconsult-common-web</module>
+        <module>medconsult-common-security</module>
+        <module>medconsult-common-mybatis</module>
+        <module>medconsult-common-mq</module>
+        <module>medconsult-common-redis</module>
+        <module>medconsult-common-feign</module>
+    </modules>
+
+</project>

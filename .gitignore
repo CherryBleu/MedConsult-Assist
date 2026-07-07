@@ -1,0 +1,45 @@
+# ===== Maven =====
+target/
+*.jar
+*.war
+*.ear
+*.class
+.flattened-pom.xml
+.mvn/wrapper/maven-wrapper.jar
+
+# ===== IDE: IntelliJ IDEA =====
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ===== IDE: Eclipse / STS =====
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.apt_generated/
+
+# ===== IDE: VS Code =====
+.vscode/
+.history/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志与运行时产物 =====
+logs/
+*.log
+hs_err_pid*.log
+
+# ===== Spring Initializr 噪声 =====
+HELP.md
+
+# ===== 本地敏感配置（不入仓库）=====
+application-local.yml
+application-local.yaml
+application-local.properties

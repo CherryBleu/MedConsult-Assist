@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        medconsult-parent
+        所有 7 个微服务与 common 模块的统一父 pom。
+        不继承 spring-boot-starter-parent，自行 import BOM，保留对版本仲裁的完全控制。
+        版本严格锁定，详见 AGENTS.md 红线 1 与 docs/架构设计文档.md §0/§8.2。
+    -->
+    <groupId>com.medconsult</groupId>
+    <artifactId>medconsult-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>medconsult-parent</name>
+    <description>智慧医疗问诊辅助系统 - 顶层父 pom（技术栈锁定 + BOM 仲裁）</description>
+
+    <modules>
+        <module>medconsult-common</module>
+        <!-- 业务服务模块在路线图第一阶段加入：
+             medconsult-gateway / medconsult-auth-service / medconsult-patient-service
+             / medconsult-outpatient-service / medconsult-medical-record-service
+             / medconsult-drug-service / medconsult-ai-service / medconsult-notification-service
+        -->
+    </modules>
+
+    <properties>
+        <!-- ===== 红线 1：技术栈冻结版本（不可擅自升级/降级）===== -->
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- 基础框架（AGENTS.md 锁定） -->
+        <spring-boot.version>3.2.0</spring-boot.version>
+        <!-- Spring Cloud 主线版本须匹配 Boot 3.2.x（Leyton release train） -->
+        <spring-cloud.version>2023.0.0</spring-cloud.version>
+        <!-- SCA 2022.0.0.0 官方针对 Boot 3.0.x，与 3.2.0 无兼容矩阵 = 已知风险（红线 1）
+             缓解：BOM 顺序 + pom 排除 + Nacos 冒烟，不升级版本 -->
+        <spring-cloud-alibaba.version>2022.0.0.0</spring-cloud-alibaba.version>
+
+        <!-- 持久层（3.5.4+ 起提供 Boot 3 专用 starter） -->
+        <mybatis-plus.version>3.5.5</mybatis-plus.version>
+
+        <!-- 其他工具 -->
+        <lombok.version>1.18.30</lombok.version>
+        <shedlock.version>5.10.0</shedlock.version>
+
+        <!-- 插件 -->
+        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+                BOM import 顺序 = 版本仲裁优先级（架构文档 §8.2 策略 1）。
+                Boot 在前 → Spring Cloud 次之 → SCA 最后，让 Boot/Spring Cloud 版本优先于 SCA 的传递依赖。
+            -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- MyBatis-Plus（Boot 3 专用 starter） -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+
+            <!-- Lombok（在各模块按需声明 provided） -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
+            <!-- ShedLock（定时任务选主，架构文档 §8.4） -->
+            <dependency>
+                <groupId>net.javacrumbs.shedlock</groupId>
+                <artifactId>shedlock-spring</artifactId>
+                <version>${shedlock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.javacrumbs.shedlock</groupId>
+                <artifactId>shedlock-provider-redis-spring</artifactId>
+                <version>${shedlock.version}</version>
+            </dependency>
+
+            <!-- ===== 本项目 common 子模块（自引用，版本统一管理）===== -->
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-web</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-security</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-mybatis</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-mq</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-redis</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.medconsult</groupId>
+                <artifactId>medconsult-common-feign</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+</project>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>medconsult-common-feign</artifactId>
+
+    <name>medconsult-common-feign</name>
+    <description>Feign 鉴权拦截器 / 错误解码器 / 内部接口 DTO 契约（待实现，架构文档 §2.4 §3.2）</description>
+
+    <!-- TODO(第0阶段后续): 引入 spring-cloud-starter-openfeign,
+         实现 AuthRelayInterceptor（双模鉴权，架构文档 §2.4）、FeignErrorDecoder、RequestContext、内部接口 DTO 契约 -->
+</project>

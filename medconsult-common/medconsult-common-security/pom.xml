@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>medconsult-common-security</artifactId>
+
+    <name>medconsult-common-security</name>
+    <description>JWT 解析 / @Permission 注解 / 数据范围拦截器 / 服务 API Key 校验（待实现，架构文档 §4）</description>
+
+    <!-- TODO(第0阶段后续): 引入 jjwt / spring-security 核心依赖（不引入完整 security starter，避免覆盖 Web 配置），
+         实现 JwtCodec、@Permission、PermissionAspect、ServiceTokenFilter、SecurityContext -->
+</project>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>medconsult-common-mybatis</artifactId>
+
+    <name>medconsult-common-mybatis</name>
+    <description>MyBatis-Plus 配置 / 自动填充 / 逻辑删除 / JSON 字段处理器（待实现，架构文档 §3.2）</description>
+
+    <!-- TODO(第0阶段后续): 引入 mybatis-plus-spring-boot3-starter + mysql-connector-j，
+         实现 AutoFillMetaHandler（created_at/updated_at/deleted）、逻辑删除配置、JsonTypeHandler 基类 -->
+</project>
