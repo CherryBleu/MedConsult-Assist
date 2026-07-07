@@ -1,0 +1,8 @@
+# 测试用 Redis：默认连本地 16379（CI 用 docker run -p 16379:6379 redis:7-alpine 启动）。
+# 可通过 -Dspring.data.redis.host / .port 或环境变量 REDIS_HOST/REDIS_PORT 覆盖。
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      timeout: 2000ms

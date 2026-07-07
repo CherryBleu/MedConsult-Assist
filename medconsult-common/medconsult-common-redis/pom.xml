@@ -14,8 +14,39 @@
     <artifactId>medconsult-common-redis</artifactId>
 
     <name>medconsult-common-redis</name>
-    <description>分布式锁 / 限流 / SSE Pub-Sub 广播（待实现，架构文档 §3.2 §7 §9.2）</description>
+    <description>分布式锁 / 限流 / SSE Pub-Sub 广播（架构文档 §3.2 §7 §9.2）</description>
 
-    <!-- TODO(第0阶段后续): 引入 spring-boot-starter-data-redis,
-         实现 DistributedLock（Lua 释放）、RateLimiter（滑动窗口）、SseEventBus（多实例广播，§9.2）、RedisKey 命名常量 -->
+    <dependencies>
+        <!-- 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-core</artifactId>
+        </dependency>
+
+        <!-- Redis（Spring Boot 管理版本） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- 连接池 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试：连真实 Redis（docker run -p 16379:6379 redis:7-alpine），不用 testcontainers
+             避免 Windows + Docker Desktop 的 named pipe 兼容性问题 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
 </project>
