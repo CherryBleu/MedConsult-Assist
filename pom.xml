@@ -30,12 +30,12 @@
     <modules>
         <module>medconsult-common</module>
         <!-- 业务服务（第一阶段陆续加入）： -->
-        <module>medconsult-auth-service</module>
-        <module>medconsult-patient-service</module>
-        <module>medconsult-gateway</module>
-        <!-- 待加：medconsult-outpatient-service
-             / medconsult-medical-record-service / medconsult-drug-service / medconsult-ai-service
-             / medconsult-notification-service -->
+        <module>auth-service</module>
+        <module>patient-service</module>
+        <module>gateway</module>
+        <!-- 待加：outpatient-service
+             / medical-record-service / drug-service / ai-service
+             / notification-service -->
     </modules>
 
     <properties>
@@ -101,37 +101,37 @@
             <!-- ===== 本项目 common 子模块（自引用，版本统一管理）===== -->
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-core</artifactId>
+                <artifactId>common-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-web</artifactId>
+                <artifactId>common-web</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-security</artifactId>
+                <artifactId>common-security</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-mybatis</artifactId>
+                <artifactId>common-mybatis</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-mq</artifactId>
+                <artifactId>common-mq</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-redis</artifactId>
+                <artifactId>common-redis</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.medconsult</groupId>
-                <artifactId>medconsult-common-feign</artifactId>
+                <artifactId>common-feign</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

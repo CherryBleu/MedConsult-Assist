@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  # 强制反应式：gateway 依赖 common-security 会传递引入 spring-boot-starter-web（servlet），
+  # 与 gateway 的 webflux 冲突。显式声明 reactive 让 Boot 选 WebFlux 栈（Netty，非 Tomcat）。
+  main:
+    web-application-type: reactive
+  # ⚠️ 虚拟线程在 gateway 关闭（与架构文档 §8.3 的"全局开启"形成有据偏离）。
+  # 原因：spring.threads.virtual.enabled 仅对 servlet（Spring MVC）栈生效；
+  # gateway 是 reactive/WebFlux 栈（reactor-netty NIO event loop），
+  # 强行启用虚拟线程会导致 NettyRoutingFilter 死锁（请求挂在 lb→netty 转发环节，HTTP 000）。
+  # 这是 Spring Boot 3.2.0 + reactor-netty 1.1.x 的已知限制，已在本地全链路验证复现并修复。
+  # 其他 7 个 servlet 服务（auth/patient/...）仍开启虚拟线程——它们有阻塞 JDBC/BCrypt/Redis 调用，能受益。
+  threads:
+    virtual:
+      enabled: false
+  cloud:
+    gateway:
+      # 路由：/api/v1/auth/** → auth-service，基于 Nacos 服务名 lb:// 负载均衡
+      # /internal/** 不配路由（JwtAuthFilter 也会拦，双保险）
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/v1/auth/**
+        - id: patient-service
+          uri: lb://patient-service
+          predicates:
+            - Path=/api/v1/patients/**
+        # 后续业务服务陆续加入：
+        # - id: outpatient-service
+        #   uri: lb://outpatient-service
+        #   predicates:
+        #     - Path=/api/v1/{departments,doctors,schedules,appointments}/**
+
+# JWT（冒烟用固定密钥；生产从 Nacos/KMS 注入）
+medconsult:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+
+logging:
+  level:
+    com.medconsult: DEBUG
+    org.springframework.cloud.gateway: INFO

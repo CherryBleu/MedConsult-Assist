@@ -20,13 +20,13 @@
     <description>公共模块聚合：core/web/security/mybatis/mq/redis/feign（架构文档 §3）</description>
 
     <modules>
-        <module>medconsult-common-core</module>
-        <module>medconsult-common-web</module>
-        <module>medconsult-common-security</module>
-        <module>medconsult-common-mybatis</module>
-        <module>medconsult-common-mq</module>
-        <module>medconsult-common-redis</module>
-        <module>medconsult-common-feign</module>
+        <module>common-core</module>
+        <module>common-web</module>
+        <module>common-security</module>
+        <module>common-mybatis</module>
+        <module>common-mq</module>
+        <module>common-redis</module>
+        <module>common-feign</module>
     </modules>
 
 </project>

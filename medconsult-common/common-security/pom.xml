@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>common-security</artifactId>
+
+    <name>common-security</name>
+    <description>JWT 双模编解码 / @Permission 注解 / 数据范围过滤 / 服务 API Key（架构文档 §4）</description>
+
+    <properties>
+        <!-- jjwt 不进 parent（仅 security 模块用），此处显式锁版本 -->
+        <jjwt.version>0.12.6</jjwt.version>
+    </properties>
+
+    <dependencies>
+        <!-- 地基：Result/ErrorCode/BusinessException -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+        <!-- web：@RestControllerAdvice / 切面 / Servlet API 都来自 common-web -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-web</artifactId>
+        </dependency>
+
+        <!-- Servlet API + spring-web（JwtAuthServletFilter extends OncePerRequestFilter 需要）。
+             设为 provided/optional：编译期可用，运行期由引入 common-security 的 servlet 服务
+             （经 common-web → spring-boot-starter-web）提供。
+             Gateway 排除了 common-web 但不会触发本类加载（@ConditionalOnWebApplication SERVLET）。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Servlet API + spring-web（JwtAuthServletFilter extends OncePerRequestFilter 需要）。
+             设为 optional：编译期可用；运行期由引入 common-security 的 servlet 服务
+             （经 common-web → spring-boot-starter-web）提供。
+             Gateway 排除 common-web 后这两个不在其 classpath——靠 JwtAuthServletFilterConfiguration
+             的 @ConditionalOnClass(OncePerRequestFilter) 守门避免类加载失败。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- JWT 三件套（jjwt 0.12+ 拆分为 api/impl/jackson） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

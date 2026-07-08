@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>common-core</artifactId>
+
+    <name>common-core</name>
+    <description>统一响应 / 错误码 / 业务异常 / 分页——纯 JDK，无第三方依赖</description>
+
+    <!--
+        本模块刻意保持零业务依赖：
+        - Result.timestamp 用 java.time.OffsetDateTime，序列化交给上层（common-web / 各服务）的 Jackson。
+        - 这样 common-core 可被任何模块（含纯 POJO/DTO 模块）安全引入，不会拉入 Spring 栈。
+    -->
+
+    <dependencies>
+        <!-- 测试：仅 JUnit 5（由 spring-boot-dependencies BOM 管理版本） -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

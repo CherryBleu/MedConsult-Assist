@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>gateway</artifactId>
+
+    <name>gateway</name>
+    <description>API 网关：路由 / 鉴权前置 / 限流（架构文档 §1.1 §4.4）— WebFlux 反应式</description>
+
+    <dependencies>
+        <!-- common-core：Result/ErrorCode/JwtCodec（纯 JDK，无 servlet/webflux 冲突） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+        <!-- common-security：JwtCodec/JwtPayload 解析用户 token。
+             排除 common-web（及其传递的 spring-boot-starter-web），否则 servlet 栈
+             与 gateway 的 webflux 冲突——Boot 会选 servlet 启 Tomcat，gateway reactive 过滤器在 servlet 容器下崩溃 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.medconsult</groupId>
+                    <artifactId>common-web</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-validation</artifactId>
+                </exclusion>
+                <!-- 注意：不排除 spring-boot-starter-aop——common-security 的 PermissionAspect
+                     依赖 aspectjweaver。仅排除 starter-web 即可让 Boot 选 reactive（webflux 仍由 gateway 提供）-->
+            </exclusions>
+        </dependency>
+
+        <!-- AOP（common-security 的 PermissionAspect 类引用 aspectj，需 aspectjweaver 在 classpath；
+             gateway 不用 PermissionAspect，但类加载需该依赖。轻量，不引 servlet） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- SCA Gateway（WebFlux 反应式，不能与 spring-boot-starter-web 共存） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway</artifactId>
+        </dependency>
+        <!-- 负载均衡（gateway 用 lb:// 服务名路由需 LoadBalancer） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+        <!-- Nacos 服务发现 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <!-- Bootstrap 上下文 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.gateway.GatewayApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
