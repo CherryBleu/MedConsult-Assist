@@ -15,7 +15,13 @@
     {"key": "baseUrl", "value": "http://localhost:8080", "type": "string"},
     {"key": "accessToken", "value": "", "type": "string"},
     {"key": "refreshToken", "value": "", "type": "string"},
-    {"key": "patientId", "value": "", "type": "string"}
+    {"key": "patientId", "value": "", "type": "string"},
+    {"key": "patientIdNum", "value": "1", "type": "string", "description": "患者 BIGINT 主键（预约用，非 patient_no 业务号）"},
+    {"key": "doctorId", "value": "1", "type": "string"},
+    {"key": "departmentId", "value": "1", "type": "string"},
+    {"key": "scheduleId", "value": "", "type": "string"},
+    {"key": "scheduleIdNum", "value": "1", "type": "string"},
+    {"key": "appointmentId", "value": "", "type": "string"}
   ],
   "item": [
     {
@@ -352,6 +358,249 @@
               "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"patientId\": \"P202607060001\",\n    \"status\": \"DISABLED\"\n  },\n  \"traceId\": \"trace-patient-status\",\n  \"timestamp\": \"2026-07-06T10:04:00+08:00\",\n  \"success\": true\n}"
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Outpatient 门诊",
+      "description": "门诊服务：科室/医生/排班/预约（接口文档 §2.3-§2.5）。\n\n所有接口需登录。抢号核心：预约创建用 Redis 分布式锁防超卖（架构文档 §7.1）。\n\n状态机：appointment BOOKED→CHECKED_IN→IN_PROGRESS→COMPLETED（或→NO_SHOW/CANCELLED）；schedule AVAILABLE→FULL/SUSPENDED/CANCELLED。",
+      "item": [
+        {
+          "name": "1. 科室列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/departments?page=1&pageSize=20&enabled=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "departments"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"},
+                {"key": "enabled", "value": "true", "description": "可选：只查启用的"}
+              ]
+            },
+            "description": "## 2.3 科室列表（需求 §4.3.1）\n\n只读查询接口（科室维护由医院管理员配置，接口文档未细化创建接口）。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "2. 医生列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/doctors?departmentId={{departmentId}}&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "doctors"],
+              "query": [
+                {"key": "departmentId", "value": "{{departmentId}}", "description": "可选：按科室过滤"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.3 医生列表（需求 §4.3.1）\n\n返回 doctorId/doctorName/departmentId/departmentName/title/specialties。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "3. 创建排班",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('scheduleId', json.data.scheduleId || json.data.id);",
+                  "    console.log('✅ scheduleId 已保存');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedules",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedules"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": {{doctorId}},\n  \"departmentId\": {{departmentId}},\n  \"scheduleDate\": \"2026-07-15\",\n  \"period\": \"MORNING\",\n  \"startTime\": \"08:00\",\n  \"endTime\": \"12:00\",\n  \"totalQuota\": 20,\n  \"registrationFee\": 50.00\n}"
+            },
+            "description": "## 2.4.1 创建排班（需求 §4.1.2）\n\n**业务规则**\n- 同医生同日期同时段不可重复（`409 CONFLICT`，uk_schedule_doc_date_period）\n- 医生/科室必须 enabled\n- period: MORNING/AFTERNOON/EVENING/FULL_DAY\n- 状态初始 AVAILABLE\n\n**需登录** + 需 HOSPITAL_ADMIN 权限。\n\n**前置**：需先有 department/doctor 数据（当前 outpatient-service 只读这两表，数据需 DB 预置或后续补创建接口）。"
+          }
+        },
+        {
+          "name": "4. 排班列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedules?departmentId={{departmentId}}&dateFrom=2026-07-15&dateTo=2026-07-22&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedules"],
+              "query": [
+                {"key": "departmentId", "value": "{{departmentId}}"},
+                {"key": "dateFrom", "value": "2026-07-15"},
+                {"key": "dateTo", "value": "2026-07-22"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.4.2 排班列表\n\n返回 scheduleId/doctorName/departmentName/scheduleDate/period/totalQuota/bookedQuota/remainingQuota/status。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "5. 可预约号源",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedules/available?departmentId={{departmentId}}&date=2026-07-15",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedules", "available"],
+              "query": [
+                {"key": "departmentId", "value": "{{departmentId}}"},
+                {"key": "date", "value": "2026-07-15"}
+              ]
+            },
+            "description": "## 2.4.3 查询可预约号源\n\n返回 status=AVAILABLE 且 remaining>0 的排班，含 doctorId/doctorName/period/remainingQuota/registrationFee。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "6. 更新排班状态",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/schedules/{{scheduleId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "schedules", "{{scheduleId}}", "status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUSPENDED\",\n  \"reason\": \"医生临时出差\"\n}"
+            },
+            "description": "## 2.4.4 更新排班状态\n\n**状态**：AVAILABLE/FULL/SUSPENDED/CANCELLED\n\n**SUSPENDED 时**：返回 notifiedAppointments（受影响预约数，用于通知已预约患者）。\n\n**业务规则**：停诊排班不可预约（需求 §4.1.2 规则 2）。\n\n**需登录** + 需 HOSPITAL_ADMIN 权限。"
+          }
+        },
+        {
+          "name": "7. 创建预约（抢号）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('appointmentId', json.data.appointmentId || json.data.id);",
+                  "    console.log('✅ appointmentId 已保存, queueNo:', json.data.queueNo);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": {{patientIdNum}},\n  \"scheduleId\": {{scheduleIdNum}},\n  \"visitReason\": \"发热咳嗽三天\",\n  \"source\": \"MOBILE_APP\"\n}"
+            },
+            "description": "## 2.5.1 创建预约（抢号核心，需求 §4.1.3）\n\n**并发控制**：Redis 分布式锁 `lock:schedule:{scheduleId}` 防超卖（架构文档 §7.1）。\n\n**锁内逻辑**：\n1. 校验排班 AVAILABLE + remaining>0\n2. 扣减号源（booked_quota++，满则转 FULL）\n3. 生成 queueNo（就诊序号）\n4. 创建 appointment（BOOKED/UNPAID）\n\n**业务规则**\n- 排班不可用或号源不足 → 业务异常\n- 同患者同排班已有未取消预约 → `409 CONFLICT`（重复预约）\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "8. 预约详情",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments", "{{appointmentId}}"]
+            },
+            "description": "## 2.5.2 预约详情\n\n返回 patientName/doctorName/departmentName/appointmentDate/period/queueNo/paymentStatus/appointmentStatus。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "9. 预约列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments?patientId={{patientIdNum}}&status=BOOKED&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments"],
+              "query": [
+                {"key": "patientId", "value": "{{patientIdNum}}"},
+                {"key": "status", "value": "BOOKED"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.5.3 预约列表\n\n可按 patientId/status 过滤。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "10. 取消预约",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments", "{{appointmentId}}", "cancel"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelReason\": \"行程冲突，无法就诊\",\n  \"operatorType\": \"PATIENT\"\n}"
+            },
+            "description": "## 2.5.4 取消预约（需求 §4.1.3）\n\n**业务规则**\n- BOOKED/CHECKED_IN 可取消；COMPLETED/IN_PROGRESS/CANCELLED 不可 → 业务异常\n- 取消时释放号源（booked_quota--，原 FULL 转 AVAILABLE）\n- 返回 releasedQuota=1\n\n**并发**：Redis 锁保护号源回滚。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "11. 更新支付状态",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments", "{{appointmentId}}", "payment"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentStatus\": \"PAID\",\n  \"paymentNo\": \"PAY202607150001\",\n  \"paidAmount\": 50.00\n}"
+            },
+            "description": "## 2.5.5 更新支付状态\n\n**状态**：UNPAID/PAID/REFUNDING/REFUNDED\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "12. 更新就诊状态",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/appointments/{{appointmentId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "appointments", "{{appointmentId}}", "status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appointmentStatus\": \"CHECKED_IN\",\n  \"remark\": \"患者已到院签到\"\n}"
+            },
+            "description": "## 2.5.6 更新就诊状态\n\n**状态流转**：\n- BOOKED → CHECKED_IN（签到）\n- CHECKED_IN → IN_PROGRESS（叫号就诊）\n- IN_PROGRESS → COMPLETED（就诊完成）\n- BOOKED/CHECKED_IN → NO_SHOW（爽约/过号）\n- CANCELLED 是终态，不可跳转\n\n**需登录**。"
+          }
         }
       ]
     }

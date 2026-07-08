@@ -37,11 +37,28 @@
 | 4 | PUT | `/api/v1/patients/{patientId}` | 更新档案 | 需登录 |
 | 5 | PATCH | `/api/v1/patients/{patientId}/status` | 更新状态（ACTIVE/DISABLED/MERGED） | 需登录 |
 
-> **内部接口**（`/internal/patients/{id}/context`、`/internal/patients/{id}/allergies`）不经 Gateway，Postman 不直接覆盖——它们供 ai-service 通过 Feign 调用。如需手动测试内部接口，可直连 patient-service:8082。
+### Outpatient 门诊服务（接口文档 §2.3-§2.5）
+
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | GET | `/api/v1/departments` | 科室列表 | 需登录 |
+| 2 | GET | `/api/v1/doctors` | 医生列表（可按 departmentId 过滤） | 需登录 |
+| 3 | POST | `/api/v1/schedules` | 创建排班（**自动保存 scheduleId**） | 需登录 |
+| 4 | GET | `/api/v1/schedules` | 排班列表（可按科室/日期过滤） | 需登录 |
+| 5 | GET | `/api/v1/schedules/available` | 可预约号源 | 需登录 |
+| 6 | PATCH | `/api/v1/schedules/{id}/status` | 排班停诊/恢复 | 需登录 |
+| 7 | POST | `/api/v1/appointments` | 创建预约/抢号（**自动保存 appointmentId**） | 需登录 |
+| 8 | GET | `/api/v1/appointments/{id}` | 预约详情 | 需登录 |
+| 9 | GET | `/api/v1/appointments` | 预约列表 | 需登录 |
+| 10 | POST | `/api/v1/appointments/{id}/cancel` | 取消预约（释放号源） | 需登录 |
+| 11 | PATCH | `/api/v1/appointments/{id}/payment` | 更新支付状态 | 需登录 |
+| 12 | PATCH | `/api/v1/appointments/{id}/status` | 就诊状态流转 | 需登录 |
+
+> **抢号并发**：预约创建用 Redis 分布式锁（`lock:schedule:{id}`）防超卖，架构文档 §7.1。
+> **状态机**：appointment `BOOKED→CHECKED_IN→IN_PROGRESS→COMPLETED`（或→NO_SHOW/CANCELLED）。
 
 ### 待加入（随服务实现同步更新）
 
-- outpatient-service（§2.3-2.5）：科室/医生/排班/预约
 - medical-record-service（§2.6）：病历/处方
 - drug-service（§2.7）：药品/库存
 - ai-service（§3）：症状自诊/分诊/摘要/用药/影像
