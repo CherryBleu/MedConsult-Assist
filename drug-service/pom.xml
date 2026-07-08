@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>drug-service</artifactId>
+
+    <name>drug-service</name>
+    <description>药品库存服务：药品基础信息 / 批次库存（FEFO）/ 出入库流水 / 库存预警 / 对外提供用药风险信息（架构文档 §1.1 drug-service / §2.3 内部接口；库存扣减用 Redis 分布式锁 §7.1）</description>
+
+    <dependencies>
+        <!-- common 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mybatis</artifactId>
+        </dependency>
+        <!-- common-redis：库存扣减分布式锁（lock:drug:{drugId}:stock，架构文档 §7.1，禁止 JVM 锁） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-redis</artifactId>
+        </dependency>
+        <!-- common-feign：提供 DrugRiskInfoDTO（ai-service / medical-record-service 通过 feign 调用本服务内部接口） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-feign</artifactId>
+        </dependency>
+
+        <!-- SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <!-- Bootstrap 上下文（Nacos 配置需 spring-cloud-starter-bootstrap 或 spring.config.import） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- MySQL 8.0 驱动：默认数据源（infra/docker-compose.yml） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- H2：仅供单元/切片测试快速启动（@SpringBootTest MOCK），运行时不再使用 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 可执行 jar：必须绑定 repackage execution（pluginManagement 只管版本，不触发执行） -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.drug.DrugServiceApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -35,6 +35,11 @@ spring:
             # Spring Cloud Gateway Path 谓词支持逗号分隔多路径（注意：不是 {a,b} 集合语法，
             # 那是 PathPatternParser 的变量语法，Boot 3.2 会报错）。科室/医生/排班/预约都走门诊服务。
             - Path=/api/v1/departments/**,/api/v1/doctors/**,/api/v1/schedules/**,/api/v1/appointments/**
+        # 药品库存服务：药品 / 库存出入库 / 流水 / 预警（架构文档 §1.1 drug-service）
+        - id: drug-service
+          uri: lb://drug-service
+          predicates:
+            - Path=/api/v1/drugs/**
         # 后续业务服务陆续加入：
         # - id: medical-record-service ...
 

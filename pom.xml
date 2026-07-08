@@ -33,8 +33,9 @@
         <module>auth-service</module>
         <module>patient-service</module>
         <module>outpatient-service</module>
+        <module>drug-service</module>
         <module>gateway</module>
-        <!-- 待加：medical-record-service / drug-service / ai-service
+        <!-- 待加：medical-record-service / ai-service
              / notification-service -->
     </modules>
 
