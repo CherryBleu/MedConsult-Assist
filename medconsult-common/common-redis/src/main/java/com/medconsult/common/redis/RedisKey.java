@@ -22,6 +22,7 @@ public final class RedisKey {
     public static final String DRUG_STOCK_LOCK = PREFIX + ":lock:drug:";        // + drugId + ":stock"
     public static final String PAYMENT_LOCK = PREFIX + ":lock:payment:";        // + paymentNo
     public static final String SCHEDULE_QUOTA_LOCK = PREFIX + ":lock:schedule:";// + scheduleId
+    public static final String PRESCRIPTION_LOCK = PREFIX + ":lock:prescription:"; // + prescriptionId（审方/调剂并发防重）
 
     // ===== 业务计数/缓存 =====
     public static final String SCHEDULE_QUOTA = PREFIX + ":schedule:";          // + id + ":quota"

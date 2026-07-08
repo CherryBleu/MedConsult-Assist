@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>medical-record-service</artifactId>
+
+    <name>medical-record-service</name>
+    <description>电子病历 + 处方服务：病历 CRUD/归档（§2.6）+ 处方流转上半段状态机（开方/审方，§2.1）+ 内部全文接口供 ai-service 摘要（架构文档 §1.1 medical-record-service / §2.3）。第 1 批不含缴费/调剂发药/退方（依赖 drug-service Feign + MQ，后续 PR）</description>
+
+    <dependencies>
+        <!-- common 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mybatis</artifactId>
+        </dependency>
+        <!-- common-redis：处方审方/调剂并发防重分布式锁（lock:prescription:{id}，架构文档 §7.1，禁止 JVM 锁） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-redis</artifactId>
+        </dependency>
+        <!--
+            注：本批（第 1 批）不依赖 common-feign / common-mq。
+            - common-feign：开方/审方不跨服务校验药品（drug_id 本批存 null，靠 drug_name_snapshot 展示）；
+              Feign + DrugFeignClient 留到第 2 批 dispense 调剂发药时一起引入。
+            - common-mq：缴费/调剂的异步通知留到第 2 批；本批无跨服务写一致性需求。
+        -->
+
+        <!-- SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <!-- Bootstrap 上下文（Nacos 配置需 spring-cloud-starter-bootstrap 或 spring.config.import） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- MySQL 8.0 驱动：默认数据源（infra/docker-compose.yml） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- H2：仅供单元/切片测试快速启动（@SpringBootTest MOCK），运行时不再使用 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 可执行 jar：必须绑定 repackage execution（pluginManagement 只管版本，不触发执行） -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.medicalrecord.MedicalRecordServiceApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
