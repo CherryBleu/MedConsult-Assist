@@ -7,9 +7,18 @@
     <!--
         medconsult-parent
         所有 7 个微服务与 common 模块的统一父 pom。
-        不继承 spring-boot-starter-parent，自行 import BOM，保留对版本仲裁的完全控制。
+        继承 spring-boot-starter-parent 3.2.0，开箱即用 Boot 的插件配置/编码/资源过滤，
+        只在 dependencyManagement 里 import Spring Cloud + SCA BOM（用户 pom 模式）。
+
         版本严格锁定，详见 AGENTS.md 红线 1 与 docs/架构设计文档.md §0/§8.2。
     -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+        <relativePath/>
+    </parent>
+
     <groupId>com.medconsult</groupId>
     <artifactId>medconsult-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
@@ -22,7 +31,8 @@
         <module>medconsult-common</module>
         <!-- 业务服务（第一阶段陆续加入）： -->
         <module>medconsult-auth-service</module>
-        <!-- 待加：medconsult-gateway / medconsult-patient-service / medconsult-outpatient-service
+        <module>medconsult-gateway</module>
+        <!-- 待加：medconsult-patient-service / medconsult-outpatient-service
              / medconsult-medical-record-service / medconsult-drug-service / medconsult-ai-service
              / medconsult-notification-service -->
     </modules>
@@ -30,43 +40,29 @@
     <properties>
         <!-- ===== 红线 1：技术栈冻结版本（不可擅自升级/降级）===== -->
         <java.version>21</java.version>
-        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-        <!-- 基础框架（AGENTS.md 锁定） -->
-        <spring-boot.version>3.2.0</spring-boot.version>
         <!-- Spring Cloud 主线版本须匹配 Boot 3.2.x（Leyton release train） -->
         <spring-cloud.version>2023.0.0</spring-cloud.version>
         <!-- SCA 2022.0.0.0 官方针对 Boot 3.0.x，与 3.2.0 无兼容矩阵 = 已知风险（红线 1）
-             缓解：BOM 顺序 + pom 排除 + Nacos 冒烟，不升级版本 -->
+             缓解：BOM import 顺序（cloud 先于 alibaba）+ pom 排除 + Nacos 冒烟，不升级版本 -->
         <spring-cloud-alibaba.version>2022.0.0.0</spring-cloud-alibaba.version>
 
-        <!-- 持久层（3.5.4+ 起提供 Boot 3 专用 starter） -->
+        <!-- 持久层：MyBatis-Plus 3.5.5（3.5.4+ 起提供 Boot 3 专用 starter，红线 1 锁定） -->
         <mybatis-plus.version>3.5.5</mybatis-plus.version>
 
-        <!-- 其他工具 -->
-        <lombok.version>1.18.30</lombok.version>
+        <!-- ShedLock（定时任务选主，架构文档 §8.4；auth/gateway 暂不用，业务服务用） -->
         <shedlock.version>5.10.0</shedlock.version>
-
-        <!-- 插件 -->
-        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.2.5</maven-surefire-plugin.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <!--
-                BOM import 顺序 = 版本仲裁优先级（架构文档 §8.2 策略 1）。
-                Boot 在前 → Spring Cloud 次之 → SCA 最后，让 Boot/Spring Cloud 版本优先于 SCA 的传递依赖。
+                BOM import 顺序 = 版本仲裁优先级。
+                Spring Cloud 先 import → SCA 后 import，让 Spring Cloud 版本优先于 SCA 的传递依赖。
+                Boot 不用单独 import：已由 spring-boot-starter-parent 继承提供。
             -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -82,22 +78,14 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- MyBatis-Plus（Boot 3 专用 starter） -->
+            <!-- MyBatis-Plus（Boot 3 专用 starter；不用原生 mybatis-spring-boot-starter） -->
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
 
-            <!-- Lombok（在各模块按需声明 provided） -->
-            <dependency>
-                <groupId>org.projectlombok</groupId>
-                <artifactId>lombok</artifactId>
-                <version>${lombok.version}</version>
-                <scope>provided</scope>
-            </dependency>
-
-            <!-- ShedLock（定时任务选主，架构文档 §8.4） -->
+            <!-- ShedLock（多实例定时任务选主） -->
             <dependency>
                 <groupId>net.javacrumbs.shedlock</groupId>
                 <artifactId>shedlock-spring</artifactId>
@@ -151,24 +139,14 @@
     <build>
         <pluginManagement>
             <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>${maven-compiler-plugin.version}</version>
-                    <configuration>
-                        <release>${maven.compiler.release}</release>
-                        <parameters>true</parameters>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>${maven-surefire-plugin.version}</version>
-                </plugin>
+                <!--
+                    可执行 jar 配置：当子模块是业务服务时，需在自己的 build/plugins 里
+                    显式声明 spring-boot-maven-plugin + repackage execution。
+                    版本/编码/资源过滤由 spring-boot-starter-parent 自动提供，不用在此重复。
+                -->
                 <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
-                    <version>${spring-boot.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
