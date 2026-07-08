@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>medconsult-auth-service</artifactId>
+
+    <name>medconsult-auth-service</name>
+    <description>认证服务：用户/角色/权限/服务账号、JWT 双模签发、登录日志（架构文档 §4）</description>
+
+    <dependencies>
+        <!-- common 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-mybatis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>medconsult-common-redis</artifactId>
+        </dependency>
+
+        <!-- SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <!-- Bootstrap 上下文（Nacos 配置需 spring-cloud-starter-bootstrap 或 spring.config.import） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- H2：冒烟期作运行时数据源；生产部署前移除，改用 mysql-connector-j + Nacos 配置的 MySQL。
+             暂提为 runtime（非 test）以便冒烟 jar 能启动。 -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 可执行 jar：必须绑定 repackage execution（pluginManagement 只管版本，不触发执行） -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.auth.AuthServiceApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

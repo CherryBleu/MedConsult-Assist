@@ -20,11 +20,11 @@
 
     <modules>
         <module>medconsult-common</module>
-        <!-- 业务服务模块在路线图第一阶段加入：
-             medconsult-gateway / medconsult-auth-service / medconsult-patient-service
-             / medconsult-outpatient-service / medconsult-medical-record-service
-             / medconsult-drug-service / medconsult-ai-service / medconsult-notification-service
-        -->
+        <!-- 业务服务（第一阶段陆续加入）： -->
+        <module>medconsult-auth-service</module>
+        <!-- 待加：medconsult-gateway / medconsult-patient-service / medconsult-outpatient-service
+             / medconsult-medical-record-service / medconsult-drug-service / medconsult-ai-service
+             / medconsult-notification-service -->
     </modules>
 
     <properties>

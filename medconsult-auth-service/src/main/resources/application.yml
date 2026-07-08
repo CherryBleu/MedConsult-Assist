@@ -1,0 +1,37 @@
+# auth-service 本地配置（冒烟用最小集；生产走 Nacos 配置中心）
+server:
+  port: 8081
+
+spring:
+  # 虚拟线程全局开启（架构文档 §8.3）
+  threads:
+    virtual:
+      enabled: true
+  # 数据源（冒烟用 H2 内存库，真实部署走 MySQL，由 Nacos 配置注入）
+  datasource:
+    url: jdbc:h2:mem:medconsult_auth;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+
+# JWT（冒烟用固定密钥；生产从 Nacos/KMS 注入，架构文档 §7.3 §4.2）
+medconsult:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    com.medconsult: DEBUG
+    com.alibaba.cloud.nacos: DEBUG
