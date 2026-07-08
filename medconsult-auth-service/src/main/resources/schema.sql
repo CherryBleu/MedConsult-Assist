@@ -1,37 +1,45 @@
--- auth-service 表结构（冒烟用 H2；生产部署走 MySQL，由 Nacos 配置或迁移工具建表）
--- 字段与《修改建议》§2.2/§2.3 对齐
+-- ============================================================
+-- auth-service 表结构（medconsult_auth schema）
+-- 字段与《修改建议》§2.2/§2.3 对齐；MySQL 8.0 语法
+-- 执行时机：spring.sql.init.mode=always，服务启动时执行
+-- ============================================================
 
+-- sys_user 用户账号表（《数据库设计文档》§2.1）
 CREATE TABLE IF NOT EXISTS sys_user (
-    id              BIGINT       NOT NULL,
-    user_no         VARCHAR(32),
-    account         VARCHAR(64),
-    phone           VARCHAR(20),
-    password_hash   VARCHAR(255),
-    name            VARCHAR(50),
-    patient_id      BIGINT,
-    doctor_id       BIGINT,
-    status          VARCHAR(20),
-    last_login_at   TIMESTAMP,
-    created_at      TIMESTAMP,
-    updated_at      TIMESTAMP,
-    deleted         INT          DEFAULT 0,
-    PRIMARY KEY (id)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_account ON sys_user(account);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_phone ON sys_user(phone);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_user_no ON sys_user(user_no);
+    id              BIGINT       NOT NULL                 COMMENT '主键（雪花 ID）',
+    user_no         VARCHAR(32)                           COMMENT '用户编号（业务可读）',
+    account         VARCHAR(64)                           COMMENT '账号（手机号/账号至少填一项）',
+    phone           VARCHAR(20)                           COMMENT '手机号',
+    password_hash   VARCHAR(255)                          COMMENT 'BCrypt 摘要，不可逆',
+    name            VARCHAR(50)                           COMMENT '姓名',
+    patient_id      BIGINT                                COMMENT '关联患者编号',
+    doctor_id       BIGINT                                COMMENT '关联医生编号',
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ENABLED' COMMENT 'ENABLED/DISABLED',
+    last_login_at   DATETIME(3)                           COMMENT '最后登录时间',
+    created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted         TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_user_account (account),
+    UNIQUE KEY uk_sys_user_phone (phone),
+    UNIQUE KEY uk_sys_user_user_no (user_no),
+    KEY idx_sys_user_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户账号表';
 
+-- login_log 登录日志表（《修改建议》§2.2，flow 表不逻辑删除、不 extends BaseEntity）
 CREATE TABLE IF NOT EXISTS login_log (
-    id              BIGINT       NOT NULL,
-    user_id         BIGINT,
-    account         VARCHAR(64),
-    role            VARCHAR(32),
-    login_type      VARCHAR(20),
-    login_result    VARCHAR(20),
-    ip              VARCHAR(50),
-    user_agent      VARCHAR(255),
-    device_info     VARCHAR(255),
-    login_at        TIMESTAMP,
-    logout_at       TIMESTAMP,
-    PRIMARY KEY (id)
-);
+    id              BIGINT       NOT NULL                 COMMENT '主键（雪花 ID）',
+    user_id         BIGINT                                COMMENT '用户 ID（失败时可为空）',
+    account         VARCHAR(64)                           COMMENT '尝试登录的账号/手机号',
+    role            VARCHAR(32)                           COMMENT '角色（PATIENT/DOCTOR/...）',
+    login_type      VARCHAR(20)                           COMMENT 'PASSWORD/REFRESH',
+    login_result    VARCHAR(20)                           COMMENT 'SUCCESS/FAILURE/LOCKED',
+    ip              VARCHAR(50)                           COMMENT '登录 IP',
+    user_agent      VARCHAR(255)                          COMMENT 'UA',
+    device_info     VARCHAR(255)                          COMMENT '设备信息',
+    login_at        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    logout_at       DATETIME(3)                           COMMENT '登出时间',
+    PRIMARY KEY (id),
+    KEY idx_login_log_user_id (user_id),
+    KEY idx_login_log_login_at (login_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';

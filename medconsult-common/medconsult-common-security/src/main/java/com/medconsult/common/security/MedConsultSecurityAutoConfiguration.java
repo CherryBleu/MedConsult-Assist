@@ -5,7 +5,6 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -25,9 +24,12 @@ import org.springframework.context.annotation.Bean;
  *       jwt:
  *         secret: ${JWT_SECRET}   # 从环境变量/KMS 注入
  * </pre>
+ *
+ * <p><b>不限制 WebApplication 类型</b>：JwtCodec 是 web-stack 无关的纯工具类，
+ * 既被 servlet 服务（解析用户 token）使用，也被 reactive gateway（鉴权前置）使用。
+ * （PermissionAspect 是 AOP，不依赖 servlet。）
  */
 @AutoConfiguration
-@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnClass(name = "io.jsonwebtoken.Jwts")
 public class MedConsultSecurityAutoConfiguration {
 

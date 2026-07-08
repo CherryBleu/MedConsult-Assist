@@ -1,18 +1,20 @@
 # auth-service 本地配置（冒烟用最小集；生产走 Nacos 配置中心）
 server:
   port: 8081
+  address: 0.0.0.0  # 绑定所有接口（含 IPv6 ::1），让 gateway 的 Netty 客户端可连
 
 spring:
   # 虚拟线程全局开启（架构文档 §8.3）
   threads:
     virtual:
       enabled: true
-  # 数据源（冒烟用 H2 内存库，真实部署走 MySQL，由 Nacos 配置注入）
+  # 数据源：MySQL 8.0（infra/docker-compose.yml，宿主机端口 3307 映射到容器 3306）
+  # 连 medconsult_auth schema（架构文档 §1.2 表归属矩阵：auth-service 独占）
   datasource:
-    url: jdbc:h2:mem:medconsult_auth;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3307}/medconsult_auth?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:medconsult}
+    password: ${MYSQL_PASSWORD:medconsult123}
   sql:
     init:
       mode: always

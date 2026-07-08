@@ -67,12 +67,17 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- H2：冒烟期作运行时数据源；生产部署前移除，改用 mysql-connector-j + Nacos 配置的 MySQL。
-             暂提为 runtime（非 test）以便冒烟 jar 能启动。 -->
+        <!-- MySQL 8.0 驱动：默认数据源（infra/docker-compose.yml） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- H2：仅供单元/切片测试快速启动（@SpringBootTest MOCK），运行时不再使用 -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

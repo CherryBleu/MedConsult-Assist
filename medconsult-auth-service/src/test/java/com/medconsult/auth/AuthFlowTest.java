@@ -29,6 +29,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 @TestPropertySource(properties = {
         "medconsult.security.jwt.secret=test-secret-0123456789abcdef0123456789abcdef-min32bytes",
+        // 测试用 H2 内存库（MySQL dialect 模式），不连真实 MySQL 避免污染数据
+        "spring.datasource.url=jdbc:h2:mem:medconsult_auth_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
+        "spring.sql.init.mode=always",
+        // Redis 仍连真实容器（infra/docker-compose.yml，测试需先启动）
         "spring.data.redis.host=localhost",
         "spring.data.redis.port=16379",
         "spring.cloud.nacos.discovery.enabled=false",
