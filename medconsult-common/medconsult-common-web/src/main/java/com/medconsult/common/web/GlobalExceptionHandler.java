@@ -103,6 +103,35 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(400).body(body);
     }
 
+    /**
+     * Spring 6.1+ 统一的方法级校验失败（@RequestParam / @PathVariable 上的 @NotBlank 等）。
+     * 不处理会落 Spring 默认错误页（空 body 或 BasicErrorController 的 {timestamp,status,error}）。
+     *
+     * <p>不同 Spring 6.x 小版本 API 略有差异，此处只用 {@link Exception#getMessage()} 兜底，
+     * 避免绑定具体 getter（如 getParameterValidationResults 在部分版本不存在）。
+     */
+    @ExceptionHandler(org.springframework.web.method.annotation.HandlerMethodValidationException.class)
+    public ResponseEntity<Result<Void>> handleMethodValidation(
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex, HttpServletRequest request) {
+        log.warn("[{}] 方法参数校验失败: {}", request.getRequestURI(), ex.getMessage());
+        Result<Void> body = Result.fail(ErrorCode.PARAM_ERROR,
+                "请求参数校验失败" + (ex.getMessage() != null ? ": " + ex.getMessage() : ""));
+        return ResponseEntity.status(400).body(body);
+    }
+
+    /**
+     * Jakarta Bean Validation 在 service 层或非 controller 触发时的兜底。
+     */
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<Result<Map<String, Object>>> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex, HttpServletRequest request) {
+        Map<String, Object> errors = new LinkedHashMap<>();
+        ex.getConstraintViolations().forEach(v ->
+                errors.put(v.getPropertyPath().toString(), v.getMessage()));
+        log.warn("[{}] Bean 校验失败: {}", request.getRequestURI(), errors);
+        return ResponseEntity.status(400).body(failWithDetail(errors));
+    }
+
     // ===== 资源不存在：404 =====
 
     @ExceptionHandler(NoHandlerFoundException.class)
