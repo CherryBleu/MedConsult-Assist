@@ -24,11 +24,11 @@ spring:
           uri: lb://medconsult-auth-service
           predicates:
             - Path=/api/v1/auth/**
+        - id: patient-service
+          uri: lb://medconsult-patient-service
+          predicates:
+            - Path=/api/v1/patients/**
         # 后续业务服务陆续加入：
-        # - id: patient-service
-        #   uri: lb://medconsult-patient-service
-        #   predicates:
-        #     - Path=/api/v1/patients/**
         # - id: outpatient-service
         #   uri: lb://medconsult-outpatient-service
         #   predicates:

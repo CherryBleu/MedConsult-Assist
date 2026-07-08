@@ -1,0 +1,34 @@
+# Bootstrap：Nacos 注册 + 配置中心（架构文档 §7.3）
+# 这两个必须在 bootstrap 阶段加载，早于 application.yml
+spring:
+  application:
+    name: medconsult-patient-service
+  cloud:
+    nacos:
+      # 服务发现
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        # 本机冒烟：强制注册 IP 为 127.0.0.1（否则可能注册到 VirtualBox 192.168.56.1，
+        # gateway 的 LoadBalancer 取该 IP 后连不上）。生产环境删掉此行，让 Nacos 自动探测。
+        ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
+      # 配置中心（先拉 medconsult-common.yaml 公共配置，再拉本服务私有配置）
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: COMMON
+        file-extension: yaml
+        # 共享公共配置（数据源模板、Redis、MQ、JWT、虚拟线程等，架构文档 §7.3）
+        shared-configs:
+          - data-id: medconsult-common.yaml
+            group: COMMON
+            refresh: true
+        # 本服务私有配置
+        extension-configs:
+          - data-id: medconsult-patient-service.yaml
+            group: COMMON
+            refresh: true
+        # 允许配置不存在时启动（冒烟阶段 Nacos 还没建配置）
+        import-check:
+          enabled: false
