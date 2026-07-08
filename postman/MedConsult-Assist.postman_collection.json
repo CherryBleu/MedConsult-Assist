@@ -1,0 +1,359 @@
+{
+  "info": {
+    "_postman_id": "medconsult-assist-collection",
+    "name": "MedConsult-Assist 后端 API",
+    "description": "智慧医疗问诊辅助系统后端 API 集合。\n\n## 使用说明\n1. 先导入环境变量文件（MedConsult-Assist.postman_environment.json）\n2. 选择环境「MedConsult-Assist 本地」\n3. 依次执行：注册 → 登录（自动保存 token）→ 其他接口\n\n## 架构约束\n- 所有对外接口路径前缀 /api/v1/*，经 Gateway（默认 8080）路由\n- 需登录的接口：Header 自动带 `Authorization: Bearer {{accessToken}}`\n- 登录/注册/刷新为白名单，无需 token\n- /internal/* 永不对外（Gateway 直接 404）\n\n## 红线\n- 技术栈：JDK 21 / Spring Boot 3.2.0 / SCA 2022.0.0.0 / MyBatis-Plus 3.5.5\n- 统一响应：{code, message, data, traceId, timestamp, success}",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {"key": "token", "value": "{{accessToken}}", "type": "string"}
+    ]
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:8080", "type": "string"},
+    {"key": "accessToken", "value": "", "type": "string"},
+    {"key": "refreshToken", "value": "", "type": "string"},
+    {"key": "patientId", "value": "", "type": "string"}
+  ],
+  "item": [
+    {
+      "name": "Auth 认证",
+      "description": "用户认证与账号管理（接口文档 §2.1）",
+      "item": [
+        {
+          "name": "1. 注册",
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account\": \"zhangsan\",\n  \"password\": \"P@ssw0rd123\",\n  \"phone\": \"13800000001\",\n  \"name\": \"张三\",\n  \"role\": \"PATIENT\",\n  \"patientId\": \"P202607060001\"\n}"
+            },
+            "description": "## 2.1.1 用户注册\n\n**业务规则**\n- 账号必填（`@NotBlank`），手机号选填但若有则需唯一\n- 密码 BCrypt 摘要存储（不可逆）\n- 角色：PATIENT / DOCTOR / PHARMACY_ADMIN / HOSPITAL_ADMIN\n\n**错误码**\n- `409001 CONFLICT`：账号已存在 / 手机号已注册\n- `400001 PARAM_ERROR`：参数校验失败\n\n**白名单接口**：无需 token。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"userId\": \"U202607060001\",\n    \"name\": \"张三\",\n    \"role\": \"PATIENT\",\n    \"patientId\": \"P202607060001\",\n    \"doctorId\": null,\n    \"status\": \"ACTIVE\"\n  },\n  \"traceId\": \"trace-auth-register\",\n  \"timestamp\": \"2026-07-06T09:00:00+08:00\",\n  \"success\": true\n}"
+            },
+            {
+              "name": "账号已存在",
+              "status": "Conflict",
+              "code": 409,
+              "body": "{\n  \"code\": 409001,\n  \"message\": \"账号已存在: zhangsan\",\n  \"data\": null,\n  \"traceId\": \"...\",\n  \"timestamp\": \"...\",\n  \"success\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. 登录（自动保存 token）",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "    console.log('✅ token 已保存到 collection 变量');",
+                  "    console.log('  accessToken:', json.data.accessToken.substring(0, 30) + '...');",
+                  "} else {",
+                  "    console.log('⚠️ 登录失败，未保存 token:', json.message);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account\": \"zhangsan\",\n  \"password\": \"P@ssw0rd123\"\n}"
+            },
+            "description": "## 2.1.2 用户登录\n\n**业务规则**\n- 校验密码（BCrypt 比对）\n- 账号状态：ACTIVE 可登录；DISABLED 返回 403「账号已禁用」；LOCKED 返回 403「账号已锁定」\n- 签发双 token：accessToken（2h）+ refreshToken（7d）\n- refreshToken 入 Redis，登出时删除（多实例共享）\n- 登录日志落 login_log 表\n\n**自动脚本**：登录成功后 accessToken/refreshToken 自动写入 collection 变量，后续接口自动带上。\n\n**错误码**\n- `401001 UNAUTHORIZED`：账号或密码错误\n- `403001 FORBIDDEN`：账号已禁用/锁定\n\n**白名单接口**：无需 token。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"accessToken\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"refreshToken\": \"eyJhbGciOiJIUzM4NCJ9...\",\n    \"tokenType\": \"Bearer\",\n    \"expiresIn\": 7200,\n    \"user\": {\n      \"userId\": \"U202607060001\",\n      \"name\": \"张三\",\n      \"role\": \"PATIENT\",\n      \"patientId\": \"P202607060001\",\n      \"doctorId\": null,\n      \"status\": \"ACTIVE\"\n    }\n  },\n  \"traceId\": \"trace-auth-login\",\n  \"timestamp\": \"2026-07-06T09:01:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. 当前用户信息",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me"]
+            },
+            "description": "## 2.1.5 当前用户信息\n\n**身份来源**：SecurityContext（由 JwtAuthServletFilter 从网关 X-User-Id 头或 Authorization 头解析）。\n\n**脱敏**：手机号自动脱敏（138****0001）。\n\n**错误码**\n- `401001 UNAUTHORIZED`：未登录（无 token 或 token 无效）\n- `404001 NOT_FOUND`：用户不存在\n\n**需登录**：自动带 `Authorization: Bearer {{accessToken}}`（collection 级 auth）。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"userId\": \"U202607060001\",\n    \"account\": \"zhangsan\",\n    \"name\": \"张三\",\n    \"phoneMasked\": \"138****0001\",\n    \"role\": \"PATIENT\",\n    \"patientId\": \"P202607060001\",\n    \"doctorId\": null,\n    \"status\": \"ACTIVE\"\n  },\n  \"traceId\": \"trace-auth-me\",\n  \"timestamp\": \"2026-07-06T09:45:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. 刷新 Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "    console.log('✅ 新 accessToken 已保存');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "description": "## 2.1.3 刷新 Token\n\n**业务规则**\n- 校验 refreshToken 有效性（签名 + Redis 存在性）\n- 重签 accessToken（不重签 refreshToken）\n- 登出后 refreshToken 在 Redis 被删除 → 刷新失败\n\n**错误码**\n- `401001 UNAUTHORIZED`：refreshToken 已失效（已登出或过期）\n\n**白名单接口**：无需 accessToken。\n\n**自动脚本**：刷新成功后新 accessToken 自动写入 collection 变量。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"accessToken\": \"new-access-token-demo\",\n    \"tokenType\": \"Bearer\",\n    \"expiresIn\": 7200\n  },\n  \"traceId\": \"trace-auth-refresh\",\n  \"timestamp\": \"2026-07-06T09:30:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. 退出登录",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0) {",
+                  "    pm.collectionVariables.set('accessToken', '');",
+                  "    console.log('✅ 已登出，accessToken 已清空');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {"type": "noauth"},
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "description": "## 2.1.4 退出登录\n\n**业务规则**\n- refreshToken 的 jti 从 Redis 删除（加入黑名单语义）\n- accessToken 仍有效到自然过期（无状态 JWT，无法主动失效）\n- 登出后用旧 refreshToken 刷新会失败\n\n**返回**：`{data: true}`\n\n**白名单接口**：无需 accessToken。\n\n**自动脚本**：登出后清空 accessToken 变量。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": true,\n  \"traceId\": \"trace-auth-logout\",\n  \"timestamp\": \"2026-07-06T09:40:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Patient 患者档案",
+      "description": "患者档案管理（接口文档 §2.2）。\n\n所有接口需登录（自动带 accessToken）。\n业务规则：证件号/手机号至少填一项；同 idType+idNo 不允许重复建档；删除走逻辑禁用。",
+      "item": [
+        {
+          "name": "1. 创建患者档案",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('patientId', json.data.patientId);",
+                  "    console.log('✅ patientId 已保存:', json.data.patientId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"张三\",\n  \"gender\": \"MALE\",\n  \"birthDate\": \"1988-05-12\",\n  \"idType\": \"ID_CARD\",\n  \"idNo\": \"110101198805120011\",\n  \"phone\": \"13800000001\",\n  \"address\": \"北京市朝阳区示例路 1 号\",\n  \"allergies\": [\"青霉素\"],\n  \"pastMedicalHistory\": [\"高血压\"],\n  \"familyHistory\": [\"糖尿病家族史\"],\n  \"emergencyContact\": {\n    \"name\": \"李四\",\n    \"relation\": \"配偶\",\n    \"phone\": \"13800000002\"\n  }\n}"
+            },
+            "description": "## 2.2.1 创建患者档案\n\n**业务规则**（需求 §4.1.1）\n- 证件号和手机号至少填一项（`400 PARAM_ERROR`）\n- 同证件类型+证件号不允许重复建档（`409 CONFLICT`）\n- 删除采用逻辑禁用，不物理删除\n\n**返回**：patientId（业务编号 P 开头）+ name + status\n\n**需登录**：自动带 accessToken。\n\n**自动脚本**：成功后 patientId 保存到 collection 变量，供后续接口使用。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"patientId\": \"P202607060001\",\n    \"name\": \"张三\",\n    \"status\": \"ACTIVE\"\n  },\n  \"traceId\": \"trace-patient-create\",\n  \"timestamp\": \"2026-07-06T10:00:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. 查询患者详情",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients/{{patientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients", "{{patientId}}"]
+            },
+            "description": "## 2.2.2 查询患者档案\n\n**脱敏**：idNo 自动脱敏（110101********0011）、phone 自动脱敏（138****0001）。\n\n**错误码**\n- `404001 NOT_FOUND`：患者不存在\n\n**需登录**。\n\n**路径参数**：patientId = 业务编号（如 P202607060001，非 BIGINT 主键）"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"patientId\": \"P202607060001\",\n    \"name\": \"张三\",\n    \"gender\": \"MALE\",\n    \"birthDate\": \"1988-05-12\",\n    \"idNoMasked\": \"110101********0011\",\n    \"phoneMasked\": \"138****0001\",\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"高血压\"],\n    \"status\": \"ACTIVE\"\n  },\n  \"traceId\": \"trace-patient-detail\",\n  \"timestamp\": \"2026-07-06T10:01:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. 分页查询患者",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients?page=1&pageSize=10&keyword=张",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients"],
+              "query": [
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "10"},
+                {"key": "keyword", "value": "张", "description": "按姓名模糊查询（可选）"}
+              ]
+            },
+            "description": "## 2.2.3 分页查询患者\n\n**查询参数**\n- `page`：页码，从 1 起\n- `pageSize`：每页条数，默认 10，最大 100\n- `keyword`：按姓名模糊匹配（可选）\n\n**返回**：分页列表，每项含 phoneMasked（手机号脱敏）\n\n**需登录**。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"page\": 1,\n    \"pageSize\": 10,\n    \"total\": 1,\n    \"items\": [\n      {\n        \"patientId\": \"P202607060001\",\n        \"name\": \"张三\",\n        \"phoneMasked\": \"138****0001\",\n        \"status\": \"ACTIVE\"\n      }\n    ]\n  },\n  \"traceId\": \"trace-patient-list\",\n  \"timestamp\": \"2026-07-06T10:02:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. 更新患者档案",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients/{{patientId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients", "{{patientId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"13800000009\",\n  \"address\": \"北京市海淀区示例路 9 号\",\n  \"allergies\": [\"青霉素\", \"头孢类\"],\n  \"pastMedicalHistory\": [\"高血压\", \"慢性胃炎\"]\n}"
+            },
+            "description": "## 2.2.4 更新患者档案\n\n**部分字段更新**：phone/address/allergies/pastMedicalHistory/familyHistory/emergencyContact。\n\n**不改**：name/gender/birthDate/idType/idNo（这些字段需走修订流程，不允许直接改）。\n\n**需登录**。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"patientId\": \"P202607060001\",\n    \"updatedAt\": \"2026-07-06T10:03:00+08:00\"\n  },\n  \"traceId\": \"trace-patient-update\",\n  \"timestamp\": \"2026-07-06T10:03:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. 更新患者状态",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients/{{patientId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients", "{{patientId}}", "status"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DISABLED\",\n  \"reason\": \"重复档案，已完成合并\"\n}"
+            },
+            "description": "## 2.2.5 更新患者档案状态\n\n**状态流转**：ACTIVE → DISABLED（禁用）/ MERGED（已合并到其他档案）\n\n**用例**：重复档案合并、违规禁用。\n\n**需登录** + 需 HOSPITAL_ADMIN 权限（业务规则，当前冒烟未做权限拦截）。"
+          },
+          "response": [
+            {
+              "name": "成功",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"code\": 0,\n  \"message\": \"success\",\n  \"data\": {\n    \"patientId\": \"P202607060001\",\n    \"status\": \"DISABLED\"\n  },\n  \"traceId\": \"trace-patient-status\",\n  \"timestamp\": \"2026-07-06T10:04:00+08:00\",\n  \"success\": true\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
