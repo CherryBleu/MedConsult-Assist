@@ -5,6 +5,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -68,10 +69,12 @@ public class PrescriptionDTO {
         /** 给药途径（可空，如 "口服"） */
         @Size(max = 50, message = "给药途径不能超过 50 字")
         private String route;
-        /** 天数（≥1） */
+        /** 天数（≥1，必填） */
+        @NotNull(message = "天数不能为空")
         @Min(value = 1, message = "天数至少 1 天")
         private Integer days;
-        /** 总数量（>0） */
+        /** 总数量（>0，必填——@DecimalMin 对 null 返回 valid，故须 @NotNull 兜底） */
+        @NotNull(message = "数量不能为空")
         @DecimalMin(value = "0.01", message = "数量必须大于 0")
         private BigDecimal quantity;
         /** 单位（如 "片"、"盒"） */
@@ -144,7 +147,8 @@ public class PrescriptionDTO {
 
     @Data
     public static class ReviewRequest {
-        /** 审方动作：APPROVE / REJECT */
+        /** 审方动作：APPROVE / REJECT（必填——@Pattern 对 null 返回 valid，故须 @NotBlank 兜底） */
+        @NotBlank(message = "审方动作不能为空（APPROVE/REJECT）")
         @Pattern(regexp = "^(APPROVE|REJECT)$", message = "审方动作须为 APPROVE / REJECT")
         private String action;
         /** 审方药师编号 pharmacist_no（药师本人） */

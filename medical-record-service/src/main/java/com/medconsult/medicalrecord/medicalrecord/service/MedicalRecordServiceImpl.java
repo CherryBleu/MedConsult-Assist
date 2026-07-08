@@ -160,6 +160,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         }
         r.setStatus("ARCHIVED");
         r.setArchivedAt(LocalDateTime.now());
+        // prescriptionsSnapshot 本批不填（处方数据经 prescription 表反查即可）；
+        // batch 2 接入处方完整流转后，归档时按需序列化处方列表写入快照列
         medicalRecordMapper.updateById(r);
         log.info("病历归档: recordNo={} confirmBy={}", recordNo, req.getConfirmBy());
         return new MedicalRecordDTO.ArchiveResponse(r.getRecordNo(), r.getStatus());

@@ -62,8 +62,10 @@ public class MedicalRecord extends BaseEntity {
 
     /**
      * 处方只读快照（TEXT）。
-     * <p>修订项 §2.1：降级为快照用途，归档时拍一份；处方真实数据走 prescription 表。
-     * 本批 create/updateDraft 不写入此列（留 null），留待归档时或后续 PR 填充。
+     * <p>修订项 §2.1：降级为快照用途；处方真实数据走 prescription 表（通过 record_id 反查）。
+     * <p><b>本批（batch 1）留 null</b>：归档时不拍快照（处方数据已可经 prescription 表反查，
+     * 快照仅作历史展示冗余）。batch 2 接入处方完整流转（dispense）后，归档时按需
+     * 序列化处方列表写入此列。此列允许 null，不影响 batch 1 功能。
      */
     private String prescriptionsSnapshot;
 

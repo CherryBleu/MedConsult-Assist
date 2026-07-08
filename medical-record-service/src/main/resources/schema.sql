@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS medical_record (
     physical_exam         TEXT                                   COMMENT '体格检查',
     initial_diagnosis     TEXT                                   COMMENT '初步诊断（JSON 数组串，如 ["心律失常待查","高血压"]）',
     final_diagnosis       TEXT                                   COMMENT '最终诊断（归档时填写，JSON 数组串）',
-    prescriptions_snapshot TEXT                                  COMMENT '处方只读快照（修订项 §2.1：降级为快照，归档时拍一份；不再作为处方数据来源）',
+    prescriptions_snapshot TEXT                                  COMMENT '处方只读快照（修订项 §2.1：降级为快照；batch 1 留 null，batch 2 归档时按需填充）',
     doctor_advice         TEXT                                   COMMENT '医嘱',
     status                VARCHAR(20)   NOT NULL DEFAULT 'DRAFT' COMMENT '状态：DRAFT/ARCHIVED/REVISED',
     archived_at           DATETIME(3)                            COMMENT '归档时间（status=ARCHIVED 时填）',

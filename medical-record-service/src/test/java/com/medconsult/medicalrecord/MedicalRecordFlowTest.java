@@ -146,6 +146,20 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void recordDetail_notFound() throws Exception {
+        mvc.perform(get("/api/v1/medical-records/MR_NOT_EXIST"))
+                .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
+    void updateDraft_notFound() throws Exception {
+        mvc.perform(put("/api/v1/medical-records/MR_NOT_EXIST")
+                        .contentType("application/json")
+                        .content("{\"doctorAdvice\":\"尝试改不存在病历\"}"))
+                .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
     void internalFull_returnsComplete() throws Exception {
         String recordNo = createRecord();
         // 内部接口用 BIGINT 主键，需先查出 id（H2 直接查）
@@ -173,6 +187,18 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
                 .andExpect(jsonPath("$.data.paymentStatus").value("UNPAID"))
                 .andExpect(jsonPath("$.data.totalFee").value(210.00));
+    }
+
+    @Test
+    void createPrescription_nullQuantityRejected() throws Exception {
+        // 验证 #1 修复：quantity/days null 不再漏过到 service（@DecimalMin/@Min 对 null 返回 valid）
+        String recordNo = createRecord();
+        String body = """
+                {"recordId":"%s","patientId":"%s","doctorId":"%s",
+                 "items":[{"drugName":"测试药","days":3}]}""".formatted(recordNo, PATIENT_NO, DOCTOR_NO);
+        // quantity 缺失 → @NotNull 校验失败 → PARAM_ERROR
+        mvc.perform(post("/api/v1/prescriptions").contentType("application/json").content(body))
+                .andExpect(jsonPath("$.code").value(400001));
     }
 
     @Test
@@ -204,6 +230,26 @@ class MedicalRecordFlowTest {
         // 已 PENDING_REVIEW 再 submit → CONFLICT
         mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/submit"))
                 .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void submit_notFound() throws Exception {
+        mvc.perform(post("/api/v1/prescriptions/RX_NOT_EXIST/submit"))
+                .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
+    void prescriptionDetail_notFound() throws Exception {
+        mvc.perform(get("/api/v1/prescriptions/RX_NOT_EXIST"))
+                .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
+    void review_notFound() throws Exception {
+        mvc.perform(post("/api/v1/prescriptions/RX_NOT_EXIST/review")
+                        .contentType("application/json")
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(jsonPath("$.code").value(404001));
     }
 
     @Test
