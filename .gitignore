@@ -43,3 +43,11 @@ HELP.md
 application-local.yml
 application-local.yaml
 application-local.properties
+
+# ===== 基础设施（infra/）=====
+# .env 含本地密码，不入仓（infra/.env.example 是模板）
+infra/.env
+# Docker 持久化产物（compose 用 named volume，下面这些只防误投）
+infra/mysql/log/
+infra/qdrant/storage/
+infra/rabbitmq/

@@ -1,0 +1,129 @@
+# MedConsult-Assist 基础设施本地编排（架构文档 §1.1 §10）
+#
+# 范围：只编排 4 个三方中间件（MySQL / Redis / Qdrant / RabbitMQ）。
+#   Nacos 由独立脚本启动（D:\springcloudalibaba\nacos-server-2.3.0\nacos\bin\startup.cmd），
+#   因为它有 GUI 启动习惯且部分配置走本地文件，不入 compose。
+#
+# 端口选择（避开 Windows 主机原生服务）：
+#   - 3306 被本机 mysqld.exe 占用 → MySQL 容器走 3307
+#   - 6379 被本机 memurai.exe 占用 → Redis 容器走 16379
+#   - Qdrant / RabbitMQ 默认端口本机未占用 → 保持官方默认
+#
+# 启动：  docker compose -f infra/docker-compose.yml up -d
+# 停止：  docker compose -f infra/docker-compose.yml down
+# 重置：  docker compose -f infra/docker-compose.yml down -v   # 删数据卷
+#
+# 红线 1 合规：MySQL 8.0 / Redis / RabbitMQ / Qdrant 版本严格锁定（见 medconsult-parent pom.xml）。
+
+name: medconsult
+
+services:
+
+  # ============== MySQL 8.0 ==============
+  # 按 §1.2 表归属矩阵为每个服务建独立 schema，禁止跨 schema join（架构红线）。
+  mysql:
+    image: mysql:8.0
+    container_name: medconsult-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_USER: ${MYSQL_APP_USER:-medconsult}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-medconsult123}
+      TZ: Asia/Shanghai
+    command:
+      # 红线 1：utf8mb4_0900_ai_ci 是 MySQL 8.0 默认，匹配数据库设计文档 §1 通用约定
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+      - --max-connections=200
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./mysql/conf.d:/etc/mysql/conf.d:ro
+      - ./mysql/log:/var/log/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [medconsult-net]
+
+  # ============== Redis 7（缓存 / 分布式锁 / SSE 广播 / 限流）==============
+  # 架构文档 §7：业务并发禁止用 JVM 锁，所有锁/限流/SSE 广播走 Redis（多实例一致）
+  redis:
+    image: redis:7-alpine
+    container_name: medconsult-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [medconsult-net]
+
+  # ============== Qdrant（向量库 / RAG 检索）==============
+  # 需求文档 §4.2.0：疾病 JSON 切片向量存 Qdrant/Milvus，仅存索引，原始 JSON 是唯一知识来源。
+  # 选择 Qdrant（轻量，单容器即可；Milvus 需要 etcd+minio 三件套，过重）。
+  # ai-service 独占访问。
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: medconsult-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-info}
+    ports:
+      # REST / gRPC（gRPC 性能更好，Spring AI Qdrant 客户端优先用 gRPC）
+      - "6333:6333"   # REST
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nhost: localhost\\r\\n\\r' >&3 && cat <&3 | head -1 | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [medconsult-net]
+
+  # ============== RabbitMQ（异步解耦 / 可靠投递 / SSE 跨实例广播）==============
+  # 架构文档 §6：本地消息表 + RabbitMQ + 消费幂等（最终一致性，不用 Seata）
+  # §9.2：多实例 SSE 广播靠 RabbitMQ fanout → 每实例订阅自己的临时队列
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: medconsult-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-medconsult}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medconsult123}
+      TZ: Asia/Shanghai
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # 管理控制台
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    networks: [medconsult-net]
+
+volumes:
+  mysql_data:
+  redis_data:
+  qdrant_data:
+  rabbitmq_data:
+
+networks:
+  medconsult-net:
+    name: medconsult-net
+    driver: bridge
