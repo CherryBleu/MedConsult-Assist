@@ -147,9 +147,14 @@ class DrugFlowTest {
     @Test
     void outbound_skipsExpiredBatch() throws Exception {
         String drugNo = createDrug("维生素C", 10);
-        // 批次 A：已过期（昨天），入库 100 —— 不可出库
-        inbound(drugNo, "BATCH_EXPIRED", 100, LocalDate.now().minusDays(1).toString());
-        // 批次 B：正常（2028），入库 20 —— 应从此扣
+        // 批次 A：已过期（昨天），入库 100 —— 不可出库。
+        // 业务接口 InboundRequest.expireDate 有 @Future 校验，正常不会进来；
+        // 这里直接 SQL 注入过期批次，模拟"历史遗留已过期库存"，验证 service 层 FEFO 跳过逻辑。
+        Long drugId = queryDrugIdByNo(drugNo);
+        insertBatchDirectly(drugId, "BATCH_EXPIRED", 100, LocalDate.now().minusDays(1));
+        // 同步累加 drug.current_stock（绕过 service 入库逻辑，模拟历史库存）
+        addStockDirectly(drugId, 100);
+        // 批次 B：正常（2028），入库 20 —— 应从此扣（走标准 API，校验通过）
         inbound(drugNo, "BATCH_OK", 20, "2028-01-01");
 
         // 出库 15：应跳过过期的 BATCH_EXPIRED，全部从 BATCH_OK 扣
@@ -254,5 +259,23 @@ class DrugFlowTest {
     private Long queryDrugIdByNo(String drugNo) {
         org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
         return jdbc.queryForObject("SELECT id FROM drug WHERE drug_no = ?", Long.class, drugNo);
+    }
+
+    /**
+     * 直接 SQL 插入批次记录（绕过 API 的 @Future 校验）。
+     * 用于构造"已过期批次"边界数据，验证 service 层 FEFO 跳过逻辑。
+     */
+    private void insertBatchDirectly(Long drugId, String batchNo, int quantity, LocalDate expireDate) {
+        org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+        long id = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+        jdbc.update("INSERT INTO drug_stock_batch (id, drug_id, batch_no, quantity, expire_date, status, created_at, updated_at, deleted) "
+                        + "VALUES (?, ?, ?, ?, ?, 'AVAILABLE', NOW(), NOW(), 0)",
+                id, drugId, batchNo, quantity, java.sql.Date.valueOf(expireDate));
+    }
+
+    /** 直接 SQL 累加 drug.current_stock（配合 insertBatchDirectly 模拟历史库存） */
+    private void addStockDirectly(Long drugId, int delta) {
+        org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+        jdbc.update("UPDATE drug SET current_stock = COALESCE(current_stock, 0) + ? WHERE id = ?", delta, drugId);
     }
 }

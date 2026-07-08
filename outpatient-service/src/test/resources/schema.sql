@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS appointment (
     id                   BIGINT        NOT NULL,
     appointment_no       VARCHAR(32)   NOT NULL,
     patient_id           BIGINT,
+    patient_no           VARCHAR(32),
     doctor_id            BIGINT,
     department_id        BIGINT,
     schedule_id          BIGINT,

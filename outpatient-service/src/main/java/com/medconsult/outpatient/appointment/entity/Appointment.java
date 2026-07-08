@@ -31,6 +31,9 @@ public class Appointment extends BaseEntity {
     /** 患者 ID（BIGINT 主键） */
     private Long patientId;
 
+    /** 患者编号（冗余自 patient-service 的 patient_no，便于按业务编号查询/过滤） */
+    private String patientNo;
+
     /** 医生 ID（BIGINT 主键） */
     private Long doctorId;
 

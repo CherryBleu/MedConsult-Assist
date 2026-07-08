@@ -1,9 +1,12 @@
 package com.medconsult.drug.dto;
 
+import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -33,6 +36,7 @@ public class DrugDTO {
     public static class CreateDrugRequest {
         /** 通用名，如 硝苯地平 */
         @NotBlank(message = "通用名不能为空")
+        @Size(max = 100, message = "通用名长度不能超过 100")
         private String genericName;
         /** 商品名，如 拜新同 */
         private String tradeName;
@@ -105,8 +109,9 @@ public class DrugDTO {
         private BigDecimal unitPrice;
         /** 生产日期（可选） */
         private LocalDate productionDate;
-        /** 有效期（FEFO 排序依据） */
+        /** 有效期（FEFO 排序依据；必须为未来日期，禁止入库已过期批次） */
         @NotNull(message = "有效期不能为空")
+        @Future(message = "有效期必须为未来日期（禁止入库已过期批次）")
         private LocalDate expireDate;
         /** 供应商 */
         private String supplier;
@@ -130,7 +135,9 @@ public class DrugDTO {
         @NotNull(message = "出库数量不能为空")
         @Positive(message = "出库数量必须为正")
         private Integer quantity;
-        /** 出库用途，如 PRESCRIPTION / DISPENSE / SCRAP */
+        /** 出库用途：PRESCRIPTION / DISPENSE / SCRAP（不传默认 DISPENSE） */
+        @Pattern(regexp = "^$|^(PRESCRIPTION|DISPENSE|SCRAP)$",
+                message = "出库用途须为 PRESCRIPTION / DISPENSE / SCRAP")
         private String purpose;
         /** 关联业务记录 ID（病历号等），可为空 */
         private String relatedRecordId;

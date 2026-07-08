@@ -1,6 +1,7 @@
 package com.medconsult.outpatient.appointment.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -25,7 +26,9 @@ public class AppointmentDTO {
         @NotBlank(message = "排班编号不能为空")
         private String scheduleId;
         private String visitReason;
-        /** 预约来源：MOBILE_APP / OFFICE_WINDOW / SELF_SERVICE */
+        /** 预约来源：MOBILE_APP / OFFICE_WINDOW / SELF_SERVICE（不传默认 MOBILE_APP） */
+        @Pattern(regexp = "^$|^(MOBILE_APP|OFFICE_WINDOW|SELF_SERVICE)$",
+                message = "预约来源须为 MOBILE_APP / OFFICE_WINDOW / SELF_SERVICE")
         private String source;
     }
 
@@ -86,6 +89,8 @@ public class AppointmentDTO {
     public static class PaymentUpdateRequest {
         /** UNPAID / PAID / REFUNDING / REFUNDED */
         @NotBlank(message = "支付状态不能为空")
+        @Pattern(regexp = "^(UNPAID|PAID|REFUNDING|REFUNDED)$",
+                message = "支付状态须为 UNPAID / PAID / REFUNDING / REFUNDED")
         private String paymentStatus;
         private String paymentNo;
         private BigDecimal paidAmount;
@@ -103,6 +108,8 @@ public class AppointmentDTO {
     public static class StatusUpdateRequest {
         /** BOOKED / CANCELLED / CHECKED_IN / IN_PROGRESS / COMPLETED / NO_SHOW */
         @NotBlank(message = "预约状态不能为空")
+        @Pattern(regexp = "^(BOOKED|CANCELLED|CHECKED_IN|IN_PROGRESS|COMPLETED|NO_SHOW)$",
+                message = "预约状态须为 BOOKED / CANCELLED / CHECKED_IN / IN_PROGRESS / COMPLETED / NO_SHOW")
         private String appointmentStatus;
         private String remark;
     }

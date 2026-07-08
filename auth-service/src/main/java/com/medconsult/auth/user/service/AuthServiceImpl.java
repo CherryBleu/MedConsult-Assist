@@ -60,6 +60,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthDTO.UserInfo register(AuthDTO.RegisterRequest req) {
+        // 角色白名单校验（DTO 层格式校验已通过，这里校验业务合法性）
+        if (!AuthDTO.isValidRole(req.getRole())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "非法角色: " + req.getRole() + "（允许: " + AuthDTO.ALLOWED_ROLES + "）");
+        }
+
         // 唯一性校验：account 必填（DTO @NotBlank 保证），phone 选填但若有则需唯一。
         // 注：需求 §4.1.0 规则 1 原文"账号/手机号至少填一项"，但 login 也按 account 查，
         //     所以 account 为必填——这条更严格，不冲突。

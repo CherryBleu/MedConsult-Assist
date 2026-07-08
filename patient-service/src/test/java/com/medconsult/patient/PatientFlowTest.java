@@ -187,4 +187,45 @@ class PatientFlowTest {
 
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.context.ApplicationContext ctx;
+
+    /**
+     * DTO 格式校验回归测试：对应 review 发现的 P0 问题——name=纯数字、非法手机号、
+     * 非法枚举值等都应被 Bean Validation 在 Controller 入口拦截，返回 PARAM_ERROR(400001)。
+     */
+    @Test
+    void createPatient_rejectsInvalidFormats() throws Exception {
+        // 1. name=纯数字"123" → 应被 @Pattern 拒绝（review 报告的核心问题）
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"123\",\"phone\":\"13800000001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+
+        // 2. 非法手机号（非 1[3-9] 开头）
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"合法名\",\"phone\":\"12800000001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+
+        // 3. 非法 gender（白名单外）
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"合法名\",\"gender\":\"OTHER\",\"phone\":\"13800000001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+
+        // 4. 非法 idType
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"合法名\",\"idType\":\"DRIVER_LICENSE\",\"idNo\":\"12345\",\"phone\":\"13800000001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+
+        // 5. 未来出生日期 → 应被 @Past 拒绝
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"合法名\",\"birthDate\":\"2099-01-01\",\"phone\":\"13800000001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+
+        // 6. 重复手机号 → service 层唯一性校验，应返回 CONFLICT(409001)
+        //    先建一个，再用同样手机号建第二个
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"张三\",\"phone\":\"13700000077\"}"))
+                .andExpect(jsonPath("$.code").value(0));
+        mvc.perform(post("/api/v1/patients").contentType("application/json").content(
+                        "{\"name\":\"李四\",\"phone\":\"13700000077\"}"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
 }

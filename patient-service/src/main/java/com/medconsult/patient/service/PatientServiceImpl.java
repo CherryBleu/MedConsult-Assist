@@ -51,8 +51,9 @@ public class PatientServiceImpl implements PatientService {
     private final PatientMapper patientMapper;
     private final ObjectMapper objectMapper;
 
-    /** 允许的档案状态白名单（§2.2.5 / §2.4） */
-    private static final List<String> ALLOWED_STATUS = List.of("ACTIVE", "DISABLED", "MERGED");
+    /** 允许的档案状态白名单（§2.2.5 / §2.4）—— 委托 DTO 常量，避免重复定义 */
+    private static final List<String> ALLOWED_STATUS =
+            List.copyOf(PatientDTO.ALLOWED_STATUS);
 
     // ===== §2.2.1 创建 =====
 
@@ -75,6 +76,16 @@ public class PatientServiceImpl implements PatientService {
             if (count != null && count > 0) {
                 throw new BusinessException(ErrorCode.CONFLICT,
                         "该证件号已存在患者档案: " + idType + "/" + req.getIdNo());
+            }
+        }
+
+        // 规则 2 扩展：手机号唯一性校验（仅当填了手机号时）
+        if (hasPhone) {
+            Long phoneCount = patientMapper.selectCount(new QueryWrapper<Patient>()
+                    .eq("phone", req.getPhone()));
+            if (phoneCount != null && phoneCount > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "手机号已存在患者档案: " + req.getPhone());
             }
         }
 
@@ -150,7 +161,20 @@ public class PatientServiceImpl implements PatientService {
 
         // 部分字段更新（仅更新非 null 字段，避免覆盖未传字段）
         if (req.getPhone() != null) {
-            p.setPhone(req.getPhone());
+            // 唯一性校验：若 phone 变更且与现状不同，校验是否已被其他档案占用
+            String newPhone = req.getPhone().isBlank() ? null : req.getPhone();
+            String currentPhone = p.getPhone();
+            boolean phoneChanged = (newPhone == null) != (currentPhone == null)
+                    || (newPhone != null && !newPhone.equals(currentPhone));
+            if (phoneChanged && newPhone != null && !newPhone.isBlank()) {
+                Long cnt = patientMapper.selectCount(new QueryWrapper<Patient>()
+                        .eq("phone", newPhone)
+                        .ne("id", p.getId()));
+                if (cnt != null && cnt > 0) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "手机号已被其他档案占用: " + newPhone);
+                }
+            }
+            p.setPhone(newPhone);
         }
         if (req.getAddress() != null) {
             p.setAddress(req.getAddress());

@@ -134,12 +134,9 @@ public class AppointmentServiceImpl implements AppointmentService {
             qw.eq("appointment_status", status);
         }
         if (patientId != null && !patientId.isBlank()) {
-            // patientId 为 patient_no（业务编号）。本地 appointment 存 BIGINT patient_id。
-            // patient_no → id 映射由 patient-service 维护，此处简化：若为数字则按 id 查。
-            Long pid = parseLong(patientId);
-            if (pid != null) {
-                qw.eq("patient_id", pid);
-            }
+            // patientId 实为 patient_no（业务编号串，如 PFRHLM5BSG741）。
+            // appointment 表冗余存 patient_no，直接按业务编号过滤。
+            qw.eq("patient_no", patientId);
         }
         qw.orderByDesc("created_at");
         IPage<Appointment> result = appointmentMapper.selectPage(p, qw);
@@ -266,15 +263,6 @@ public class AppointmentServiceImpl implements AppointmentService {
             map.put(d.getId(), d);
         }
         return map;
-    }
-
-    private static Long parseLong(String s) {
-        if (s == null || s.isBlank()) return null;
-        try {
-            return Long.valueOf(s);
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     /** 锁 key：medconsult:lock:schedule:{scheduleId}（与 RedisKey.SCHEDULE_QUOTA_LOCK 一致） */

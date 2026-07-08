@@ -2,6 +2,7 @@ package com.medconsult.outpatient.schedule.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -29,6 +30,8 @@ public class ScheduleDTO {
         private LocalDate scheduleDate;
         /** MORNING / AFTERNOON / EVENING / FULL_DAY */
         @NotBlank(message = "时段不能为空")
+        @Pattern(regexp = "^(MORNING|AFTERNOON|EVENING|FULL_DAY)$",
+                message = "时段须为 MORNING / AFTERNOON / EVENING / FULL_DAY")
         private String period;
         private LocalTime startTime;
         private LocalTime endTime;
@@ -77,6 +80,8 @@ public class ScheduleDTO {
     public static class StatusUpdateRequest {
         /** AVAILABLE / FULL / SUSPENDED / CANCELLED */
         @NotBlank(message = "状态不能为空")
+        @Pattern(regexp = "^(AVAILABLE|FULL|SUSPENDED|CANCELLED)$",
+                message = "排班状态须为 AVAILABLE / FULL / SUSPENDED / CANCELLED")
         private String status;
         private String reason;
     }

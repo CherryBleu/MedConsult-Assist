@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS appointment (
     id                   BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
     appointment_no       VARCHAR(32)   NOT NULL                 COMMENT '预约编号（业务可读，如 A202607060001）',
     patient_id           BIGINT        NOT NULL                 COMMENT '患者 ID（BIGINT 主键）',
+    patient_no           VARCHAR(32)                            COMMENT '患者编号（冗余自 patient-service，便于按业务编号查询/过滤）',
     doctor_id            BIGINT        NOT NULL                 COMMENT '医生 ID',
     department_id        BIGINT        NOT NULL                 COMMENT '科室 ID',
     schedule_id          BIGINT        NOT NULL                 COMMENT '排班 ID',
@@ -89,5 +90,6 @@ CREATE TABLE IF NOT EXISTS appointment (
     PRIMARY KEY (id),
     UNIQUE KEY uk_appointment_no (appointment_no),
     KEY idx_appointment_patient (patient_id),
+    KEY idx_appointment_patient_no (patient_no),
     KEY idx_appointment_schedule (schedule_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预约挂号表';

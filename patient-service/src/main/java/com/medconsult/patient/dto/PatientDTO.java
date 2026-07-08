@@ -1,11 +1,14 @@
 package com.medconsult.patient.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Past;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 患者档案相关请求/响应 DTO（字段命名对齐《接口文档》§2.2）。
@@ -15,19 +18,47 @@ import java.util.List;
  */
 public class PatientDTO {
 
+    /** 性别白名单 */
+    public static final Set<String> ALLOWED_GENDER = Set.of("MALE", "FEMALE", "UNKNOWN");
+    /** 证件类型白名单 */
+    public static final Set<String> ALLOWED_ID_TYPE = Set.of("ID_CARD", "PASSPORT", "OTHER");
+    /** 档案状态白名单 */
+    public static final Set<String> ALLOWED_STATUS = Set.of("ACTIVE", "DISABLED", "MERGED");
+
     // ===== §2.2.1 创建患者档案 =====
 
     @Data
     public static class CreateRequest {
+        /** 姓名：1-50 位（中文/字母/空格/点），禁止纯数字和特殊符号 */
         @NotBlank(message = "姓名不能为空")
+        @Pattern(regexp = "^[\\u4e00-\\u9fa5A-Za-z·.\\s]{1,50}$",
+                message = "姓名须为 1-50 位中文/字母/空格/点（不允许纯数字或特殊符号）")
         private String name;
-        /** MALE / FEMALE / UNKNOWN */
+
+        /** MALE / FEMALE / UNKNOWN（不传默认 UNKNOWN，传则校验白名单） */
+        @Pattern(regexp = "^$|^(MALE|FEMALE|UNKNOWN)$",
+                message = "性别须为 MALE / FEMALE / UNKNOWN")
         private String gender;
+
+        /** 出生日期：必须为过去日期 */
+        @Past(message = "出生日期必须为过去时间")
         private LocalDate birthDate;
+
         /** ID_CARD / PASSPORT / OTHER */
+        @Pattern(regexp = "^$|^(ID_CARD|PASSPORT|OTHER)$",
+                message = "证件类型须为 ID_CARD / PASSPORT / OTHER")
         private String idType;
+
+        /** 证件号：选填，填了校验长度（5-32 位，字母数字） */
+        @Pattern(regexp = "^$|^[A-Za-z0-9]{5,32}$",
+                message = "证件号须为 5-32 位字母/数字")
         private String idNo;
+
+        /** 手机号：选填，填了校验中国大陆 11 位格式 */
+        @Pattern(regexp = "^$|^1[3-9]\\d{9}$",
+                message = "手机号格式非法（须 11 位 1[3-9] 开头）")
         private String phone;
+
         private String address;
         /** 过敏史（如 ["青霉素"]） */
         private List<String> allergies;
@@ -83,6 +114,9 @@ public class PatientDTO {
 
     @Data
     public static class UpdateRequest {
+        /** 手机号：选填，填了校验中国大陆 11 位格式 */
+        @Pattern(regexp = "^$|^1[3-9]\\d{9}$",
+                message = "手机号格式非法（须 11 位 1[3-9] 开头）")
         private String phone;
         private String address;
         private List<String> allergies;
