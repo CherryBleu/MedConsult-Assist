@@ -28,11 +28,15 @@ spring:
           uri: lb://patient-service
           predicates:
             - Path=/api/v1/patients/**
+        # 门诊服务：科室 / 医生 / 排班 / 预约挂号（架构文档 §1.1 outpatient-service）
+        - id: outpatient-service
+          uri: lb://outpatient-service
+          predicates:
+            # Spring Cloud Gateway Path 谓词支持逗号分隔多路径（注意：不是 {a,b} 集合语法，
+            # 那是 PathPatternParser 的变量语法，Boot 3.2 会报错）。科室/医生/排班/预约都走门诊服务。
+            - Path=/api/v1/departments/**,/api/v1/doctors/**,/api/v1/schedules/**,/api/v1/appointments/**
         # 后续业务服务陆续加入：
-        # - id: outpatient-service
-        #   uri: lb://outpatient-service
-        #   predicates:
-        #     - Path=/api/v1/{departments,doctors,schedules,appointments}/**
+        # - id: medical-record-service ...
 
 # JWT（冒烟用固定密钥；生产从 Nacos/KMS 注入）
 medconsult:

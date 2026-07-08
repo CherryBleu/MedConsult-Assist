@@ -32,9 +32,9 @@
         <!-- 业务服务（第一阶段陆续加入）： -->
         <module>auth-service</module>
         <module>patient-service</module>
+        <module>outpatient-service</module>
         <module>gateway</module>
-        <!-- 待加：outpatient-service
-             / medical-record-service / drug-service / ai-service
+        <!-- 待加：medical-record-service / drug-service / ai-service
              / notification-service -->
     </modules>
 

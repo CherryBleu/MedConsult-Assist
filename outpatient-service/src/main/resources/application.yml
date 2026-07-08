@@ -1,0 +1,45 @@
+# outpatient-service 本地配置（冒烟用最小集；生产走 Nacos 配置中心）
+server:
+  port: 8083
+  address: 0.0.0.0  # 绑定所有接口（含 IPv6 ::1），让 gateway 的 Netty 客户端可连
+
+spring:
+  # 虚拟线程全局开启（架构文档 §8.3，servlet 服务）
+  threads:
+    virtual:
+      enabled: true
+  # 数据源：MySQL 8.0（infra/docker-compose.yml，宿主机端口 3307 映射到容器 3306）
+  # 连 medconsult_outpatient schema（架构文档 §1.2 表归属矩阵：outpatient-service 独占）
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3307}/medconsult_outpatient?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:medconsult}
+    password: ${MYSQL_PASSWORD:medconsult123}
+  # Redis：抢号分布式锁依赖（架构文档 §7.1，lock:schedule:{scheduleId}）
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+  sql:
+    init:
+      mode: always
+
+# JWT（冒烟用固定密钥，与 auth 一致便于网关同密钥验签；生产从 Nacos/KMS 注入，架构文档 §7.3 §4.2）
+medconsult:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    com.medconsult: DEBUG
+    com.alibaba.cloud.nacos: DEBUG
