@@ -18,5 +18,9 @@ public interface AuthService {
 
     boolean logout(AuthDTO.LogoutRequest req);
 
-    AuthDTO.MeResponse me(String accessToken);
+    /**
+     * 当前用户信息。
+     * @param userId 当前登录用户 ID（由 Controller 从 SecurityContext 传入）
+     */
+    AuthDTO.MeResponse me(Long userId);
 }

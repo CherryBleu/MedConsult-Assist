@@ -33,6 +33,39 @@
             <artifactId>medconsult-common-web</artifactId>
         </dependency>
 
+        <!-- Servlet API + spring-web（JwtAuthServletFilter extends OncePerRequestFilter 需要）。
+             设为 provided/optional：编译期可用，运行期由引入 common-security 的 servlet 服务
+             （经 common-web → spring-boot-starter-web）提供。
+             Gateway 排除了 common-web 但不会触发本类加载（@ConditionalOnWebApplication SERVLET）。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Servlet API + spring-web（JwtAuthServletFilter extends OncePerRequestFilter 需要）。
+             设为 optional：编译期可用；运行期由引入 common-security 的 servlet 服务
+             （经 common-web → spring-boot-starter-web）提供。
+             Gateway 排除 common-web 后这两个不在其 classpath——靠 JwtAuthServletFilterConfiguration
+             的 @ConditionalOnClass(OncePerRequestFilter) 守门避免类加载失败。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
         <!-- JWT 三件套（jjwt 0.12+ 拆分为 api/impl/jackson） -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

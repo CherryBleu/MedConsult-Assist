@@ -1,1 +1,2 @@
 com.medconsult.common.security.MedConsultSecurityAutoConfiguration
+com.medconsult.common.security.JwtAuthServletFilterConfiguration

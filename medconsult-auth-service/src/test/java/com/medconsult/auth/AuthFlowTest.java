@@ -20,13 +20,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <ul>
  *   <li>注册成功 + 重复账号拒绝</li>
  *   <li>登录成功 + 密码错误 + 不存在账号</li>
- *   <li>当前用户（me）+ 手机脱敏</li>
+ *   <li>当前用户（me）+ 手机脱敏（me 经 JwtAuthServletFilter 解析 Authorization 头写入 SecurityContext）</li>
  *   <li>刷新 token</li>
  *   <li>登出后再刷新应失败</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK)
-@AutoConfigureMockMvc(addFilters = false)
+@AutoConfigureMockMvc
 @TestPropertySource(properties = {
         "medconsult.security.jwt.secret=test-secret-0123456789abcdef0123456789abcdef-min32bytes",
         // 测试用 H2 内存库（MySQL dialect 模式），不连真实 MySQL 避免污染数据

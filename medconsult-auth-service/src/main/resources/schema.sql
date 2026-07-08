@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     name            VARCHAR(50)                           COMMENT '姓名',
     patient_id      BIGINT                                COMMENT '关联患者编号',
     doctor_id       BIGINT                                COMMENT '关联医生编号',
-    status          VARCHAR(20)  NOT NULL DEFAULT 'ENABLED' COMMENT 'ENABLED/DISABLED',
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT '账号状态：ACTIVE/DISABLED/LOCKED',
     last_login_at   DATETIME(3)                           COMMENT '最后登录时间',
     created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),

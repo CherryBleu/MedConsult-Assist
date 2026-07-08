@@ -10,6 +10,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.security.JwtCodec;
 import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.web.MaskType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,11 +60,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthDTO.UserInfo register(AuthDTO.RegisterRequest req) {
-        // 唯一性校验：账号或手机号至少填一个，且不重复
-        if (req.getAccount() == null && req.getPhone() == null) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "账号和手机号至少填写一项");
-        }
-        if (req.getAccount() != null && userMapper.selectCount(
+        // 唯一性校验：account 必填（DTO @NotBlank 保证），phone 选填但若有则需唯一。
+        // 注：需求 §4.1.0 规则 1 原文"账号/手机号至少填一项"，但 login 也按 account 查，
+        //     所以 account 为必填——这条更严格，不冲突。
+        if (userMapper.selectCount(
                 new QueryWrapper<SysUser>().eq("account", req.getAccount())) > 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "账号已存在: " + req.getAccount());
         }
@@ -173,18 +173,20 @@ public class AuthServiceImpl implements AuthService {
     // ===== 当前用户 =====
 
     @Override
-    public AuthDTO.MeResponse me(String accessToken) {
-        JwtPayload p = jwtCodec.parse(accessToken);
-        SysUser u = userMapper.selectById(p.userId());
+    public AuthDTO.MeResponse me(Long userId) {
+        SysUser u = userMapper.selectById(userId);
         if (u == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
+        // 角色取自 SecurityContext（网关已解析）；如无则回退到默认 PATIENT（兼容直连场景）
+        JwtPayload p = SecurityContext.getPayload();
+        String primaryRole = (p != null && p.primaryRole() != null) ? p.primaryRole() : "PATIENT";
         return new AuthDTO.MeResponse(
                 u.getUserNo(),
                 u.getAccount(),
                 u.getName(),
                 MaskType.PHONE.mask(u.getPhone()),
-                p.primaryRole(),
+                primaryRole,
                 u.getPatientId() != null ? String.valueOf(u.getPatientId()) : null,
                 u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
                 u.getStatus());
@@ -213,8 +215,14 @@ public class AuthServiceImpl implements AuthService {
         loginLogMapper.insert(log);
     }
 
-    private String generateUserNo() {
-        return "U" + System.currentTimeMillis() + (int) (Math.random() * 1000);
+    /**
+     * 生成用户编号：U + 雪花序列（由 MyBatis-Plus IdWorker 生成的 Long 的无符号 hex）。
+     * <p>替代旧的 currentTimeMillis + random*1000 方案——后者并发碰撞概率高（同毫秒仅 1000 桶），
+     * 雪花 ID 单调递增且分布式唯一，碰撞可忽略；DB 仍有 uk_sys_user_user_no 兜底。
+     */
+    private static String generateUserNo() {
+        long id = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+        return "U" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
     }
 
     private static Long parseLong(String s) {

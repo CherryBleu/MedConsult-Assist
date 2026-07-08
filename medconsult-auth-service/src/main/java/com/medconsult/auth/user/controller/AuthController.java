@@ -3,6 +3,7 @@ package com.medconsult.auth.user.controller;
 import com.medconsult.auth.user.dto.AuthDTO;
 import com.medconsult.auth.user.service.AuthService;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.SecurityContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -47,11 +48,15 @@ public class AuthController {
         return Result.ok(authService.logout(req));
     }
 
-    /** §2.1.5 当前用户信息（从 Authorization 头取 access token） */
+    /**
+     * §2.1.5 当前用户信息。
+     * <p>身份来自 {@link SecurityContext}（由 {@code JwtAuthServletFilter} 从网关 X-User-* 头
+     * 或原始 Authorization 头解析写入）。不再直接读 Authorization 头——网关已剥离它（§4.4）。
+     */
     @GetMapping("/me")
-    public Result<AuthDTO.MeResponse> me(@RequestHeader("Authorization") String authHeader) {
-        String token = authHeader.startsWith("Bearer ") ? authHeader.substring(7) : authHeader;
-        return Result.ok(authService.me(token));
+    public Result<AuthDTO.MeResponse> me() {
+        Long userId = SecurityContext.requireUser().userId();
+        return Result.ok(authService.me(userId));
     }
 
     private static String clientIp(HttpServletRequest req) {

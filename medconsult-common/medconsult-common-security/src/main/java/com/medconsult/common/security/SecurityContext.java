@@ -14,19 +14,23 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  */
 public final class SecurityContext {
 
-    /** request attribute key */
-    private static final String ATTR_PAYLOAD = SecurityContext.class.getName() + ".payload";
+    /** request attribute key（包级可见，JwtAuthServletFilter 直接用此 key 写 request） */
+    static final String PAYLOAD_ATTR_KEY = SecurityContext.class.getName() + ".payload";
 
     private SecurityContext() {
     }
 
     /**
-     * 绑定当前请求的身份（由鉴权过滤器调用）。
+     * 绑定当前请求的身份。
+     * <p>注意：本方法依赖 {@link RequestContextHolder}，只在 dispatcher servlet 处理阶段可用
+     * （即 controller / service / @Permission 切面里）。在 filter 阶段请直接用
+     * {@code request.setAttribute(PAYLOAD_ATTR_KEY, payload)}——filter 在 dispatcher servlet 之前执行，
+     * 此时 RequestContextHolder 尚未初始化。
      */
     public static void setPayload(JwtPayload payload) {
         RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
         if (attrs instanceof ServletRequestAttributes sra) {
-            sra.getRequest().setAttribute(ATTR_PAYLOAD, payload);
+            sra.getRequest().setAttribute(PAYLOAD_ATTR_KEY, payload);
         }
     }
 
@@ -36,7 +40,7 @@ public final class SecurityContext {
     public static JwtPayload getPayload() {
         RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
         if (attrs instanceof ServletRequestAttributes sra) {
-            Object v = sra.getRequest().getAttribute(ATTR_PAYLOAD);
+            Object v = sra.getRequest().getAttribute(PAYLOAD_ATTR_KEY);
             return v instanceof JwtPayload jp ? jp : null;
         }
         return null;
