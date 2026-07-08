@@ -58,4 +58,37 @@ public class PrescriptionController {
             @Valid @RequestBody PrescriptionDTO.ReviewRequest req) {
         return Result.ok(prescriptionService.review(prescriptionId, req));
     }
+
+    /** 缴费（APPROVED → PAID） */
+    @PostMapping("/{prescriptionId}/pay")
+    public Result<PrescriptionDTO.PayResponse> pay(
+            @PathVariable String prescriptionId,
+            @Valid @RequestBody PrescriptionDTO.PayRequest req) {
+        return Result.ok(prescriptionService.pay(prescriptionId, req));
+    }
+
+    /**
+     * 调剂发药（APPROVED/PAID → DISPENSED，同步 Feign 调 drug-service FEFO 出库）。
+     * <p>架构文档 §6.2 原写 MQ 异步，本批务实采用同步 Feign（MQ 化为后续待办）。
+     */
+    @PostMapping("/{prescriptionId}/dispense")
+    public Result<PrescriptionDTO.DispenseResponse> dispense(
+            @PathVariable String prescriptionId,
+            @Valid @RequestBody PrescriptionDTO.DispenseRequest req) {
+        return Result.ok(prescriptionService.dispense(prescriptionId, req));
+    }
+
+    /** 完成（DISPENSED → COMPLETED） */
+    @PostMapping("/{prescriptionId}/complete")
+    public Result<PrescriptionDTO.CompleteResponse> complete(@PathVariable String prescriptionId) {
+        return Result.ok(prescriptionService.complete(prescriptionId));
+    }
+
+    /** 退方（APPROVED/PAID → CANCELLED） */
+    @PostMapping("/{prescriptionId}/cancel")
+    public Result<PrescriptionDTO.CancelResponse> cancel(
+            @PathVariable String prescriptionId,
+            @Valid @RequestBody PrescriptionDTO.CancelRequest req) {
+        return Result.ok(prescriptionService.cancel(prescriptionId, req));
+    }
 }

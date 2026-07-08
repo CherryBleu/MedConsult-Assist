@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS prescription_item (
     id                     BIGINT        NOT NULL,
     prescription_id        BIGINT        NOT NULL,
     drug_id                BIGINT,
+    drug_no                VARCHAR(32),
     drug_name_snapshot     VARCHAR(100)  NOT NULL,
     specification_snapshot VARCHAR(100),
     dosage                 VARCHAR(50),

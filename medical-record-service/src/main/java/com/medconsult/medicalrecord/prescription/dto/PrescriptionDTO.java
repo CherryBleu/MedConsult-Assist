@@ -13,6 +13,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 处方相关请求/响应 DTO（对齐《修改建议》§2.1 处方接口补充表）。
@@ -53,6 +54,13 @@ public class PrescriptionDTO {
 
     @Data
     public static class ItemRequest {
+        /**
+         * 药品编号 drug_no（第 2 批新增，可选）。
+         * <p>非空时 service 用 Feign 反查 drug-service 校验药品存在并存 drug_id（替代 batch 1 的 null 占位）。
+         * 为空时 drug_id 存 null，dispense 时须由前端通过 DispenseRequest.itemDrugNoMap 补传。
+         */
+        @Size(max = 32, message = "药品编号不能超过 32 字")
+        private String drugNo;
         /** 药品名快照（必填，本批不校验 drugId 存在性） */
         @NotBlank(message = "药品名不能为空")
         @Size(max = 100, message = "药品名不能超过 100 字")
@@ -167,5 +175,90 @@ public class PrescriptionDTO {
             String prescriptionId,
             String status,          // APPROVED / REJECTED
             LocalDateTime reviewedAt
+    ) {}
+
+    // ===== 缴费 POST /{id}/pay（APPROVED → PAID）=====
+
+    @Data
+    public static class PayRequest {
+        /** 实付金额（≥0，须与处方 totalFee 一致或由前端确认） */
+        @NotNull(message = "实付金额不能为空")
+        @DecimalMin(value = "0", message = "实付金额不能为负")
+        private BigDecimal paidAmount;
+        /** 支付单号（外部支付系统回传） */
+        @NotBlank(message = "支付单号不能为空")
+        @Size(max = 64, message = "支付单号不能超过 64 字")
+        private String paymentNo;
+    }
+
+    /** 缴费响应 */
+    public record PayResponse(
+            String prescriptionId,
+            String status,          // PAID
+            String paymentStatus,   // PAID
+            BigDecimal paidAmount
+    ) {}
+
+    // ===== 调剂发药 POST /{id}/dispense（APPROVED/PAID → DISPENSED）=====
+
+    @Data
+    public static class DispenseRequest {
+        /**
+         * 调剂操作人编号 pharmacist_no（药师本人）。
+         */
+        @NotBlank(message = "调剂药师编号不能为空")
+        private String pharmacistId;
+        /**
+         * 明细→药品编号映射（可选，兼容 batch 1 历史 drug_id=null 的处方）。
+         * <p>key = prescription_item.id（字符串化），value = drug_no。
+         * <p>dispense 时优先用 item.drugId（batch 2 开方时已存），若为 null 则查此 map。
+         * 历史处方（batch 1 开的，drug_id=null）必须传此 map 才能调剂。
+         */
+        private Map<String, String> itemDrugNoMap;
+    }
+
+    /** 调剂发药明细结果 */
+    public record DispenseItem(
+            Long itemId,
+            String drugName,
+            String drugNo,
+            BigDecimal dispensedQuantity,
+            String stockFlowId        // drug-service 返回的首条 flow_no
+    ) {}
+
+    /** 调剂发药响应（含每条明细扣减结果） */
+    public record DispenseResponse(
+            String prescriptionId,
+            String status,            // DISPENSED
+            LocalDateTime dispensedAt,
+            List<DispenseItem> items
+    ) {}
+
+    // ===== 完成 POST /{id}/complete（DISPENSED → COMPLETED）=====
+
+    /** 完成响应（无请求体，POST 空 body 即可） */
+    public record CompleteResponse(
+            String prescriptionId,
+            String status             // COMPLETED
+    ) {}
+
+    // ===== 退方 POST /{id}/cancel（APPROVED/PAID → CANCELLED）=====
+
+    @Data
+    public static class CancelRequest {
+        /** 退方原因 */
+        @NotBlank(message = "退方原因不能为空")
+        @Size(max = 500, message = "退方原因不能超过 500 字")
+        private String cancelReason;
+        /** 退方操作人编号 */
+        @NotBlank(message = "退方操作人不能为空")
+        private String operatorId;
+    }
+
+    /** 退方响应 */
+    public record CancelResponse(
+            String prescriptionId,
+            String status,            // CANCELLED
+            String cancelReason
     ) {}
 }

@@ -1,15 +1,26 @@
 package com.medconsult.medicalrecord;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.DrugFeignClient;
+import com.medconsult.common.feign.dto.DispenseDTO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.math.BigDecimal;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -55,6 +66,13 @@ class MedicalRecordFlowTest {
 
     @Autowired
     ObjectMapper om;
+
+    /**
+     * Mock DrugFeignClient：dispense 测试不真实跨服务调 drug-service（测试环境无 Nacos discovery）。
+     * 默认 stub：outbound 成功返回 flowNo + currentStock；个别测试用 reset 重写为抛库存不足。
+     */
+    @MockBean
+    DrugFeignClient drugFeignClient;
 
     private static final String PATIENT_NO = "P202607060001";
     private static final String DOCTOR_NO = "D10001";
@@ -298,6 +316,129 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
+    // ===== batch 2：缴费 / 调剂发药 / 完成 / 退方 =====
+
+    @Test
+    void pay_approvedToPaid() throws Exception {
+        String rxNo = createApprovedPrescription();
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/pay")
+                        .contentType("application/json")
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("PAID"))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.data.paidAmount").value(210.00));
+    }
+
+    @Test
+    void pay_nonApprovedRejected() throws Exception {
+        String rxNo = createPrescription(); // DRAFT，未审
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/pay")
+                        .contentType("application/json")
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void dispense_approvedToDispensed() throws Exception {
+        String rxNo = createApprovedPrescription();
+        // stub Feign outbound 成功
+        when(drugFeignClient.outbound(any(), any())).thenReturn(
+                Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK_1", "D_MOCK", 50)));
+
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("DISPENSED"))
+                .andExpect(jsonPath("$.data.items[0].drugName").value("硝苯地平控释片"))
+                .andExpect(jsonPath("$.data.items[0].dispensedQuantity").value(7))
+                .andExpect(jsonPath("$.data.items[0].stockFlowId").value("SF_MOCK_1"));
+    }
+
+    @Test
+    void dispense_insufficientStock_conflict() throws Exception {
+        String rxNo = createApprovedPrescription();
+        // stub Feign outbound 抛库存不足（CONFLICT）
+        when(drugFeignClient.outbound(any(), any())).thenThrow(
+                new BusinessException(ErrorCode.CONFLICT, "库存不足"));
+
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void dispense_draftRejected() throws Exception {
+        String rxNo = createPrescription(); // DRAFT，未审未缴费
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void dispense_fractionalQuantity_rejected() throws Exception {
+        // 小数数量（1.5 片）应被拒绝：药品库存按整数件
+        String recordNo = createRecord();
+        String body = """
+                {"recordId":"%s","patientId":"%s","doctorId":"%s",
+                 "items":[{"drugNo":"D001","drugName":"测试药","days":3,"quantity":1.5,"unit":"片"}]}"""
+                .formatted(recordNo, PATIENT_NO, DOCTOR_NO);
+        String rxNo = om.readTree(mvc.perform(post("/api/v1/prescriptions")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .at("/data/prescriptionId").asText();
+        submitPrescription(rxNo);
+        approvePrescription(rxNo);
+        when(drugFeignClient.outbound(any(), any())).thenReturn(
+                Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK", "D001", 50)));
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(jsonPath("$.code").value(400001));
+    }
+
+    @Test
+    void complete_dispensedToCompleted() throws Exception {
+        String rxNo = createDispensedPrescription();
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/complete"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    }
+
+    @Test
+    void complete_nonDispensedRejected() throws Exception {
+        String rxNo = createApprovedPrescription(); // APPROVED，未调剂
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/complete"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void cancel_approvedToCancelled() throws Exception {
+        String rxNo = createApprovedPrescription();
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/cancel")
+                        .contentType("application/json")
+                        .content("{\"cancelReason\":\"患者取消\",\"operatorId\":\"D10001\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.cancelReason").value("患者取消"));
+    }
+
+    @Test
+    void cancel_alreadyDispensedRejected() throws Exception {
+        String rxNo = createDispensedPrescription(); // DISPENSED
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/cancel")
+                        .contentType("application/json")
+                        .content("{\"cancelReason\":\"尝试退已发药\",\"operatorId\":\"D10001\"}"))
+                .andExpect(jsonPath("$.code").value(409001));
+    }
+
     // ===== 测试助手 =====
 
     /** 创建病历，返回 record_no */
@@ -319,12 +460,12 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk());
     }
 
-    /** 创建处方（DRAFT），返回 prescription_no */
+    /** 创建处方（DRAFT），返回 prescription_no。明细带 drugNo 供 dispense 测试用 */
     private String createPrescription() throws Exception {
         String recordNo = createRecord();
         String body = """
                 {"recordId":"%s","patientId":"%s","doctorId":"%s","source":"OUTPATIENT",
-                 "items":[{"drugName":"硝苯地平控释片","specification":"30mg*7片","dosage":"30mg",
+                 "items":[{"drugNo":"D001","drugName":"硝苯地平控释片","specification":"30mg*7片","dosage":"30mg",
                            "frequency":"每日一次","days":7,"quantity":7,"unit":"片","unitPrice":30.00}]}"""
                 .formatted(recordNo, PATIENT_NO, DOCTOR_NO);
         MvcResult r = mvc.perform(post("/api/v1/prescriptions").contentType("application/json").content(body))
@@ -337,6 +478,34 @@ class MedicalRecordFlowTest {
     private void submitPrescription(String rxNo) throws Exception {
         mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/submit"))
                 .andExpect(status().isOk());
+    }
+
+    /** 审方通过（PENDING_REVIEW → APPROVED） */
+    private void approvePrescription(String rxNo) throws Exception {
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+                        .contentType("application/json")
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}"))
+                .andExpect(status().isOk());
+    }
+
+    /** 创建已审通过的处方（DRAFT→submit→review APPROVE），返回 prescription_no */
+    private String createApprovedPrescription() throws Exception {
+        String rxNo = createPrescription();
+        submitPrescription(rxNo);
+        approvePrescription(rxNo);
+        return rxNo;
+    }
+
+    /** 创建已调剂的处方（开方→提交→审方→dispense），返回 prescription_no。需先 stub Feign */
+    private String createDispensedPrescription() throws Exception {
+        String rxNo = createApprovedPrescription();
+        when(drugFeignClient.outbound(any(), any())).thenReturn(
+                Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK_1", "D001", 50)));
+        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                .andExpect(status().isOk());
+        return rxNo;
     }
 
     /** 按 record_no 查 BIGINT 主键 id（内部接口用主键） */

@@ -83,7 +83,8 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         for (PrescriptionDTO.ItemRequest item : req.getItems()) {
             PrescriptionItem pi = new PrescriptionItem();
             pi.setPrescriptionId(p.getId());
-            // drugId 本批存 null（第 2 批 dispense 时通过 drug_no 反查回填）
+            // drug_id 保持 null（预留）；drugNo 非空时存 drug_no，dispense 时用它调 drug-service
+            pi.setDrugNo(item.getDrugNo());
             pi.setDrugNameSnapshot(item.getDrugName());
             pi.setSpecificationSnapshot(item.getSpecification());
             pi.setDosage(item.getDosage());
@@ -209,6 +210,84 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "处方正在被其他药师审方，请稍后重试: " + prescriptionNo);
         }
+    }
+
+    // ===== 缴费（APPROVED → PAID）=====
+
+    @Override
+    @Transactional
+    public PrescriptionDTO.PayResponse pay(String prescriptionNo, PrescriptionDTO.PayRequest req) {
+        Prescription p = requireByNo(prescriptionNo);
+        if (!"APPROVED".equals(p.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "仅已审通过处方可缴费，当前状态: " + p.getStatus());
+        }
+        p.setStatus("PAID");
+        p.setPaymentStatus("PAID");
+        p.setPaidAmount(req.getPaidAmount());
+        prescriptionMapper.updateById(p);
+        log.info("处方缴费: prescriptionNo={} paymentNo={} paidAmount={}",
+                prescriptionNo, req.getPaymentNo(), req.getPaidAmount());
+        return new PrescriptionDTO.PayResponse(p.getPrescriptionNo(), p.getStatus(),
+                p.getPaymentStatus(), p.getPaidAmount());
+    }
+
+    // ===== 调剂发药（APPROVED/PAID → DISPENSED，同步 Feign）=====
+
+    @Override
+    public PrescriptionDTO.DispenseResponse dispense(String prescriptionNo, PrescriptionDTO.DispenseRequest req) {
+        Prescription p = requireByNo(prescriptionNo);
+        // 状态校验：APPROVED 或 PAID 可调剂（架构文档 §6.2：APPROVED/PAID ──dispense──▶ DISPENSED）
+        String st = p.getStatus();
+        if (!"APPROVED".equals(st) && !"PAID".equals(st)) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方不可调剂，当前状态: " + st + "（须 APPROVED 或 PAID）");
+        }
+        String lockKey = RedisKey.PRESCRIPTION_LOCK + p.getId();
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.dispenseInTx(p, req));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方正在被调剂，请稍后重试: " + prescriptionNo);
+        }
+    }
+
+    // ===== 完成（DISPENSED → COMPLETED）=====
+
+    @Override
+    @Transactional
+    public PrescriptionDTO.CompleteResponse complete(String prescriptionNo) {
+        Prescription p = requireByNo(prescriptionNo);
+        if (!"DISPENSED".equals(p.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "仅已调剂处方可完成，当前状态: " + p.getStatus());
+        }
+        p.setStatus("COMPLETED");
+        prescriptionMapper.updateById(p);
+        log.info("处方完成: prescriptionNo={}", prescriptionNo);
+        return new PrescriptionDTO.CompleteResponse(p.getPrescriptionNo(), p.getStatus());
+    }
+
+    // ===== 退方（APPROVED/PAID → CANCELLED）=====
+
+    @Override
+    @Transactional
+    public PrescriptionDTO.CancelResponse cancel(String prescriptionNo, PrescriptionDTO.CancelRequest req) {
+        Prescription p = requireByNo(prescriptionNo);
+        String st = p.getStatus();
+        // 退方仅允许 APPROVED/PAID（已调剂/完成不可退，须走退药流程，后续 PR）
+        if (!"APPROVED".equals(st) && !"PAID".equals(st)) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方当前状态不可退方: " + st + "（仅 APPROVED/PAID 可退；已调剂须走退药流程）");
+        }
+        p.setStatus("CANCELLED");
+        p.setReviewComment((p.getReviewComment() == null ? "" : p.getReviewComment() + " | ")
+                + "退方原因: " + req.getCancelReason());
+        prescriptionMapper.updateById(p);
+        log.info("处方退方: prescriptionNo={} operator={} reason={}",
+                prescriptionNo, req.getOperatorId(), req.getCancelReason());
+        return new PrescriptionDTO.CancelResponse(p.getPrescriptionNo(), p.getStatus(), req.getCancelReason());
     }
 
     // ===== 内部校验 =====

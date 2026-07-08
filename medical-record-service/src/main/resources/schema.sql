@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS prescription (
 CREATE TABLE IF NOT EXISTS prescription_item (
     id                    BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
     prescription_id       BIGINT        NOT NULL                 COMMENT '处方 ID（prescription.id）',
-    drug_id               BIGINT                                 COMMENT '药品 ID（本批可空，第 2 批 dispense 时通过 drug_no 反查回填）',
+    drug_id               BIGINT                                 COMMENT '药品 ID（预留，本批 null；dispense 用 drug_no 调 drug-service）',
+    drug_no               VARCHAR(32)                            COMMENT '药品编号 drug_no（开方时存，dispense 时用它调 drug-service outbound）',
     drug_name_snapshot    VARCHAR(100)  NOT NULL                 COMMENT '药品名快照（防药品库变更影响历史处方）',
     specification_snapshot VARCHAR(100)                           COMMENT '规格快照',
     dosage                VARCHAR(50)                            COMMENT '单次剂量（如 30mg）',

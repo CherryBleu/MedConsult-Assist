@@ -26,8 +26,19 @@ public class PrescriptionItem extends BaseEntity {
     /** 处方 ID（BIGINT 主键，关联 prescription.id） */
     private Long prescriptionId;
 
-    /** 药品 ID（BIGINT，本批可空；第 2 批 dispense 时回填） */
+    /**
+     * 药品 ID（BIGINT 主键，跨服务引用 drug-service）。
+     * <p>本批保持 null：medical-record 无 drug 表无法 drugNo→drugId 反查，且 dispense 用 drug_no
+     * 调 drug-service outbound（接受 drugNo），无需 drug_id。此列预留供未来主键级关联。
+     */
     private Long drugId;
+
+    /**
+     * 药品编号 drug_no（第 2 批新增，业务编号如 DXXX）。
+     * <p>开方时若 ItemRequest.drugNo 非空则存入此列；dispense 时用它调 drug-service outbound。
+     * batch 1 历史处方（此列为 null）dispense 时须由 DispenseRequest.itemDrugNoMap 补传。
+     */
+    private String drugNo;
 
     /** 药品名快照（防药品库变更影响历史处方，《修改建议》§2.1） */
     private String drugNameSnapshot;

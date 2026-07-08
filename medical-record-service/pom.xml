@@ -35,10 +35,19 @@
             <artifactId>common-redis</artifactId>
         </dependency>
         <!--
-            注：本批（第 1 批）不依赖 common-feign / common-mq。
-            - common-feign：开方/审方不跨服务校验药品（drug_id 本批存 null，靠 drug_name_snapshot 展示）；
-              Feign + DrugFeignClient 留到第 2 批 dispense 调剂发药时一起引入。
-            - common-mq：缴费/调剂的异步通知留到第 2 批；本批无跨服务写一致性需求。
+            common-feign：第 2 批引入。
+            - 开方时 Feign 反查 drug-service 校验药品存在并存 drug_id（替代 batch 1 的 drug_id=null 占位）
+            - dispense 调剂发药同步调 drug-service /internal/drugs/{drugNo}/outbound 做 FEFO 出库
+            - 注：dispense 走同步 Feign（务实决策），架构文档 §6.2 原写的 MQ 异步为后续优化待办
+        -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-feign</artifactId>
+        </dependency>
+        <!--
+            注：本服务不依赖 common-mq。
+            - dispense 已选同步 Feign（见上），无需本地消息表
+            - notification/audit 的异步通知在 notification-service 侧消费，medical-record 只需写库
         -->
 
         <!-- SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象） -->
