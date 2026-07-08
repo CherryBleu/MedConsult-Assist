@@ -21,7 +21,8 @@
     {"key": "departmentId", "value": "1", "type": "string"},
     {"key": "scheduleId", "value": "", "type": "string"},
     {"key": "scheduleIdNum", "value": "1", "type": "string"},
-    {"key": "appointmentId", "value": "", "type": "string"}
+    {"key": "appointmentId", "value": "", "type": "string"},
+    {"key": "drugNo", "value": "", "type": "string"}
   ],
   "item": [
     {
@@ -600,6 +601,116 @@
               "raw": "{\n  \"appointmentStatus\": \"CHECKED_IN\",\n  \"remark\": \"患者已到院签到\"\n}"
             },
             "description": "## 2.5.6 更新就诊状态\n\n**状态流转**：\n- BOOKED → CHECKED_IN（签到）\n- CHECKED_IN → IN_PROGRESS（叫号就诊）\n- IN_PROGRESS → COMPLETED（就诊完成）\n- BOOKED/CHECKED_IN → NO_SHOW（爽约/过号）\n- CANCELLED 是终态，不可跳转\n\n**需登录**。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Drug 药品库存",
+      "description": "药品库存服务：药品/批次/出入库/流水/预警（接口文档 §2.7）。\n\n所有接口需登录（建议 PHARMACY_ADMIN 角色）。出入库用 Redis 分布式锁防超卖，FEFO 近效期先出。\n\n业务规则（需求 §4.1.5）：出库不超库存、FEFO 选批、库存低于阈值预警、过期药品不可出库。",
+      "item": [
+        {
+          "name": "1. 创建药品",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "    pm.collectionVariables.set('drugNo', json.data.drugId);",
+                  "    console.log('✅ drugNo 已保存:', json.data.drugId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{baseUrl}}/api/v1/drugs", "host": ["{{baseUrl}}"], "path": ["api", "v1", "drugs"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"genericName\": \"布洛芬\",\n  \"tradeName\": \"芬必得\",\n  \"specification\": \"200mg\",\n  \"dosageForm\": \"TABLET\",\n  \"manufacturer\": \"中美史克\",\n  \"unit\": \"盒\",\n  \"minStockThreshold\": 50,\n  \"contraindications\": [\"哮喘患者禁用\", \"消化道溃疡禁用\"],\n  \"interactions\": [\"与华法林合用增加出血风险\"]\n}"
+            },
+            "description": "## 2.7.1 创建药品\n\n**业务规则**：drugNo 自动生成（D+雪花ID base36），初始 current_stock=0。\n\ncontraindications/interactions 为字符串数组，入库为 JSON 串。\n\n**需登录**（PHARMACY_ADMIN）。"
+          }
+        },
+        {
+          "name": "2. 药品列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/drugs?keyword=布&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drugs"],
+              "query": [
+                {"key": "keyword", "value": "布", "description": "按通用名/商品名模糊查询（可选）"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.7.2 药品列表\n\n返回 drugId/genericName/stockQuantity/unit。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "3. 入库",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{baseUrl}}/api/v1/drugs/{{drugNo}}/stock/inbound", "host": ["{{baseUrl}}"], "path": ["api", "v1", "drugs", "{{drugNo}}", "stock", "inbound"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchNo\": \"BATCH20260715001\",\n  \"quantity\": 100,\n  \"unitPrice\": 12.50,\n  \"expireDate\": \"2028-12-31\",\n  \"supplier\": \"国药集团\"\n}"
+            },
+            "description": "## 2.7.3 药品入库\n\n**业务规则**：\n- 同 batchNo 累加 quantity，否则新建批次\n- drug.current_stock += quantity\n- 写 INBOUND 流水（before/after quantity）\n- 过期批次（expireDate < 今天）状态 EXPIRED，不参与出库\n\n**Redis 锁**：lock:drug:{id}:stock（租约 10s）\n\n**需登录**（PHARMACY_ADMIN）。"
+          }
+        },
+        {
+          "name": "4. 出库（FEFO 近效期先出）",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {"raw": "{{baseUrl}}/api/v1/drugs/{{drugNo}}/stock/outbound", "host": ["{{baseUrl}}"], "path": ["api", "v1", "drugs", "{{drugNo}}", "stock", "outbound"]},
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 30,\n  \"purpose\": \"PRESCRIPTION\",\n  \"relatedRecordId\": \"MR001\",\n  \"batchStrategy\": \"FEFO\"\n}"
+            },
+            "description": "## 2.7.4 药品出库（FEFO 核心算法）\n\n**FEFO 选批**（医疗强制，First Expired First Out）：\n1. 查 status=AVAILABLE AND expire_date>=今天 AND quantity>0\n2. ORDER BY expire_date ASC（近效期优先）\n3. 按顺序扣减各批次，跨批累计到请求 quantity\n4. 不足抛 `409 库存不足`\n\n**batchStrategy**：FEFO（默认）/ FIFO（按入库时间）/ MANUAL（暂不支持）\n\n**Redis 锁**：lock:drug:{id}:stock（租约 10s）防并发超卖\n\n**业务规则**：出库不超库存、过期批次跳过、多批次混合出库写多条 OUTBOUND 流水\n\n**需登录**（PHARMACY_ADMIN）。"
+          }
+        },
+        {
+          "name": "5. 库存流水",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/drugs/{{drugNo}}/stock/flows?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drugs", "{{drugNo}}", "stock", "flows"],
+              "query": [{"key": "page", "value": "1"}, {"key": "pageSize", "value": "20"}]
+            },
+            "description": "## 2.7.5 库存流水查询\n\n返回 INBOUND/OUTBOUND/ADJUST 流水（按 createdAt DESC），含 batchNo/type/quantity/createdAt。\n\n流水表只追加，不逻辑删除。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "6. 库存预警",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/drugs/stock/alerts?type=LOW_STOCK&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "drugs", "stock", "alerts"],
+              "query": [
+                {"key": "type", "value": "LOW_STOCK", "description": "LOW_STOCK（低库存）/ NEAR_EXPIRY（近效期，30天内）"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.7.6 库存预警\n\n**预警类型**：\n- `LOW_STOCK`：current_stock < min_stock_threshold\n- `NEAR_EXPIRY`：批次 expire_date 在 30 天内且 quantity>0\n\n**需登录**。"
           }
         }
       ]
