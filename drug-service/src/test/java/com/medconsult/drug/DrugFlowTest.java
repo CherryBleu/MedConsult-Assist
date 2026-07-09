@@ -188,6 +188,51 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data.items[?(@.drugName=='感冒灵')].threshold").value(org.hamcrest.Matchers.hasItem(100)));
     }
 
+    /**
+     * 回滚补偿：按 flow 粒度幂等，支持 dispense 失败重试产生的新 OUTBOUND。
+     * <p>场景（修复前会漏回滚第二条 OUTBOUND，导致库存永久漂移）：
+     * <ol>
+     *   <li>内部出库 5（OUT1）→ 库存 5</li>
+     *   <li>回滚（RETURN1，指向 OUT1）→ 库存 10</li>
+     *   <li>内部出库 5（OUT2，重试产生）→ 库存 5</li>
+     *   <li>再次回滚 → 应识别 OUT2 未回滚，补回 → 库存 10（修复前因全局 RETURN 存在直接跳过，库存停在 5）</li>
+     * </ol>
+     * 另验证幂等：对同一状态重复调回滚不重复补回（全回滚后再调返回 0）。
+     */
+    @Test
+    void rollbackOutbound_handlesRetryAndIsIdempotent() throws Exception {
+        String drugNo = createDrug("回滚测试药", 10);
+        Long drugId = queryDrugIdByNo(drugNo);
+        inbound(drugNo, "BATCH_RB", 10, "2028-01-01");
+
+        Long itemId = 9001L; // 测试用处方明细 ID
+        Long prescriptionId = 8001L;
+
+        // (1) 内部出库 5 → currentStock 5
+        internalOutbound(drugNo, 5, prescriptionId, itemId);
+        assertCurrentStock(drugId, 5);
+
+        // (2) 回滚 → currentStock 10（RETURN1 补回）
+        int n1 = rollbackOutbound(drugNo, itemId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, n1, "第一次回滚应补回 1 条");
+        assertCurrentStock(drugId, 10);
+
+        // (3) 重试：再次内部出库 5（产生 OUT2）→ currentStock 5
+        internalOutbound(drugNo, 5, prescriptionId, itemId);
+        assertCurrentStock(drugId, 5);
+
+        // (4) 再次回滚 → 必须识别 OUT2 未回滚并补回 → currentStock 10
+        //     修复前：因 RETURN1 已存在，全局跳过，OUT2 不补回，currentStock 停在 5（BUG）
+        int n2 = rollbackOutbound(drugNo, itemId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, n2, "第二次回滚应补回新 OUTBOUND 1 条");
+        assertCurrentStock(drugId, 10);
+
+        // 幂等：全回滚后重复调用，应返回 0，不重复补回
+        int n3 = rollbackOutbound(drugNo, itemId);
+        org.junit.jupiter.api.Assertions.assertEquals(0, n3, "全回滚后重复调用应返回 0");
+        assertCurrentStock(drugId, 10);
+    }
+
     @Test
     void internalRiskInfoAndFfeoBatches() throws Exception {
         String drugNo = createDrug("氯氮平", 10);
@@ -277,5 +322,32 @@ class DrugFlowTest {
     private void addStockDirectly(Long drugId, int delta) {
         org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
         jdbc.update("UPDATE drug SET current_stock = COALESCE(current_stock, 0) + ? WHERE id = ?", delta, drugId);
+    }
+
+    /** 内部出库（POST /internal/drugs/{drugNo}/outbound），带处方溯源。 */
+    private void internalOutbound(String drugNo, int quantity, Long prescriptionId, Long itemId) throws Exception {
+        String body = """
+                {"quantity":%d,"purpose":"DISPENSE","batchStrategy":"FEFO","prescriptionId":%d,"prescriptionItemId":%d}""".formatted(
+                quantity, prescriptionId, itemId);
+        mvc.perform(post("/internal/drugs/" + drugNo + "/outbound")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    /** 内部回滚出库（POST /internal/drugs/{drugNo}/rollback-outbound），返回回滚的 flow 条数。 */
+    private int rollbackOutbound(String drugNo, Long itemId) throws Exception {
+        MvcResult r = mvc.perform(post("/internal/drugs/" + drugNo + "/rollback-outbound")
+                        .param("prescriptionItemId", String.valueOf(itemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andReturn();
+        return om.readTree(r.getResponse().getContentAsString()).at("/data").asInt();
+    }
+
+    /** 断言某药品当前总库存。 */
+    private void assertCurrentStock(Long drugId, int expected) throws Exception {
+        mvc.perform(get("/internal/drugs/" + drugId + "/current-stock"))
+                .andExpect(jsonPath("$.data").value(expected));
     }
 }

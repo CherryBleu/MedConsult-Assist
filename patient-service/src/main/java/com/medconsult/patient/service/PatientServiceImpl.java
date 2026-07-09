@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import com.medconsult.common.web.MaskType;
 import com.medconsult.patient.dto.PatientDTO;
@@ -249,6 +250,15 @@ public class PatientServiceImpl implements PatientService {
             return List.of();
         }
         return fromJsonArray(p.getAllergies());
+    }
+
+    // ===== 内部接口：resolveId（架构文档 §2.3 补充）=====
+
+    @Override
+    public EntityIdDTO internalResolveId(String patientNo) {
+        // 复用 requireByPatientNo：不存在直接抛 NOT_FOUND（由 FeignErrorDecoder 传给调用方）
+        Patient p = requireByPatientNo(patientNo);
+        return EntityIdDTO.of(p.getId());
     }
 
     // ===== 私有助手 =====

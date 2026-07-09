@@ -43,7 +43,15 @@ public class IdempotentConsumer {
         // SETNX：仅当 key 不存在时设置，返回 true=首次
         Boolean firstTime = redis.opsForValue().setIfAbsent(key, "1", window);
         if (Boolean.TRUE.equals(firstTime)) {
-            return action.get();
+            // 关键：action 失败必须回滚幂等标记，否则 MQ 重投会被判"已处理"→ 消息永久丢失。
+            // 推荐消费者改用 isAlreadyProcessed + 业务 + markProcessed 三步法（见 NotificationConsumer），
+            // 本方法保留 try-finally 兜底：action 抛异常时删除标记，允许 MQ 重投重试。
+            try {
+                return action.get();
+            } catch (RuntimeException e) {
+                redis.delete(key);
+                throw e;
+            }
         }
         // 已处理：幂等跳过
         return null;

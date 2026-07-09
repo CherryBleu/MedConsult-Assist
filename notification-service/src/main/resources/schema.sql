@@ -53,3 +53,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
     KEY idx_audit_action (action),
     KEY idx_audit_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='审计日志表（只追加，无逻辑删除）';
+
+-- local_message 本地消息表（架构文档 §6.1 / §3.2）
+-- MessageDispatcher 扫描此表投递 RabbitMQ；notification-service 是唯一生产端（依赖 common-mq）。
+-- 状态机：PENDING → SENT → CONFIRMED；失败退避重试 SENT → SENT...，超 maxRetry 置 FAILED。
+-- 流水语义：只追加 + 状态更新，无逻辑删除（同 audit_log）。
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    message_no      VARCHAR(64)   NOT NULL                 COMMENT '业务唯一键（消费者幂等去重用）',
+    exchange        VARCHAR(100)                           COMMENT '目标交换机',
+    routing_key     VARCHAR(100)                           COMMENT '路由键',
+    payload_json    TEXT                                   COMMENT '消息载荷（JSON 字符串）',
+    status          VARCHAR(20)   NOT NULL                 COMMENT '状态：PENDING/SENT/CONFIRMED/FAILED',
+    retry_count     INT           NOT NULL DEFAULT 0       COMMENT '已重试次数',
+    next_retry_at   DATETIME(3)                            COMMENT '下次重试时间（退避调度用）',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_local_message_no (message_no),
+    KEY idx_local_message_status_retry (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（可靠投递，MessageDispatcher 扫描）';

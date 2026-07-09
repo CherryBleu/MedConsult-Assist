@@ -49,4 +49,17 @@ public interface DrugFeignClient {
     Result<DispenseDTO.OutboundResponse> outbound(
             @PathVariable("drugNo") String drugNo,
             @RequestBody DispenseDTO.OutboundRequest req);
+
+    /**
+     * 内部：按处方明细回滚出库（补偿 medical-record dispense 调剂失败）。
+     * <p>把该明细此前 FEFO 扣减的库存原样还回对应批次。同明细重复调用幂等。
+     *
+     * @param drugNo            药品业务编号
+     * @param prescriptionItemId 处方明细 ID
+     * @return 回滚的 flow 条数（0 = 无可回滚）
+     */
+    @PostMapping("/internal/drugs/{drugNo}/rollback-outbound")
+    Result<Integer> rollbackOutbound(
+            @PathVariable("drugNo") String drugNo,
+            @RequestParam("prescriptionItemId") Long prescriptionItemId);
 }

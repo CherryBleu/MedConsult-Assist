@@ -7,11 +7,16 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.DoctorFeignClient;
+import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
 import com.medconsult.medicalrecord.prescription.entity.PrescriptionItem;
+import com.medconsult.medicalrecord.medicalrecord.entity.MedicalRecord;
 import com.medconsult.medicalrecord.prescription.mapper.PrescriptionItemMapper;
 import com.medconsult.medicalrecord.prescription.mapper.PrescriptionMapper;
 import lombok.RequiredArgsConstructor;
@@ -54,6 +59,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     private final DistributedLock distributedLock;
     /** 锁内事务体（独立 Bean，避免 self-injection 循环依赖） */
     private final PrescriptionTxService txService;
+    /** record_no → medical_record.id 同服务反查 */
+    private final com.medconsult.medicalrecord.medicalrecord.mapper.MedicalRecordMapper medicalRecordMapper;
+    /** patient_no / doctor_no / department_no → 真实主键 Feign 反查（替代正哈希） */
+    private final PatientFeignClient patientFeignClient;
+    private final DoctorFeignClient doctorFeignClient;
 
     /** 审方/缴费/完成/退方锁租约：5s（只改主表状态，单次 DB 操作） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
@@ -68,11 +78,14 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     public PrescriptionDTO.CreateResponse create(PrescriptionDTO.CreateRequest req) {
         Prescription p = new Prescription();
         p.setPrescriptionNo(generatePrescriptionNo());
-        p.setRecordId(positiveHash(req.getRecordId()));
-        p.setPatientId(positiveHash(req.getPatientId()));
-        p.setDoctorId(positiveHash(req.getDoctorId()));
+        // 关联主键全部反查真实 id，替代正哈希占位（根治串号）：
+        // - recordId：record_no → medical_record.id（同服务直查）
+        // - patientId/doctorId/departmentId：业务编号 → 真实主键（Feign 反查 patient/outpatient）
+        p.setRecordId(resolveRecordId(req.getRecordId()));
+        p.setPatientId(resolvePatientId(req.getPatientId()));
+        p.setDoctorId(resolveDoctorId(req.getDoctorId()));
         if (req.getDepartmentId() != null && !req.getDepartmentId().isBlank()) {
-            p.setDepartmentId(positiveHash(req.getDepartmentId()));
+            p.setDepartmentId(resolveDepartmentId(req.getDepartmentId()));
         }
         p.setStatus("DRAFT");
         p.setPaymentStatus("UNPAID");
@@ -312,13 +325,53 @@ public class PrescriptionServiceImpl implements PrescriptionService {
 
     // ===== 私有助手 =====
 
-    /** 业务编号 → 正哈希 Long（与病历域同款策略） */
-    private static long positiveHash(String businessNo) {
-        if (businessNo == null) {
-            return 0L;
+    /** record_no → medical_record.id（同服务直查）。不存在抛 NOT_FOUND。 */
+    private Long resolveRecordId(String recordNo) {
+        if (recordNo == null || recordNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "病历编号不能为空");
         }
-        long h = businessNo.hashCode();
-        return h == Long.MIN_VALUE ? 0L : Math.abs(h);
+        MedicalRecord mr = medicalRecordMapper.selectOne(
+                new QueryWrapper<MedicalRecord>().eq("record_no", recordNo));
+        if (mr == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "病历不存在: " + recordNo);
+        }
+        return mr.getId();
+    }
+
+    /** patient_no → 真实主键（Feign 反查 patient-service）。 */
+    private Long resolvePatientId(String patientNo) {
+        if (patientNo == null || patientNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
+        }
+        Result<EntityIdDTO> resp = patientFeignClient.resolveId(patientNo);
+        if (resp == null || resp.data() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "患者不存在: " + patientNo);
+        }
+        return resp.data().id();
+    }
+
+    /** doctor_no → 真实主键（Feign 反查 outpatient-service）。 */
+    private Long resolveDoctorId(String doctorNo) {
+        if (doctorNo == null || doctorNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "医生编号不能为空");
+        }
+        Result<EntityIdDTO> resp = doctorFeignClient.resolveDoctorId(doctorNo);
+        if (resp == null || resp.data() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
+        }
+        return resp.data().id();
+    }
+
+    /** department_no → 真实主键（Feign 反查 outpatient-service）。 */
+    private Long resolveDepartmentId(String departmentNo) {
+        if (departmentNo == null || departmentNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "科室编号不能为空");
+        }
+        Result<EntityIdDTO> resp = doctorFeignClient.resolveDepartmentId(departmentNo);
+        if (resp == null || resp.data() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + departmentNo);
+        }
+        return resp.data().id();
     }
 
     /** 生成处方编号：RX + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_prescription_no 兜底 */

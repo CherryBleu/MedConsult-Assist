@@ -60,10 +60,15 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthDTO.UserInfo register(AuthDTO.RegisterRequest req) {
-        // 角色白名单校验（DTO 层格式校验已通过，这里校验业务合法性）
-        if (!AuthDTO.isValidRole(req.getRole())) {
+        // 角色白名单校验：自助注册仅允许 PATIENT / DOCTOR（防越权——管理类角色
+        // PHARMACY_ADMIN / HOSPITAL_ADMIN 不可自助注册，必须由管理员后台授予）。
+        // role 为空时默认 PATIENT。
+        String role = (req.getRole() == null || req.getRole().isBlank())
+                ? "PATIENT" : req.getRole();
+        if (!AuthDTO.SELF_REGISTER_ROLES.contains(role)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR,
-                    "非法角色: " + req.getRole() + "（允许: " + AuthDTO.ALLOWED_ROLES + "）");
+                    "非法角色: " + req.getRole() + "（自助注册仅允许: " + AuthDTO.SELF_REGISTER_ROLES
+                            + "，管理类角色需由管理员授予）");
         }
 
         // 唯一性校验：account 必填（DTO @NotBlank 保证），phone 选填但若有则需唯一。
@@ -90,7 +95,7 @@ public class AuthServiceImpl implements AuthService {
         userMapper.insert(u);
 
         return new AuthDTO.UserInfo(
-                u.getUserNo(), u.getName(), req.getRole(),
+                u.getUserNo(), u.getName(), role,
                 req.getPatientId(), req.getDoctorId(), u.getStatus());
     }
 

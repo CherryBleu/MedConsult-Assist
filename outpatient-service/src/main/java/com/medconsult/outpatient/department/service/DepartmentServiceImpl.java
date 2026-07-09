@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.outpatient.department.dto.DepartmentDTO;
 import com.medconsult.outpatient.department.entity.Department;
 import com.medconsult.outpatient.department.mapper.DepartmentMapper;
@@ -69,5 +70,10 @@ public class DepartmentServiceImpl implements DepartmentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + departmentNo);
         }
         return d;
+    }
+
+    @Override
+    public EntityIdDTO internalResolveId(String departmentNo) {
+        return EntityIdDTO.of(requireByNo(departmentNo).getId());
     }
 }

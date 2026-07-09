@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.outpatient.department.entity.Department;
 import com.medconsult.outpatient.department.mapper.DepartmentMapper;
 import com.medconsult.outpatient.doctor.dto.DoctorDTO;
@@ -105,6 +106,11 @@ public class DoctorServiceImpl implements DoctorService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
         }
         return d;
+    }
+
+    @Override
+    public EntityIdDTO internalResolveId(String doctorNo) {
+        return EntityIdDTO.of(requireByNo(doctorNo).getId());
     }
 
     // ===== 私有助手 =====

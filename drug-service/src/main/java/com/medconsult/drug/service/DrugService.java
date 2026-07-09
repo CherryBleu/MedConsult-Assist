@@ -44,4 +44,15 @@ public interface DrugService {
 
     /** 内部：某药品当前总库存（drug.current_stock） */
     int getCurrentStock(Long drugId);
+
+    /**
+     * 内部：按处方明细回滚出库（补偿调剂失败）。
+     * <p>供 medical-record dispense 失败时，对已成功扣减的明细反向补回库存。
+     * 同明细重复调用幂等（已回滚的 flow 不再处理）。
+     *
+     * @param drugNo            药品业务编号
+     * @param prescriptionItemId 处方明细 ID
+     * @return 回滚的 flow 条数（0 = 无可回滚）
+     */
+    int rollbackOutboundByItem(String drugNo, Long prescriptionItemId);
 }

@@ -141,19 +141,17 @@ public class AppointmentServiceImpl implements AppointmentService {
         qw.orderByDesc("created_at");
         IPage<Appointment> result = appointmentMapper.selectPage(p, qw);
 
-        // 组装医生名/科室名
-        List<Long> doctorIds = new ArrayList<>();
-        List<Long> deptIds = new ArrayList<>();
+        // 组装医生名/科室名（用 LinkedHashSet 去重，O(n)；避免 ArrayList.contains 的 O(n²)）
+        Set<Long> doctorIdSet = new java.util.LinkedHashSet<>();
+        Set<Long> deptIdSet = new java.util.LinkedHashSet<>();
         for (Appointment a : result.getRecords()) {
-            if (a.getDoctorId() != null && !doctorIds.contains(a.getDoctorId())) {
-                doctorIds.add(a.getDoctorId());
-            }
-            if (a.getDepartmentId() != null && !deptIds.contains(a.getDepartmentId())) {
-                deptIds.add(a.getDepartmentId());
-            }
+            if (a.getDoctorId() != null) doctorIdSet.add(a.getDoctorId());
+            if (a.getDepartmentId() != null) deptIdSet.add(a.getDepartmentId());
         }
-        Map<Long, Doctor> doctorMap = toDoctorMap(doctorMapper.selectBatchIds(doctorIds));
-        Map<Long, Department> deptMap = toDeptMap(departmentMapper.selectBatchIds(deptIds));
+        Map<Long, Doctor> doctorMap = toDoctorMap(
+                doctorMapper.selectBatchIds(doctorIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(doctorIdSet)));
+        Map<Long, Department> deptMap = toDeptMap(
+                departmentMapper.selectBatchIds(deptIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(deptIdSet)));
 
         List<AppointmentDTO.ListItem> items = new ArrayList<>();
         for (Appointment a : result.getRecords()) {

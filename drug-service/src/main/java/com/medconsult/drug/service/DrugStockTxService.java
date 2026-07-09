@@ -243,6 +243,129 @@ public class DrugStockTxService {
     // ===== 私有助手 =====
 
     /**
+     * 出库回滚事务体（锁内执行，补偿调剂失败用）。
+     *
+     * <p>按 prescriptionItemId 反查该明细此前所有 OUTBOUND flow，逐条把数量还回对应批次
+     * （batch.quantity += flow.quantity），并把 drug.current_stock 加回，每条写一条 RETURN flow。
+     *
+     * <p>用途：medical-record dispense 多明细逐条扣减时，若第 N 条失败，前 N-1 条已扣减的库存
+     * 需补回——由 medical-record 对已成功的明细逐条调本方法，保证库存一致。
+     *
+     * <p><b>幂等（不改流水表）</b>：流水表只追加不更新（架构文档 §5.1）。RETURN flow 通过
+     * {@code related_record_id} 指向被它回滚的那条 OUTBOUND flow 的主键，实现<b>按 flow 粒度</b>的
+     * 幂等匹配——只回滚尚未被任何 RETURN 引用的 OUTBOUND flow。
+     * <p><b>支持多次重试</b>（关键）：dispense 失败重试是正常用户流程（药师补货后重调剂），
+     * 重试会在同一 prescriptionItemId 上产生新的 OUTBOUND flow。若用"全局 RETURN 存在即跳过"判幂等，
+     * 第二次失败时新产生的 OUTBOUND 永远不会被回滚（被首次的 RETURN 短路）→ 库存永久漂移。
+     * 按每条 OUTBOUND 是否已有对应 RETURN 来判断，可正确逐条补偿，不漏不重。
+     *
+     * @param drugId            药品主键（锁外解析）
+     * @param drugNo            药品编号（日志用）
+     * @param prescriptionItemId 处方明细 ID（溯源键）
+     * @return 本次实际回滚的 flow 条数（0 = 无可回滚，或全部已回滚过）
+     */
+    @Transactional
+    public int rollbackOutboundByItem(Long drugId, String drugNo, Long prescriptionItemId) {
+        if (prescriptionItemId == null) {
+            return 0;
+        }
+
+        // 查该明细的所有 OUTBOUND flow（FEFO 跨批次可能多条）
+        List<DrugStockFlow> outboundFlows = flowMapper.selectList(
+                new QueryWrapper<DrugStockFlow>()
+                        .eq("drug_id", drugId)
+                        .eq("prescription_item_id", prescriptionItemId)
+                        .eq("type", "OUTBOUND"));
+        if (outboundFlows.isEmpty()) {
+            return 0;
+        }
+
+        // 查该明细所有 RETURN flow，取它们 related_record_id 指向的"已被回滚的 OUTBOUND 主键"集合。
+        // （related_record_id 在 RETURN 上语义为"被回滚的源 OUTBOUND flow.id"，与本明细的 OUTBOUND 配对。）
+        List<DrugStockFlow> returnFlows = flowMapper.selectList(
+                new QueryWrapper<DrugStockFlow>()
+                        .eq("drug_id", drugId)
+                        .eq("prescription_item_id", prescriptionItemId)
+                        .eq("type", "RETURN")
+                        .isNotNull("related_record_id"));
+        java.util.Set<Long> restoredOutboundIds = new java.util.HashSet<>();
+        for (DrugStockFlow rf : returnFlows) {
+            if (rf.getRelatedRecordId() != null) {
+                restoredOutboundIds.add(rf.getRelatedRecordId());
+            }
+        }
+
+        // 过滤出尚未被回滚的 OUTBOUND flow（按 flow 粒度幂等，支持重试产生的新 OUTBOUND）
+        List<DrugStockFlow> toRestore = new java.util.ArrayList<>();
+        for (DrugStockFlow of : outboundFlows) {
+            if (!restoredOutboundIds.contains(of.getId())) {
+                toRestore.add(of);
+            }
+        }
+        if (toRestore.isEmpty()) {
+            log.info("出库回滚幂等跳过（全部已回滚过）: drugNo={} prescriptionItemId={}", drugNo, prescriptionItemId);
+            return 0;
+        }
+
+        Drug drug = drugMapper.selectById(drugId);
+        if (drug == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "药品不存在: " + drugNo);
+        }
+        int runningStock = drug.getCurrentStock() == null ? 0 : drug.getCurrentStock();
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+
+        for (DrugStockFlow of : toRestore) {
+            int qty = of.getQuantity() == null ? 0 : of.getQuantity();
+            if (qty <= 0) {
+                continue;
+            }
+            // 还回原批次
+            if (of.getBatchId() != null) {
+                DrugStockBatch batch = batchMapper.selectById(of.getBatchId());
+                if (batch != null) {
+                    batch.setQuantity((batch.getQuantity() == null ? 0 : batch.getQuantity()) + qty);
+                    // 回滚后批次若有量且未过期，恢复 AVAILABLE（出库时不会改 status，这里防御性恢复）
+                    boolean notExpired = batch.getExpireDate() != null
+                            && !batch.getExpireDate().isBefore(LocalDate.now());
+                    if (notExpired) {
+                        batch.setStatus("AVAILABLE");
+                    }
+                    batchMapper.updateById(batch);
+                }
+            }
+            // current_stock 加回
+            int before = runningStock;
+            int after = runningStock + qty;
+            runningStock = after;
+
+            // 写 RETURN flow（流水表只追加，记录回滚；不改原 OUTBOUND flow，保溯源链）。
+            // related_record_id 指向被回滚的源 OUTBOUND flow.id，供下次调用按 flow 粒度判幂等。
+            DrugStockFlow rf = new DrugStockFlow();
+            rf.setFlowNo(generateFlowNo());
+            rf.setDrugId(drugId);
+            rf.setBatchId(of.getBatchId());
+            rf.setType("RETURN");
+            rf.setQuantity(qty);
+            rf.setBeforeQuantity(before);
+            rf.setAfterQuantity(after);
+            rf.setRelatedRecordId(of.getId());
+            rf.setPrescriptionId(of.getPrescriptionId());
+            rf.setPrescriptionItemId(prescriptionItemId);
+            rf.setRemark("调剂失败回滚 原flow=" + of.getFlowNo());
+            rf.setCreatedAt(now);
+            flowMapper.insert(rf);
+        }
+
+        // 更新 drug.current_stock（drug 表可更新，非流水表）
+        drug.setCurrentStock(runningStock);
+        drugMapper.updateById(drug);
+
+        log.info("出库回滚: drugNo={} prescriptionItemId={} 回滚flow数={} stock->{}",
+                drugNo, prescriptionItemId, toRestore.size(), runningStock);
+        return toRestore.size();
+    }
+
+    /**
      * 根据有效期判断批次状态：过期则 EXPIRED，否则 AVAILABLE。
      * （入库时即使已过期也记录，但不参与出库——出库 SQL 过滤了 status=AVAILABLE 且 expire_date>=today）
      */

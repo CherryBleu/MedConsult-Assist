@@ -16,6 +16,8 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: guest
     password: guest
+    # publisher confirm（MessageDispatcher 可靠投递测试前提）
+    publisher-confirm-type: correlated
   data:
     redis:
       host: ${REDIS_HOST:localhost}

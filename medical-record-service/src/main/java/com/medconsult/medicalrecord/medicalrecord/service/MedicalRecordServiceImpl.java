@@ -10,6 +10,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.DoctorFeignClient;
+import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
 import com.medconsult.medicalrecord.medicalrecord.entity.MedicalRecord;
 import com.medconsult.medicalrecord.medicalrecord.mapper.MedicalRecordMapper;
@@ -47,6 +51,9 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     private final MedicalRecordMapper medicalRecordMapper;
     private final ObjectMapper objectMapper;
+    /** Feign 反查 patient_no / doctor_no → 真实 BIGINT 主键（替代正哈希占位，根治串号） */
+    private final PatientFeignClient patientFeignClient;
+    private final DoctorFeignClient doctorFeignClient;
 
     // ===== §2.6.1 创建 =====
 
@@ -55,9 +62,12 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     public MedicalRecordDTO.CreateResponse create(MedicalRecordDTO.CreateRequest req) {
         MedicalRecord r = new MedicalRecord();
         r.setRecordNo(generateRecordNo());
-        r.setPatientId(positiveHash(req.getPatientId()));
-        r.setDoctorId(positiveHash(req.getDoctorId()));
+        // patient/doctor 用 Feign 反查真实主键（替代正哈希，根治跨患者/医生串号）。
+        // patient_no/doctor_no 不存在时 Feign 返回 NOT_FOUND → BusinessException，事务回滚。
+        r.setPatientId(resolvePatientId(req.getPatientId()));
+        r.setDoctorId(resolveDoctorId(req.getDoctorId()));
         if (req.getAppointmentId() != null && !req.getAppointmentId().isBlank()) {
+            // appointment 反查待 outpatient 暴露接口；暂用正哈希占位（可空、非查询键，影响有限）
             r.setAppointmentId(positiveHash(req.getAppointmentId()));
         }
         r.setChiefComplaint(req.getChiefComplaint());
@@ -79,8 +89,9 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Override
     public MedicalRecordDTO.DetailResponse detail(String recordNo) {
         MedicalRecord r = requireByNo(recordNo);
-        // patientId/doctorId 在落库时是哈希，详情接口回传业务编号需 Feign 反查；本批无 Feign，
-        // 暂回传 null（避免传哈希误导调用方）。下一批接 patient/doctor Feign 后回填真实编号。
+        // patientId/doctorId 落库已是真实主键（create 时 Feign 反查 no→id）；但详情接口回传
+        // 业务编号需 id→no 反向解析，目前未实现（display 反查是独立需求，留待下一批）。
+        // 暂回传 null（避免传主键误导调用方当作 patient_no 使用）。
         return new MedicalRecordDTO.DetailResponse(
                 r.getRecordNo(),
                 null,
@@ -97,8 +108,9 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         Page<MedicalRecord> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
         if (patientId != null && !patientId.isBlank()) {
-            // patientId 传的是业务编号（patient_no），落库时存的是其正哈希；用同款哈希过滤
-            qw.eq("patient_id", positiveHash(patientId));
+            // patientId 传的是业务编号（patient_no），反查真实主键后过滤。
+            // patient_no 不存在 → NOT_FOUND（合理：查不存在的患者自然查不到病历）
+            qw.eq("patient_id", resolvePatientId(patientId));
         }
         qw.orderByDesc("created_at");
         IPage<MedicalRecord> result = medicalRecordMapper.selectPage(p, qw);
@@ -232,13 +244,40 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         }
     }
 
-    /** 业务编号 → 正哈希 Long（同款策略见 outpatient AppointmentTxService）。下一批接 Feign 后替换为真实主键反查。 */
+    /** 业务编号 → 正哈希 Long（仅 appointment 占位用；patient/doctor 已改 Feign 反查）。 */
     private static long positiveHash(String businessNo) {
         if (businessNo == null) {
             return 0L;
         }
         long h = businessNo.hashCode();
         return h == Long.MIN_VALUE ? 0L : Math.abs(h);
+    }
+
+    /**
+     * patient_no → 真实 BIGINT 主键（Feign 反查 patient-service）。
+     * <p>不存在时下游返回 NOT_FOUND → FeignErrorDecoder 转 BusinessException，由调用方/事务处理。
+     */
+    private Long resolvePatientId(String patientNo) {
+        if (patientNo == null || patientNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
+        }
+        Result<EntityIdDTO> resp = patientFeignClient.resolveId(patientNo);
+        if (resp == null || resp.data() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "患者不存在: " + patientNo);
+        }
+        return resp.data().id();
+    }
+
+    /** doctor_no → 真实 BIGINT 主键（Feign 反查 outpatient-service）。 */
+    private Long resolveDoctorId(String doctorNo) {
+        if (doctorNo == null || doctorNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "医生编号不能为空");
+        }
+        Result<EntityIdDTO> resp = doctorFeignClient.resolveDoctorId(doctorNo);
+        if (resp == null || resp.data() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
+        }
+        return resp.data().id();
     }
 
     /** 生成病历编号：MR + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_record_no 兜底 */

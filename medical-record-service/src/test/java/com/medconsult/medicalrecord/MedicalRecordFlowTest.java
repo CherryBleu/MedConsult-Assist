@@ -5,7 +5,11 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DrugFeignClient;
+import com.medconsult.common.feign.client.DoctorFeignClient;
+import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.DispenseDTO;
+import com.medconsult.common.feign.dto.EntityIdDTO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -71,9 +75,34 @@ class MedicalRecordFlowTest {
     @MockBean
     DrugFeignClient drugFeignClient;
 
+    /**
+     * Mock Patient/Doctor FeignClient：create/list 现在通过 Feign 反查真实主键（替代正哈希），
+     * 测试环境无 patient/outpatient 实例，需 stub resolve 方法返回确定性 id。
+     */
+    @MockBean
+    PatientFeignClient patientFeignClient;
+
+    @MockBean
+    DoctorFeignClient doctorFeignClient;
+
     private static final String PATIENT_NO = "P202607060001";
     private static final String DOCTOR_NO = "D10001";
     private static final String PHARMACIST_NO = "PH2001";
+
+    /**
+     * 统一 stub Feign 反查：任意业务编号 → 固定确定性主键。
+     * <p>用编号的稳定派生值（避免与 H2 预置数据冲突），让 create/list 行为可预期。
+     * 个别测试可在方法内 reset 重写（如测 NOT_FOUND 路径）。
+     */
+    @BeforeEach
+    void stubFeignIdResolution() {
+        when(patientFeignClient.resolveId(any()))
+                .thenReturn(Result.ok(EntityIdDTO.of(1001L)));
+        when(doctorFeignClient.resolveDoctorId(any()))
+                .thenReturn(Result.ok(EntityIdDTO.of(2001L)));
+        when(doctorFeignClient.resolveDepartmentId(any()))
+                .thenReturn(Result.ok(EntityIdDTO.of(3001L)));
+    }
 
     // ===== 病历域 =====
 

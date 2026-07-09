@@ -1,6 +1,7 @@
 package com.medconsult.patient.controller;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import com.medconsult.patient.service.PatientService;
 import lombok.RequiredArgsConstructor;
@@ -40,5 +41,14 @@ public class PatientInternalController {
     @GetMapping("/{patientId}/allergies")
     public Result<List<String>> allergies(@PathVariable Long patientId) {
         return Result.ok(patientService.internalAllergies(patientId));
+    }
+
+    /**
+     * 架构文档 §2.3 补充：按 patient_no 反查 BIGINT 主键（供 medical-record 落库存真实主键）。
+     * <p>替代正哈希占位，根治跨患者数据串号风险。未找到返回 404。
+     */
+    @GetMapping("/no/{patientNo}/id")
+    public Result<EntityIdDTO> resolveId(@PathVariable String patientNo) {
+        return Result.ok(patientService.internalResolveId(patientNo));
     }
 }

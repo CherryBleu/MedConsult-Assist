@@ -24,6 +24,10 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:medconsult}
     password: ${RABBITMQ_PASSWORD:medconsult123}
+    # publisher confirm（MessageDispatcher 可靠投递前提）：broker 确认收到才置 CONFIRMED
+    publisher-confirm-type: correlated
+    # 消息找不到队列时退回（而非丢弃），便于排障
+    publisher-returns: true
     # 消费端重试：common-mq 未配，本服务自配（架构文档风险缓解）
     listener:
       simple:

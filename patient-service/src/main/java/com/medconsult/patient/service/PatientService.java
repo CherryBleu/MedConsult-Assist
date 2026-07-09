@@ -1,6 +1,7 @@
 package com.medconsult.patient.service;
 
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import com.medconsult.patient.dto.PatientDTO;
 
@@ -45,4 +46,10 @@ public interface PatientService {
      * <p>供 ai-service / drug-service 用药分析快速查过敏。
      */
     List<String> internalAllergies(Long patientId);
+
+    /**
+     * 内部接口：按 patient_no 反查 BIGINT 主键（架构文档 §2.3 补充）。
+     * <p>供 medical-record-service 落库存真实主键，替代正哈希占位。未找到抛 NOT_FOUND。
+     */
+    EntityIdDTO internalResolveId(String patientNo);
 }

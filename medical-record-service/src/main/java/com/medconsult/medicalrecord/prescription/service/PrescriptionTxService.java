@@ -103,16 +103,17 @@ public class PrescriptionTxService {
      *       <li>quantity BigDecimal → int（小数拒绝 PARAM_ERROR，药品库存按整数件）</li>
      *       <li>Feign 调 drug-service POST /internal/drugs/{drugNo}/outbound（FEFO 扣减）</li>
      *       <li>成功 → 回写 item.dispensedQuantity + 返回 flowNo</li>
-     *       <li>失败（库存不足 CONFLICT / 药品不存在 NOT_FOUND）→ 抛异常，整事务回滚</li>
      *     </ul>
      *   </li>
      *   <li>全部扣减成功 → 处方状态 → DISPENSED</li>
      * </ol>
      *
-     * <p><b>⚠️ 同步 Feign 跨服务事务限制</b>：drug-service 的 outbound 是独立事务且已提交，
-     * 本方法事务回滚<b>无法回滚</b> drug 那边的扣减。缓解：扣减前不做批量预校验（库存实时变化，
-     * 预校验也无意义），而是接受"部分扣减后失败需人工对账"的现实。彻底方案是改 MQ 异步（架构文档
-     * §6.2 待办），drug-service 消费失败时不提交。本批在代码注释和架构文档明确此限制。
+     * <p><b>同步 Feign 跨服务事务限制与补偿</b>：drug-service 的 outbound 是独立事务且已提交，
+     * 本方法事务回滚<b>无法</b>自动回滚 drug 那边的扣减。缓解：逐条扣减时记录已成功明细，
+     * 整个扣减+收尾流程用 try/catch 包裹——<b>任意失败点</b>（循环内 drugNo 缺失 / qty 非法 /
+     * Feign 业务错误，以及循环后状态更新异常）都统一调用 {@link #rollbackDispensed} 反向调
+     * drug-service rollback-outbound 把库存补回（按 prescriptionItemId 查未回滚的 OUTBOUND flow
+     * 还回原批次），再抛原异常让本事务回滚。补偿本身失败则记 ERROR 日志留人工对账。
      *
      * @param p   锁外解析的处方（状态以锁内重查为准）
      * @param req 调剂请求（含 pharmacistId + 可选 itemDrugNoMap）
@@ -139,66 +140,76 @@ public class PrescriptionTxService {
 
         Map<String, String> drugNoMap = req.getItemDrugNoMap();
         List<PrescriptionDTO.DispenseItem> dispenseItems = new ArrayList<>();
+        // 已成功扣减的明细（drugNo, itemId）——失败时用于反向补偿回滚 drug 库存
+        List<DispensedRecord> dispensedForRollback = new ArrayList<>();
 
-        // 逐条扣减
-        for (PrescriptionItem item : items) {
-            // 解析 drugNo：优先 item.drugNo，其次前端补传的 map（兼容历史数据）
-            String drugNo = item.getDrugNo();
-            if ((drugNo == null || drugNo.isBlank()) && drugNoMap != null) {
-                drugNo = drugNoMap.get(String.valueOf(item.getId()));
+        // try/catch 覆盖整个"逐条扣减 + 收尾状态更新"：任意失败点都先补偿 drug 侧已提交的扣减，
+        // 再抛原异常。补偿只对 dispensedForRollback 非空时执行（首条即失败则无明细可补）。
+        try {
+            for (PrescriptionItem item : items) {
+                // 解析 drugNo：优先 item.drugNo，其次前端补传的 map（兼容历史数据）
+                String drugNo = item.getDrugNo();
+                if ((drugNo == null || drugNo.isBlank()) && drugNoMap != null) {
+                    drugNo = drugNoMap.get(String.valueOf(item.getId()));
+                }
+                if (drugNo == null || drugNo.isBlank()) {
+                    throw new BusinessException(ErrorCode.PARAM_ERROR,
+                            "处方明细缺少药品编号，无法调剂: itemId=" + item.getId()
+                                    + " drugName=" + item.getDrugNameSnapshot()
+                                    + "（历史处方须通过 itemDrugNoMap 补传）");
+                }
+
+                // quantity BigDecimal → int（拒绝小数）
+                BigDecimal qty = item.getQuantity();
+                if (qty == null) {
+                    throw new BusinessException(ErrorCode.PARAM_ERROR,
+                            "处方明细数量为空: itemId=" + item.getId());
+                }
+                int intQty = toIntQuantity(qty, item.getDrugNameSnapshot());
+
+                // Feign 调 drug-service FEFO 出库。下游业务错误（库存不足 CONFLICT / 药品不存在
+                // NOT_FOUND）由 FeignErrorDecoder 转 BusinessException 直接抛出——由下面的 catch 统一补偿。
+                DispenseDTO.OutboundRequest outReq = DispenseDTO.OutboundRequest.forDispense(
+                        intQty, fresh.getId(), item.getId());
+                Result<DispenseDTO.OutboundResponse> outResp = drugFeignClient.outbound(drugNo, outReq);
+                DispenseDTO.OutboundResponse outData = outResp == null ? null : outResp.data();
+
+                // 回写明细已发数量
+                item.setDispensedQuantity(BigDecimal.valueOf(intQty));
+                itemMapper.updateById(item);
+
+                dispenseItems.add(new PrescriptionDTO.DispenseItem(
+                        item.getId(),
+                        item.getDrugNameSnapshot(),
+                        drugNo,
+                        BigDecimal.valueOf(intQty),
+                        outData == null ? null : outData.stockFlowId()));
+                // 记录已成功扣减，供失败时补偿
+                dispensedForRollback.add(new DispensedRecord(drugNo, item.getId()));
+                log.info("调剂扣减: prescriptionNo={} itemId={} drugNo={} qty={} flowNo={}",
+                        fresh.getPrescriptionNo(), item.getId(), drugNo, intQty,
+                        outData == null ? null : outData.stockFlowId());
             }
-            if (drugNo == null || drugNo.isBlank()) {
-                throw new BusinessException(ErrorCode.PARAM_ERROR,
-                        "处方明细缺少药品编号，无法调剂: itemId=" + item.getId()
-                                + " drugName=" + item.getDrugNameSnapshot()
-                                + "（历史处方须通过 itemDrugNoMap 补传）");
+
+            // 全部扣减成功 → 处方状态 DISPENSED（此处若异常也会触发下方 catch 补偿，保证不漏）
+            fresh.setStatus("DISPENSED");
+            fresh.setPharmacyPharmacistId(positiveHash(req.getPharmacistId()));
+            prescriptionMapper.updateById(fresh);
+
+            log.info("处方调剂完成: prescriptionNo={} → DISPENSED items={}",
+                    fresh.getPrescriptionNo(), dispenseItems.size());
+            return new PrescriptionDTO.DispenseResponse(
+                    fresh.getPrescriptionNo(), fresh.getStatus(), LocalDateTime.now(), dispenseItems);
+        } catch (RuntimeException e) {
+            // 统一补偿：drug 侧 outbound 已独立提交，本 @Transactional 回滚拉不回。
+            // 覆盖所有失败点（循环内 + 收尾状态更新），保证已扣减的库存尽量补回。
+            // 补偿本身失败（drug-service 不可用）只记 ERROR 留人工对账（见 rollbackDispensed），
+            // 不掩盖原始异常（throw e 保留下游 ErrorCode + 具体业务消息给药师定位）。
+            if (!dispensedForRollback.isEmpty()) {
+                rollbackDispensed(fresh.getPrescriptionNo(), dispensedForRollback);
             }
-
-            // quantity BigDecimal → int（拒绝小数）
-            BigDecimal qty = item.getQuantity();
-            if (qty == null) {
-                throw new BusinessException(ErrorCode.PARAM_ERROR,
-                        "处方明细数量为空: itemId=" + item.getId());
-            }
-            int intQty = toIntQuantity(qty, item.getDrugNameSnapshot());
-
-            // Feign 调 drug-service FEFO 出库（库存不足抛 CONFLICT，药品不存在抛 NOT_FOUND，由 FeignErrorDecoder 转）
-            DispenseDTO.OutboundRequest outReq = DispenseDTO.OutboundRequest.forDispense(
-                    intQty, fresh.getId(), item.getId());
-            Result<DispenseDTO.OutboundResponse> outResp;
-            try {
-                outResp = drugFeignClient.outbound(drugNo, outReq);
-            } catch (BusinessException be) {
-                // 下游业务错误（库存不足等），附药品名便于药师定位
-                throw new BusinessException(be.getErrorCode(),
-                        "调剂扣减失败 [" + item.getDrugNameSnapshot() + "(" + drugNo + ")]: " + be.getMessage());
-            }
-            DispenseDTO.OutboundResponse outData = outResp == null ? null : outResp.data();
-
-            // 回写明细已发数量
-            item.setDispensedQuantity(BigDecimal.valueOf(intQty));
-            itemMapper.updateById(item);
-
-            dispenseItems.add(new PrescriptionDTO.DispenseItem(
-                    item.getId(),
-                    item.getDrugNameSnapshot(),
-                    drugNo,
-                    BigDecimal.valueOf(intQty),
-                    outData == null ? null : outData.stockFlowId()));
-            log.info("调剂扣减: prescriptionNo={} itemId={} drugNo={} qty={} flowNo={}",
-                    fresh.getPrescriptionNo(), item.getId(), drugNo, intQty,
-                    outData == null ? null : outData.stockFlowId());
+            throw e;
         }
-
-        // 全部扣减成功 → 处方状态 DISPENSED
-        fresh.setStatus("DISPENSED");
-        fresh.setPharmacyPharmacistId(positiveHash(req.getPharmacistId()));
-        prescriptionMapper.updateById(fresh);
-
-        log.info("处方调剂完成: prescriptionNo={} → DISPENSED items={}",
-                fresh.getPrescriptionNo(), dispenseItems.size());
-        return new PrescriptionDTO.DispenseResponse(
-                fresh.getPrescriptionNo(), fresh.getStatus(), LocalDateTime.now(), dispenseItems);
     }
 
     // ===== 缴费 / 完成 / 退方 事务体（锁内，防与 dispense/review 竞态）=====
@@ -281,6 +292,30 @@ public class PrescriptionTxService {
                     "药品数量须为整数（库存按件管理）: " + drugName + " 数量=" + qty);
         }
         return qty.intValueExact();
+    }
+
+    /** 已成功扣减的明细记录（失败时用于反向补偿回滚 drug 库存） */
+    private record DispensedRecord(String drugNo, Long prescriptionItemId) {}
+
+    /**
+     * 反向补偿已成功扣减的明细：逐条调 drug-service rollback-outbound 把库存补回。
+     * <p>用于 dispense 多明细逐条扣减时，某条失败后回滚前序已扣减的明细。
+     * <p>补偿本身失败（如 drug-service 不可用）只记 ERROR 日志——尽力而为，避免补偿异常
+     * 掩盖原始业务错误；此时需人工对账（已扣减但未补回，flow 表有 OUTBOUND 记录可查）。
+     */
+    private void rollbackDispensed(String prescriptionNo, List<DispensedRecord> dispensed) {
+        for (DispensedRecord r : dispensed) {
+            try {
+                Result<Integer> rr = drugFeignClient.rollbackOutbound(r.drugNo(), r.prescriptionItemId());
+                int n = (rr == null || rr.data() == null) ? 0 : rr.data();
+                log.warn("调剂失败补偿回滚: prescriptionNo={} drugNo={} itemId={} 回滚flow数={}",
+                        prescriptionNo, r.drugNo(), r.prescriptionItemId(), n);
+            } catch (Exception ex) {
+                // 补偿失败不掩盖原异常：记 ERROR，留给人工对账（flow 表 OUTBOUND 记录可查）
+                log.error("调剂失败补偿回滚失败（需人工对账）: prescriptionNo={} drugNo={} itemId={}",
+                        prescriptionNo, r.drugNo(), r.prescriptionItemId(), ex);
+            }
+        }
     }
 
     /** 业务编号 → 正哈希 Long（与病历域同款策略） */

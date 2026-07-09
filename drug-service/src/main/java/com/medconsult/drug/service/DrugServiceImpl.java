@@ -157,14 +157,13 @@ public class DrugServiceImpl implements DrugService {
                 .orderByDesc("created_at");
         IPage<DrugStockFlow> result = flowMapper.selectPage(p, qw);
 
-        // 组装 batchNo（流水只存 batch_id，跨表查询批次号）
-        List<Long> batchIds = new ArrayList<>();
+        // 组装 batchNo（流水只存 batch_id，跨表查询批次号）。LinkedHashSet 去重 O(n)。
+        java.util.Set<Long> batchIdSet = new java.util.LinkedHashSet<>();
         for (DrugStockFlow f : result.getRecords()) {
-            if (f.getBatchId() != null && !batchIds.contains(f.getBatchId())) {
-                batchIds.add(f.getBatchId());
-            }
+            if (f.getBatchId() != null) batchIdSet.add(f.getBatchId());
         }
-        Map<Long, String> batchNoMap = toBatchNoMap(batchMapper.selectBatchIds(batchIds));
+        Map<Long, String> batchNoMap = toBatchNoMap(
+                batchMapper.selectBatchIds(batchIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(batchIdSet)));
 
         List<DrugDTO.StockFlowListItem> items = new ArrayList<>();
         for (DrugStockFlow f : result.getRecords()) {
@@ -218,14 +217,13 @@ public class DrugServiceImpl implements DrugService {
                     .between("expire_date", today, horizon)
                     .orderByAsc("expire_date");
             IPage<DrugStockBatch> result = batchMapper.selectPage(p, bw);
-            // 组装 drugName（跨表查 drug）
-            List<Long> drugIds = new ArrayList<>();
+            // 组装 drugName（跨表查 drug）。LinkedHashSet 去重 O(n)。
+            java.util.Set<Long> drugIdSet = new java.util.LinkedHashSet<>();
             for (DrugStockBatch b : result.getRecords()) {
-                if (b.getDrugId() != null && !drugIds.contains(b.getDrugId())) {
-                    drugIds.add(b.getDrugId());
-                }
+                if (b.getDrugId() != null) drugIdSet.add(b.getDrugId());
             }
-            Map<Long, Drug> drugMap = toDrugMap(drugMapper.selectBatchIds(drugIds));
+            Map<Long, Drug> drugMap = toDrugMap(
+                    drugMapper.selectBatchIds(drugIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(drugIdSet)));
             List<DrugDTO.AlertItem> items = new ArrayList<>();
             for (DrugStockBatch b : result.getRecords()) {
                 Drug d = drugMap.get(b.getDrugId());
@@ -293,6 +291,22 @@ public class DrugServiceImpl implements DrugService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "药品不存在: " + drugId);
         }
         return d.getCurrentStock() == null ? 0 : d.getCurrentStock();
+    }
+
+    /**
+     * 内部：按处方明细回滚出库（补偿调剂失败，锁内调用 txService）。
+     * <p>回滚同样走 Redis 锁（与出库同一把 lock:drug:{drugId}:stock），保证回滚期间库存读一致。
+     */
+    @Override
+    public int rollbackOutboundByItem(String drugNo, Long prescriptionItemId) {
+        Drug d = requireByDrugNo(drugNo);
+        String lockKey = RedisKey.DRUG_STOCK_LOCK + d.getId();
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.rollbackOutboundByItem(d.getId(), drugNo, prescriptionItemId));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "库存回滚繁忙，请稍后重试: " + drugNo);
+        }
     }
 
     // ===== 私有助手 =====

@@ -12,9 +12,19 @@ import java.util.Set;
  */
 public class AuthDTO {
 
-    /** 允许的角色码白名单（冒烟期；RBAC 五表阶段改为查 sys_role） */
+    /**
+     * 允许的角色码白名单（冒烟期；RBAC 五表阶段改为查 sys_role）。
+     * <p>注意：{@link #SELF_REGISTER_ROLES} 才是自助注册允许的角色子集。
+     */
     public static final Set<String> ALLOWED_ROLES =
             Set.of("PATIENT", "DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN");
+
+    /**
+     * 自助注册允许的角色子集（安全：管理类角色不可自助注册，防止越权）。
+     * <p>公开的 /register 接口只接受 PATIENT / DOCTOR；
+     * PHARMACY_ADMIN / HOSPITAL_ADMIN 必须由已登录管理员通过后台接口授予。
+     */
+    public static final Set<String> SELF_REGISTER_ROLES = Set.of("PATIENT", "DOCTOR");
 
     @Data
     public static class RegisterRequest {

@@ -63,14 +63,26 @@ public class DrugInternalController {
      * drugNo 是业务编号（如 DXXX），service 层 requireByDrugNo 解析为主键后 Redis 锁内 FEFO 扣减。
      *
      * <p><b>同步 Feign 的跨服务事务限制</b>：本端点的扣减是 drug-service 独立事务，调用方
-     * (medical-record) 事务回滚无法回滚此处扣减。调用方须做库存预校验 + 失败时人工对账。
-     * 彻底方案是改 MQ 异步（架构文档 §6.2 待办）。
+     * (medical-record) 事务回滚无法回滚此处扣减。调用方 dispense 失败时通过
+     * {@link #rollbackOutbound} 反向补偿（按 prescriptionItemId 查 OUTBOUND flow 还回原批次）。
      */
     @PostMapping("/{drugNo}/outbound")
     public Result<DrugDTO.OutboundResponse> outbound(
             @PathVariable String drugNo,
             @Valid @RequestBody DrugDTO.OutboundRequest req) {
         return Result.ok(drugService.outbound(drugNo, req));
+    }
+
+    /**
+     * 内部：按处方明细回滚出库（补偿 medical-record dispense 调剂失败）。
+     * <p>按 prescriptionItemId 反查该明细的 OUTBOUND flow，把数量还回对应批次 + current_stock。
+     * 同明细重复调用幂等。
+     */
+    @PostMapping("/{drugNo}/rollback-outbound")
+    public Result<Integer> rollbackOutbound(
+            @PathVariable String drugNo,
+            @RequestParam Long prescriptionItemId) {
+        return Result.ok(drugService.rollbackOutboundByItem(drugNo, prescriptionItemId));
     }
 }
 

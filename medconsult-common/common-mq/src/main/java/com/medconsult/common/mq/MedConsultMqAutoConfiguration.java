@@ -46,6 +46,9 @@ public class MedConsultMqAutoConfiguration {
             org.springframework.amqp.rabbit.connection.ConnectionFactory cf, MessageConverter converter) {
         RabbitTemplate t = new RabbitTemplate(cf);
         t.setMessageConverter(converter);
+        // ConfirmCallback 由 MessageDispatcher.bindRabbitTemplate 装配时注入（见 messageDispatcher Bean）。
+        // 前提：各服务 application.yml 须配 spring.rabbitmq.publisher-confirm-type: correlated，
+        // 否则 ConfirmCallback 不触发，消息停留在 SENT 状态（不丢，但 CONFIRMED 推进不了）。
         return t;
     }
 
