@@ -1,0 +1,26 @@
+# Bootstrap：Nacos 注册 + 配置中心（架构文档 §7.3）
+spring:
+  application:
+    name: notification-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: COMMON
+        file-extension: yaml
+        shared-configs:
+          - data-id: medconsult-common.yaml
+            group: COMMON
+            refresh: true
+        extension-configs:
+          - data-id: notification-service.yaml
+            group: COMMON
+            refresh: true
+        import-check:
+          enabled: false

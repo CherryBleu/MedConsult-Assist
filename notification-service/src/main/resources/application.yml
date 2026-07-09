@@ -1,0 +1,56 @@
+# notification-service 本地配置（冒烟用最小集；生产走 Nacos 配置中心）
+server:
+  port: 8087
+  address: 0.0.0.0
+
+spring:
+  threads:
+    virtual:
+      enabled: true
+  # 数据源：MySQL 8.0，schema 用 medconsult_notify（对齐 infra/01-schemas.sql，非文档里的 medconsult_notification）
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3307}/medconsult_notify?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:medconsult}
+    password: ${MYSQL_PASSWORD:medconsult123}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+  # RabbitMQ：消费 notification.send / audit.log 队列（infra/docker-compose.yml，5672 AMQP / 15672 管理界面）
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:medconsult}
+    password: ${RABBITMQ_PASSWORD:medconsult123}
+    # 消费端重试：common-mq 未配，本服务自配（架构文档风险缓解）
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000ms
+        # 消费失败不重回队列（重试耗尽后丢弃，后续接 DLQ）
+        default-requeue-rejected: false
+  sql:
+    init:
+      mode: always
+
+medconsult:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+
+mybatis-plus:
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    com.medconsult: DEBUG
+    com.alibaba.cloud.nacos: DEBUG

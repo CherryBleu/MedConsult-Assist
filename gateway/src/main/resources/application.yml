@@ -46,8 +46,13 @@ spring:
           uri: lb://medical-record-service
           predicates:
             - Path=/api/v1/medical-records/**,/api/v1/prescriptions/**
+        # 通知 + 审计服务：站内通知 / 审计日志查询（架构文档 §1.1 notification-service）
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**,/api/v1/audit-logs/**
         # 后续业务服务陆续加入：
-        # - id: ai-service / notification-service ...
+        # - id: ai-service ...
 
 # JWT（冒烟用固定密钥；生产从 Nacos/KMS 注入）
 medconsult:

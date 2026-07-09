@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>notification-service</artifactId>
+
+    <name>notification-service</name>
+    <description>通知 + 审计服务：站内通知 CRUD/已读 + 审计日志查询 + MQ 消费者（消费 notification.send / audit.log 队列写库，架构文档 §1.1 / §2.3 / §7.5）。项目首个业务 MQ 消费者</description>
+
+    <dependencies>
+        <!-- common 地基 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mybatis</artifactId>
+        </dependency>
+        <!--
+            common-mq：项目首个业务 MQ 消费者。
+            - 引入后 MedConsultMqAutoConfiguration 自动装配 RabbitTemplate + Exchange/Queue/Binding + MessageDispatcher + IdempotentConsumer
+            - 传递引入 common-redis（幂等去重）+ amqp + jackson
+            - 注意：MessageDispatcher 依赖 LocalMessageMapper，须在 Application @MapperScan 包含 com.medconsult.common.mq
+        -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mq</artifactId>
+        </dependency>
+
+        <!-- SCA: Nacos 注册 + 配置 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.notification.NotificationServiceApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
