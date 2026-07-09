@@ -26,6 +26,8 @@ import java.time.Duration;
  * </ol>
  * <p>幂等键：消息头 {@code messageNo}（生产端 MessageDispatcher setHeader 了），
  *    回退用 receiverId + title 拼接（兼容无消息头的直发场景）。
+ * <p>注意：fallback 路径下，72h 内同 (receiverId, title) 的不同通知会被去重。
+ * 实际生产路径 Dispatcher 总会 setHeader messageNo（唯一），fallback 几乎不触发。
  */
 @Slf4j
 @Component

@@ -24,7 +24,9 @@ import java.time.Duration;
  *   <li>执行业务（反序列化 + 调 AuditLogService.write）；失败抛异常 → MQ 重投</li>
  *   <li>业务成功后 {@code markProcessed(messageNo, 72h)}</li>
  * </ol>
- * <p>幂等键：消息头 messageNo，回退 resourceType+resourceId+action+operatorId+createdAt 拼接。
+ * <p>幂等键：消息头 messageNo，回退 resourceType+resourceId+action+operatorId 拼接。
+ * <p>注意：fallback 路径下，72h 内同 (resourceType, resourceId, action, operatorId) 的不同审计事件会被去重。
+ * 实际生产路径 Dispatcher 总会 setHeader messageNo（唯一），fallback 几乎不触发。
  */
 @Slf4j
 @Component
