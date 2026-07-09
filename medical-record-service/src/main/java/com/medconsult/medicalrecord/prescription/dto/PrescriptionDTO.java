@@ -56,8 +56,9 @@ public class PrescriptionDTO {
     public static class ItemRequest {
         /**
          * 药品编号 drug_no（第 2 批新增，可选）。
-         * <p>非空时 service 用 Feign 反查 drug-service 校验药品存在并存 drug_id（替代 batch 1 的 null 占位）。
-         * 为空时 drug_id 存 null，dispense 时须由前端通过 DispenseRequest.itemDrugNoMap 补传。
+         * <p>非空时直接存入 prescription_item.drug_no（不做 Feign 反查，药品存在性由 dispense 时
+         * drug-service 自然校验）。为空时 drug_no 存 null，dispense 时须由前端通过
+         * DispenseRequest.itemDrugNoMap 补传。
          */
         @Size(max = 32, message = "药品编号不能超过 32 字")
         private String drugNo;
@@ -196,7 +197,8 @@ public class PrescriptionDTO {
             String prescriptionId,
             String status,          // PAID
             String paymentStatus,   // PAID
-            BigDecimal paidAmount
+            BigDecimal paidAmount,
+            String paymentNo        // 支付单号（回传确认已记录）
     ) {}
 
     // ===== 调剂发药 POST /{id}/dispense（APPROVED/PAID → DISPENSED）=====
@@ -209,10 +211,10 @@ public class PrescriptionDTO {
         @NotBlank(message = "调剂药师编号不能为空")
         private String pharmacistId;
         /**
-         * 明细→药品编号映射（可选，兼容 batch 1 历史 drug_id=null 的处方）。
+         * 明细→药品编号映射（可选，兼容 batch 1 历史 drug_no=null 的处方）。
          * <p>key = prescription_item.id（字符串化），value = drug_no。
-         * <p>dispense 时优先用 item.drugId（batch 2 开方时已存），若为 null 则查此 map。
-         * 历史处方（batch 1 开的，drug_id=null）必须传此 map 才能调剂。
+         * <p>dispense 时优先用 item.drugNo（batch 2 开方时已存），若为空则查此 map。
+         * 历史处方（batch 1 开的，drug_no=null）必须传此 map 才能调剂。
          */
         private Map<String, String> itemDrugNoMap;
     }

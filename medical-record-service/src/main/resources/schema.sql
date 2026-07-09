@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS prescription (
     reject_reason           VARCHAR(500)                           COMMENT '驳回原因（reject 时填）',
     total_fee               DECIMAL(10,2)                          COMMENT '处方总金额（明细 subtotal 累加）',
     paid_amount             DECIMAL(10,2)                          COMMENT '实付金额（pay 时填，第 2 批）',
+    payment_no              VARCHAR(64)                            COMMENT '支付单号（外部支付系统回传，pay 时回填，便于对账/退款）',
     payment_status          VARCHAR(20)   NOT NULL DEFAULT 'UNPAID' COMMENT '支付状态：UNPAID/PAID/REFUNDED',
     source                  VARCHAR(20)   NOT NULL DEFAULT 'OUTPATIENT' COMMENT '处方来源：OUTPATIENT/INPATIENT/EMERGENCY',
     created_at              DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

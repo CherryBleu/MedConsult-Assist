@@ -55,8 +55,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     /** 锁内事务体（独立 Bean，避免 self-injection 循环依赖） */
     private final PrescriptionTxService txService;
 
-    /** 审方锁租约：5s（审方只改主表状态，比库存扣减 10s 短） */
+    /** 审方/缴费/完成/退方锁租约：5s（只改主表状态，单次 DB 操作） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
+
+    /** 调剂发药锁租约：20s（锁内逐条同步 Feign 调 drug-service 出库，多明细时耗时更长） */
+    private static final Duration DISPENSE_LOCK_LEASE = Duration.ofSeconds(20);
 
     // ===== 开方 =====
 
@@ -212,24 +215,24 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         }
     }
 
-    // ===== 缴费（APPROVED → PAID）=====
+    // ===== 缴费（APPROVED → PAID，锁内防与 dispense/cancel 竞态）=====
 
     @Override
-    @Transactional
     public PrescriptionDTO.PayResponse pay(String prescriptionNo, PrescriptionDTO.PayRequest req) {
         Prescription p = requireByNo(prescriptionNo);
+        // 锁前快速校验，避免无谓抢锁
         if (!"APPROVED".equals(p.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅已审通过处方可缴费，当前状态: " + p.getStatus());
         }
-        p.setStatus("PAID");
-        p.setPaymentStatus("PAID");
-        p.setPaidAmount(req.getPaidAmount());
-        prescriptionMapper.updateById(p);
-        log.info("处方缴费: prescriptionNo={} paymentNo={} paidAmount={}",
-                prescriptionNo, req.getPaymentNo(), req.getPaidAmount());
-        return new PrescriptionDTO.PayResponse(p.getPrescriptionNo(), p.getStatus(),
-                p.getPaymentStatus(), p.getPaidAmount());
+        String lockKey = RedisKey.PRESCRIPTION_LOCK + p.getId();
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.payInTx(p, req));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方操作繁忙，请稍后重试: " + prescriptionNo);
+        }
     }
 
     // ===== 调剂发药（APPROVED/PAID → DISPENSED，同步 Feign）=====
@@ -245,7 +248,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         }
         String lockKey = RedisKey.PRESCRIPTION_LOCK + p.getId();
         try {
-            return distributedLock.withLock(lockKey, LOCK_LEASE,
+            return distributedLock.withLock(lockKey, DISPENSE_LOCK_LEASE,
                     () -> txService.dispenseInTx(p, req));
         } catch (DistributedLock.LockNotAcquiredException e) {
             throw new BusinessException(ErrorCode.CONFLICT,
@@ -253,41 +256,43 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         }
     }
 
-    // ===== 完成（DISPENSED → COMPLETED）=====
+    // ===== 完成（DISPENSED → COMPLETED，锁内防与 dispense 竞态）=====
 
     @Override
-    @Transactional
     public PrescriptionDTO.CompleteResponse complete(String prescriptionNo) {
         Prescription p = requireByNo(prescriptionNo);
         if (!"DISPENSED".equals(p.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅已调剂处方可完成，当前状态: " + p.getStatus());
         }
-        p.setStatus("COMPLETED");
-        prescriptionMapper.updateById(p);
-        log.info("处方完成: prescriptionNo={}", prescriptionNo);
-        return new PrescriptionDTO.CompleteResponse(p.getPrescriptionNo(), p.getStatus());
+        String lockKey = RedisKey.PRESCRIPTION_LOCK + p.getId();
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.completeInTx(p));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方操作繁忙，请稍后重试: " + prescriptionNo);
+        }
     }
 
-    // ===== 退方（APPROVED/PAID → CANCELLED）=====
+    // ===== 退方（APPROVED/PAID → CANCELLED，锁内防与 dispense 竞态）=====
 
     @Override
-    @Transactional
     public PrescriptionDTO.CancelResponse cancel(String prescriptionNo, PrescriptionDTO.CancelRequest req) {
         Prescription p = requireByNo(prescriptionNo);
         String st = p.getStatus();
-        // 退方仅允许 APPROVED/PAID（已调剂/完成不可退，须走退药流程，后续 PR）
         if (!"APPROVED".equals(st) && !"PAID".equals(st)) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "处方当前状态不可退方: " + st + "（仅 APPROVED/PAID 可退；已调剂须走退药流程）");
         }
-        p.setStatus("CANCELLED");
-        p.setReviewComment((p.getReviewComment() == null ? "" : p.getReviewComment() + " | ")
-                + "退方原因: " + req.getCancelReason());
-        prescriptionMapper.updateById(p);
-        log.info("处方退方: prescriptionNo={} operator={} reason={}",
-                prescriptionNo, req.getOperatorId(), req.getCancelReason());
-        return new PrescriptionDTO.CancelResponse(p.getPrescriptionNo(), p.getStatus(), req.getCancelReason());
+        String lockKey = RedisKey.PRESCRIPTION_LOCK + p.getId();
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.cancelInTx(p, req));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方操作繁忙，请稍后重试: " + prescriptionNo);
+        }
     }
 
     // ===== 内部校验 =====

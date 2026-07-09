@@ -201,6 +201,76 @@ public class PrescriptionTxService {
                 fresh.getPrescriptionNo(), fresh.getStatus(), LocalDateTime.now(), dispenseItems);
     }
 
+    // ===== 缴费 / 完成 / 退方 事务体（锁内，防与 dispense/review 竞态）=====
+
+    /**
+     * 缴费事务体（锁内）：APPROVED → PAID。
+     * <p>锁内重查状态防并发：dispense 可能已把 APPROVED 转走，或 cancel 已取消。
+     */
+    @Transactional
+    public PrescriptionDTO.PayResponse payInTx(Prescription p, PrescriptionDTO.PayRequest req) {
+        Prescription fresh = prescriptionMapper.selectById(p.getId());
+        if (fresh == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "处方不存在: " + p.getPrescriptionNo());
+        }
+        if (!"APPROVED".equals(fresh.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "仅已审通过处方可缴费，当前状态: " + fresh.getStatus());
+        }
+        fresh.setStatus("PAID");
+        fresh.setPaymentStatus("PAID");
+        fresh.setPaidAmount(req.getPaidAmount());
+        fresh.setPaymentNo(req.getPaymentNo());
+        prescriptionMapper.updateById(fresh);
+        log.info("处方缴费: prescriptionNo={} paymentNo={} paidAmount={}",
+                fresh.getPrescriptionNo(), req.getPaymentNo(), req.getPaidAmount());
+        return new PrescriptionDTO.PayResponse(fresh.getPrescriptionNo(), fresh.getStatus(),
+                fresh.getPaymentStatus(), fresh.getPaidAmount(), fresh.getPaymentNo());
+    }
+
+    /**
+     * 完成事务体（锁内）：DISPENSED → COMPLETED。
+     */
+    @Transactional
+    public PrescriptionDTO.CompleteResponse completeInTx(Prescription p) {
+        Prescription fresh = prescriptionMapper.selectById(p.getId());
+        if (fresh == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "处方不存在: " + p.getPrescriptionNo());
+        }
+        if (!"DISPENSED".equals(fresh.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "仅已调剂处方可完成，当前状态: " + fresh.getStatus());
+        }
+        fresh.setStatus("COMPLETED");
+        prescriptionMapper.updateById(fresh);
+        log.info("处方完成: prescriptionNo={}", fresh.getPrescriptionNo());
+        return new PrescriptionDTO.CompleteResponse(fresh.getPrescriptionNo(), fresh.getStatus());
+    }
+
+    /**
+     * 退方事务体（锁内）：APPROVED/PAID → CANCELLED。
+     * <p>锁内重查防与 dispense 竞态：dispense 可能正在扣库存，cancel 须等锁释放后重查。
+     */
+    @Transactional
+    public PrescriptionDTO.CancelResponse cancelInTx(Prescription p, PrescriptionDTO.CancelRequest req) {
+        Prescription fresh = prescriptionMapper.selectById(p.getId());
+        if (fresh == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "处方不存在: " + p.getPrescriptionNo());
+        }
+        String st = fresh.getStatus();
+        if (!"APPROVED".equals(st) && !"PAID".equals(st)) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "处方当前状态不可退方: " + st + "（仅 APPROVED/PAID 可退；已调剂须走退药流程）");
+        }
+        fresh.setStatus("CANCELLED");
+        fresh.setReviewComment((fresh.getReviewComment() == null ? "" : fresh.getReviewComment() + " | ")
+                + "退方原因: " + req.getCancelReason());
+        prescriptionMapper.updateById(fresh);
+        log.info("处方退方: prescriptionNo={} operator={} reason={}",
+                fresh.getPrescriptionNo(), req.getOperatorId(), req.getCancelReason());
+        return new PrescriptionDTO.CancelResponse(fresh.getPrescriptionNo(), fresh.getStatus(), req.getCancelReason());
+    }
+
     /**
      * BigDecimal 数量 → int（药品库存按整数件）。
      * 小数拒绝（如 1.5 片）：PARAM_ERROR。

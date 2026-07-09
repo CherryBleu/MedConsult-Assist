@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS prescription (
     reject_reason           VARCHAR(500),
     total_fee               DECIMAL(10,2),
     paid_amount             DECIMAL(10,2),
+    payment_no              VARCHAR(64),
     payment_status          VARCHAR(20)   DEFAULT 'UNPAID',
     source                  VARCHAR(20)   DEFAULT 'OUTPATIENT',
     created_at              TIMESTAMP,

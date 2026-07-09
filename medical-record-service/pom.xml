@@ -45,6 +45,16 @@
             <artifactId>common-feign</artifactId>
         </dependency>
         <!--
+            spring-cloud-starter-loadbalancer：OpenFeign 4.1.0 不再传递 loadbalancer，
+            @FeignClient(name="drug-service") 需 LoadBalancerClient 解析服务名（经 Nacos discovery）。
+            缺失会导致运行时 "No bean of type LoadBalancerClient" 异常（@MockBean 测试掩盖了此问题）。
+            gateway/pom.xml 同款声明。
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+        <!--
             注：本服务不依赖 common-mq。
             - dispense 已选同步 Feign（见上），无需本地消息表
             - notification/audit 的异步通知在 notification-service 侧消费，medical-record 只需写库

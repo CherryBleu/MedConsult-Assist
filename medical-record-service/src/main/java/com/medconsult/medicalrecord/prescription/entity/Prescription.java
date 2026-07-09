@@ -67,6 +67,9 @@ public class Prescription extends BaseEntity {
     /** 实付金额（pay 时填，本批不用） */
     private BigDecimal paidAmount;
 
+    /** 支付单号（外部支付系统回传，pay 时回填，便于对账/退款） */
+    private String paymentNo;
+
     /** 支付状态：UNPAID / PAID / REFUNDED（本批创建时初始 UNPAID） */
     private String paymentStatus;
 
