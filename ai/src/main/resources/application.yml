@@ -64,13 +64,13 @@ spring:
 medconsult:
   ai:
     llm:
-      base-url: https://llm-api.net/v1
-      api-key: sk-zZI84Sf1mrbwpZkHlWswvcYedior8ZhJBHbpOlziKK4cgAYo
+      base-url: 
+      api-key: 
       model: gpt-5.5
       timeout-seconds: 30
     embedding:
-      base-url: https://llm-api.net/v1
-      api-key: sk-zZI84Sf1mrbwpZkHlWswvcYedior8ZhJBHbpOlziKK4cgAYo
+      base-url: 
+      api-key: 
       model: text-embedding-3-small
       timeout-seconds: 30
     mongo:
