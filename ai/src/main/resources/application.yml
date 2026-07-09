@@ -1,0 +1,154 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: medconsult-ai-service
+  profiles:
+    active: local
+  config:
+    import: optional:nacos:${spring.application.name}.yaml
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    openfeign:
+      okhttp:
+        enabled: true
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:localhost:8848}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        enabled: ${NACOS_DISCOVERY_ENABLED:false}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:mysql://localhost:3306/medconsult?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 2
+      password:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+medconsult:
+  ai:
+    llm:
+      base-url: https://llm-api.net/v1
+      api-key: sk-zZI84Sf1mrbwpZkHlWswvcYedior8ZhJBHbpOlziKK4cgAYo
+      model: gpt-5.5
+      timeout-seconds: 30
+    embedding:
+      base-url: https://llm-api.net/v1
+      api-key: sk-zZI84Sf1mrbwpZkHlWswvcYedior8ZhJBHbpOlziKK4cgAYo
+      model: text-embedding-3-small
+      timeout-seconds: 30
+    mongo:
+      uri: mongodb://localhost:27017
+      database: medconsult
+      collection: diseases
+    redis:
+      key-prefix: "medical:"
+      cache-seconds: 86400
+    milvus:
+      uri: http://localhost:19530
+      token: root:Milvus
+      database: medical
+      collection: data
+      min-score: 0.60
+    imaging:
+      provider: external-ai-provider
+      model: chest-ct-abnormal-detector
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  cloud:
+    nacos:
+      config:
+        server-addr: ${NACOS_SERVER_ADDR}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        enabled: ${NACOS_DISCOVERY_ENABLED:true}
+  datasource:
+    url: ${MYSQL_URL}
+    username: ${MYSQL_USERNAME}
+    password: ${MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DATABASE:2}
+      password: ${REDIS_PASSWORD:}
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+
+medconsult:
+  ai:
+    llm:
+      base-url: ${OPENAI_BASE_URL}
+      api-key: ${OPENAI_API_KEY}
+      model: ${OPENAI_MODEL:gpt-4o-mini}
+      timeout-seconds: ${OPENAI_TIMEOUT_SECONDS:60}
+    embedding:
+      base-url: ${EMBEDDING_BASE_URL:${OPENAI_BASE_URL}}
+      api-key: ${EMBEDDING_API_KEY:${OPENAI_API_KEY}}
+      model: ${EMBEDDING_MODEL:text-embedding-3-small}
+      timeout-seconds: ${EMBEDDING_TIMEOUT_SECONDS:60}
+    mongo:
+      uri: ${MONGODB_URI}
+      database: ${MONGODB_DATABASE:medconsult}
+      collection: ${MONGODB_COLLECTION:diseases}
+    redis:
+      key-prefix: ${REDIS_KEY_PREFIX:medical:}
+      cache-seconds: ${REDIS_CACHE_SECONDS:86400}
+    milvus:
+      uri: ${MILVUS_URI}
+      token: ${MILVUS_TOKEN:}
+      database: ${MILVUS_DATABASE:medical}
+      collection: ${MILVUS_COLLECTION:data}
+      min-score: ${MILVUS_MIN_SCORE:0.60}
+    imaging:
+      provider: ${IMAGING_PROVIDER:external-ai-provider}
+      model: ${IMAGING_MODEL:chest-ct-abnormal-detector}

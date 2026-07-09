@@ -1,0 +1,23 @@
+# Build outputs
+target/
+*/target/
+
+# IDE and local runtime files
+.idea/
+.vscode/
+*.iml
+*.log
+
+# AI module generated files
+ai/target/
+ai/logs/
+
+# Demo module is local-only
+demo/
+
+# Data preprocessing scripts/cache are local-only
+data/pre-process/
+
+# Keep only the unified medical dataset JSON under data/
+data/*.json
+!data/medical.data.unified.json

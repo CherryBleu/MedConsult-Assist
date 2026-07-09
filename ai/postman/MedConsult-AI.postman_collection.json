@@ -1,0 +1,506 @@
+{
+  "info": {
+    "_postman_id": "1f949ab5-68ad-4df0-a572-b7a423e91701",
+    "name": "MedConsult AI Service",
+    "description": "MedConsult AI 智能域接口测试集合，覆盖症状自诊、分诊、病历摘要、用药分析、影像检测、反馈和调用日志。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP 2xx', function () {",
+          "  pm.expect(pm.response.code).to.be.within(200, 299);",
+          "});",
+          "",
+          "if (pm.response.headers.get('Content-Type') && pm.response.headers.get('Content-Type').includes('application/json')) {",
+          "  const json = pm.response.json();",
+          "  pm.test('统一响应结构', function () {",
+          "    pm.expect(json).to.have.property('code');",
+          "    pm.expect(json).to.have.property('message');",
+          "    pm.expect(json).to.have.property('traceId');",
+          "    pm.expect(json).to.have.property('timestamp');",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Symptom Chat 症状自诊",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/symptom-chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"patientId\": \"{{patientId}}\",\n  \"message\": \"我想咨询肺栓塞。最近突然胸痛、胸闷、呼吸困难，还伴有心慌和咯血，应该挂什么科，需要做哪些检查？\",\n  \"patientContext\": {\n    \"age\": 38,\n    \"gender\": \"MALE\",\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"高血压\"]\n  },\n  \"ragOptions\": {\n    \"knowledgeSource\": \"DISEASE_JSON\",\n    \"topK\": 5,\n    \"returnCitations\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/symptom-chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "symptom-chat"
+              ]
+            },
+            "description": "症状自诊问答。该样例显式包含疾病名“肺栓塞”和典型症状，疾病知识库已导入时更容易返回完整的 possibleCauses、suggestedDepartments、vectorMatches 和 citations。完整 RAG 需要 MongoDB 疾病数据、Milvus 向量库和 LLM 配置；未配置时会走降级逻辑。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data) {",
+                  "  pm.test('返回自诊回答', function () {",
+                  "    pm.expect(json.data).to.have.property('answer');",
+                  "    pm.expect(json.data).to.have.property('answerSource');",
+                  "    pm.expect(json.data).to.have.property('riskLevel');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Triage 智能分诊",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/triage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"symptoms\": [\"胸闷\", \"心悸\", \"活动后加重\"],\n  \"duration\": \"3天\",\n  \"severity\": \"MODERATE\",\n  \"age\": 38,\n  \"gender\": \"MALE\",\n  \"pastMedicalHistory\": [\"高血压\"],\n  \"needAvailableSchedules\": true,\n  \"preferredDate\": \"2026-07-08\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/triage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "triage"
+              ]
+            },
+            "description": "智能分诊推荐，返回推荐科室、置信度、推荐理由和急诊标识。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Medical Record Summary 病历摘要",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/medical-record-summary/text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordText\": \"患者胸闷、心悸3天，活动后加重。既往高血压5年。查体血压150/95mmHg，建议完善心电图检查并监测血压。\",\n  \"summaryType\": \"STRUCTURED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medical-record-summary/text",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medical-record-summary",
+                "text"
+              ]
+            },
+            "description": "直接根据病历文本生成摘要，不依赖 medical_record 表，适合优先冒烟测试。"
+          }
+        },
+        {
+          "name": "POST /api/v1/ai/medical-record-summary",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordId\": \"{{recordId}}\",\n  \"summaryType\": \"STRUCTURED\",\n  \"saveDraft\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medical-record-summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medical-record-summary"
+              ]
+            },
+            "description": "根据病历编号生成摘要。需要 MySQL 中存在 record_no={{recordId}} 的 medical_record 数据。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.summaryId) {",
+                  "  pm.environment.set('summaryId', json.data.summaryId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/v1/medical-records/{recordId}/summary/confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summaryId\": \"{{summaryId}}\",\n  \"confirmedBy\": \"D10001\",\n  \"confirmedSummary\": {\n    \"chiefComplaint\": \"胸闷、心悸3天\",\n    \"diagnosis\": [\"高血压\", \"心律失常待查\"],\n    \"followUpAdvice\": \"建议心内科复诊。\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records/{{recordId}}/summary/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "medical-records",
+                "{{recordId}}",
+                "summary",
+                "confirm"
+              ]
+            },
+            "description": "确认 AI 摘要。需要先成功执行“根据病历编号生成摘要”，自动保存 summaryId。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Medication Analysis 用药分析",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/medication-analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"prescriptions\": [\n    {\n      \"drugId\": \"DRUG0003\",\n      \"drugName\": \"布洛芬缓释胶囊\",\n      \"dosage\": \"0.3g\",\n      \"frequency\": \"每日两次\",\n      \"route\": \"口服\",\n      \"days\": 3\n    },\n    {\n      \"drugId\": \"DRUG0004\",\n      \"drugName\": \"阿司匹林\",\n      \"dosage\": \"100mg\",\n      \"frequency\": \"每日一次\",\n      \"route\": \"口服\",\n      \"days\": 7\n    }\n  ],\n  \"patientContext\": {\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"慢性胃炎\"],\n    \"currentMedications\": [\"阿司匹林\"]\n  },\n  \"returnFunctionTrace\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medication-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medication-analysis"
+              ]
+            },
+            "description": "用药风险分析。未配置 LLM 时会使用本地基础规则兜底。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.analysisId) {",
+                  "  pm.environment.set('analysisId', json.data.analysisId);",
+                  "  pm.environment.set('aiResultType', 'MEDICATION_ANALYSIS');",
+                  "  pm.environment.set('aiResultId', json.data.analysisId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Imaging Detection 影像检测",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/imaging-abnormal-detection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"reportText\": \"胸部 CT 示右肺上叶见小结节影，边界尚清，建议随访。\",\n  \"imageUrls\": [\"https://oss.example.com/imaging/ct-001.dcm\"],\n  \"externalModel\": {\n    \"provider\": \"external-ai-provider\",\n    \"model\": \"chest-ct-abnormal-detector\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-abnormal-detection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "imaging-abnormal-detection"
+              ]
+            },
+            "description": "提交影像异常检测。未配置外部模型时会按报告文本关键词兜底。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.detectionId) {",
+                  "  pm.environment.set('detectionId', json.data.detectionId);",
+                  "  pm.environment.set('aiResultType', 'IMAGING_DETECTION');",
+                  "  pm.environment.set('aiResultId', json.data.detectionId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/ai/imaging-abnormal-detection/{detectionId}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-abnormal-detection/{{detectionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "imaging-abnormal-detection",
+                "{{detectionId}}"
+              ]
+            },
+            "description": "查询影像检测结果。需要先执行提交影像检测，自动保存 detectionId。"
+          }
+        },
+        {
+          "name": "POST /api/v1/ai/imaging-abnormal-detection/{detectionId}/review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewedBy\": \"D20001\",\n  \"reviewResult\": \"CONFIRMED\",\n  \"reviewComment\": \"同意 AI 初筛提示，建议 3 个月后复查胸部 CT。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-abnormal-detection/{{detectionId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "imaging-abnormal-detection",
+                "{{detectionId}}",
+                "review"
+              ]
+            },
+            "description": "医生复核影像 AI 结果。需要 detectionId。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Feedback and Logs 反馈与日志",
+      "item": [
+        {
+          "name": "POST /api/v1/ai/feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aiResultType\": \"{{aiResultType}}\",\n  \"aiResultId\": \"{{aiResultId}}\",\n  \"feedbackBy\": \"D10001\",\n  \"useful\": true,\n  \"adopted\": true,\n  \"comment\": \"风险提示准确，已提醒患者。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "feedback"
+              ]
+            },
+            "description": "提交 AI 结果反馈。建议先执行用药分析或影像检测，让 aiResultId 自动保存。"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.feedbackId) {",
+                  "  pm.environment.set('feedbackId', json.data.feedbackId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/v1/ai/feedback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/feedback?aiResultType={{aiResultType}}&aiResultId={{aiResultId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "feedback"
+              ],
+              "query": [
+                {
+                  "key": "aiResultType",
+                  "value": "{{aiResultType}}"
+                },
+                {
+                  "key": "aiResultId",
+                  "value": "{{aiResultId}}"
+                }
+              ]
+            },
+            "description": "查询指定 AI 结果的反馈记录。"
+          }
+        },
+        {
+          "name": "GET /api/v1/ai/call-logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/call-logs?patientId={{patientId}}&type=MEDICATION_ANALYSIS&page=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "call-logs"
+              ],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "{{patientId}}"
+                },
+                {
+                  "key": "type",
+                  "value": "MEDICATION_ANALYSIS"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "分页查询 AI 调用日志。type 可改为 SYMPTOM_CHAT、TRIAGE、MEDICAL_RECORD_SUMMARY、MEDICATION_ANALYSIS、IMAGING_DETECTION。"
+          }
+        }
+      ]
+    }
+  ]
+}
