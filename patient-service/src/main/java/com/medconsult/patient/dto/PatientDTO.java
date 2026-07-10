@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -68,6 +69,7 @@ public class PatientDTO {
         private String phone;
 
         @Schema(description = "地址")
+        @Size(max = 255, message = "地址不能超过 255 字")
         private String address;
         /** 过敏史（如 ["青霉素"]） */
         @Schema(description = "过敏史")
@@ -141,6 +143,7 @@ public class PatientDTO {
                 message = "手机号格式非法（须 11 位 1[3-9] 开头）")
         private String phone;
         @Schema(description = "地址")
+        @Size(max = 255, message = "地址不能超过 255 字")
         private String address;
         @Schema(description = "过敏史")
         private List<String> allergies;

@@ -22,7 +22,10 @@
     {"key": "scheduleId", "value": "", "type": "string"},
     {"key": "scheduleIdNum", "value": "1", "type": "string"},
     {"key": "appointmentId", "value": "", "type": "string"},
-    {"key": "drugNo", "value": "", "type": "string"}
+    {"key": "drugNo", "value": "", "type": "string"},
+    {"key": "recordId", "value": "", "type": "string", "description": "病历编号 record_no"},
+    {"key": "prescriptionId", "value": "", "type": "string", "description": "处方编号 prescription_no"},
+    {"key": "notificationId", "value": "", "type": "string", "description": "通知编号 notification_no"}
   ],
   "item": [
     {
@@ -711,6 +714,329 @@
               ]
             },
             "description": "## 2.7.6 库存预警\n\n**预警类型**：\n- `LOW_STOCK`：current_stock < min_stock_threshold\n- `NEAR_EXPIRY`：批次 expire_date 在 30 天内且 quantity>0\n\n**需登录**。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "MedicalRecord 电子病历",
+      "description": "电子病历 CRUD + 归档（接口文档 §2.6）",
+      "item": [
+        {
+          "name": "1. 创建病历",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "medical-records"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"chiefComplaint\": \"胸闷气短 3 天\",\n  \"presentIllness\": \"3 天前无明显诱因出现胸闷...\",\n  \"initialDiagnosis\": [\"心律失常待查\", \"高血压\"]\n}"
+            },
+            "description": "## 2.6.1 创建电子病历\n\n初始 DRAFT，patientId/doctorId 经 Feign 反查落真实主键。\n\n**需登录（DOCTOR）**。"
+          }
+        },
+        {
+          "name": "2. 查询病历详情",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records/{{recordId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "medical-records", "{{recordId}}"]
+            },
+            "description": "## 2.6.2 查询病历详情\n\nPATIENT 只能查自己的（IDOR SELF 校验）。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "3. 分页查询病历",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records?patientId={{patientId}}&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "medical-records"],
+              "query": [
+                {"key": "patientId", "value": "{{patientId}}", "description": "患者编号（DOCTOR/管理员用）"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.6.3 分页查询病历\n\nPATIENT 强制限定为本人；DOCTOR/管理员可按 patientId 过滤。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "4. 更新草稿病历",
+          "request": {
+            "method": "PUT",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records/{{recordId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "medical-records", "{{recordId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"presentIllness\": \"补充现病史...\",\n  \"finalDiagnosis\": [\"冠心病\"]\n}"
+            },
+            "description": "## 2.6.4 更新草稿病历\n\n仅 DRAFT 可改（ARCHIVED 不可逆）。PATCH 语义：非空字段才覆盖。\n\n**需登录（DOCTOR）**。"
+          }
+        },
+        {
+          "name": "5. 归档病历",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records/{{recordId}}/archive",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "medical-records", "{{recordId}}", "archive"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmBy\": \"{{doctorId}}\",\n  \"confirmNote\": \"诊断明确，归档\"\n}"
+            },
+            "description": "## 2.6.5 归档病历\n\nDRAFT → ARCHIVED（不可逆，医疗文书不可变）。\n\n**需登录（DOCTOR）**。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Prescription 处方",
+      "description": "处方 8 态状态机：开方/审方/缴费/调剂/完成/退方（接口文档 §2.6+ / 修改建议 §2.1）",
+      "item": [
+        {
+          "name": "1. 开方",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordId\": \"{{recordId}}\",\n  \"patientId\": \"{{patientId}}\",\n  \"doctorId\": \"{{doctorId}}\",\n  \"source\": \"OUTPATIENT\",\n  \"items\": [\n    {\n      \"drugNo\": \"D10001\",\n      \"drugName\": \"硝苯地平控释片\",\n      \"specification\": \"30mg*7片\",\n      \"dosage\": \"30mg\",\n      \"frequency\": \"每日一次\",\n      \"route\": \"口服\",\n      \"days\": 7,\n      \"quantity\": 7,\n      \"unit\": \"片\",\n      \"unitPrice\": 3.50\n    }\n  ]\n}"
+            },
+            "description": "## 开方 POST /prescriptions\n\n初始 DRAFT，明细批量入库，累加 totalFee。\n\n**需登录（DOCTOR）**。"
+          }
+        },
+        {
+          "name": "2. 处方列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions?status=DRAFT&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions"],
+              "query": [
+                {"key": "status", "value": "DRAFT", "description": "可空：DRAFT/PENDING_REVIEW/APPROVED/PAID/DISPENSED/COMPLETED/REJECTED/CANCELLED"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 处方列表\n\n可按 status 过滤，分页。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "3. 处方详情",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}"]
+            },
+            "description": "## 处方详情\n\n主表 + 明细列表。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "4. 提交审方",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "submit"]
+            },
+            "body": {"mode": "raw", "raw": "{}"},
+            "description": "## 提交审方\n\nDRAFT → PENDING_REVIEW。\n\n**需登录（DOCTOR）**。"
+          }
+        },
+        {
+          "name": "5. 审方",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/review",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "review"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"APPROVE\",\n  \"pharmacistId\": \"PH2001\",\n  \"reviewComment\": \"用药合理\"\n}"
+            },
+            "description": "## 审方\n\nPENDING_REVIEW → APPROVED | REJECTED（Redis 锁防并发审方）。REJECT 需填 rejectReason。\n\n**需登录（PHARMACY_ADMIN）**。"
+          }
+        },
+        {
+          "name": "6. 缴费",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/pay",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "pay"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paidAmount\": 24.50,\n  \"paymentNo\": \"PAY20260710001\"\n}"
+            },
+            "description": "## 缴费\n\nAPPROVED → PAID。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "7. 调剂发药",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/dispense",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "dispense"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pharmacistId\": \"PH2001\"\n}"
+            },
+            "description": "## 调剂发药\n\nAPPROVED/PAID → DISPENSED。同步 Feign 逐条调 drug-service FEFO 出库，失败自动补偿回滚。\n\n**需登录（PHARMACY_ADMIN）**。"
+          }
+        },
+        {
+          "name": "8. 完成",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "complete"]
+            },
+            "body": {"mode": "raw", "raw": "{}"},
+            "description": "## 完成\n\nDISPENSED → COMPLETED。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "9. 退方",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/prescriptions/{{prescriptionId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "prescriptions", "{{prescriptionId}}", "cancel"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancelReason\": \"患者要求取消\",\n  \"operatorId\": \"PH2001\"\n}"
+            },
+            "description": "## 退方\n\nAPPROVED/PAID → CANCELLED（已调剂须走退药流程）。\n\n**需登录**。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notification 通知",
+      "description": "站内通知管理（接口文档 §2.8）",
+      "item": [
+        {
+          "name": "1. 创建通知",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receiverId\": \"{{patientId}}\",\n  \"receiverRole\": \"PATIENT\",\n  \"type\": \"APPOINTMENT\",\n  \"title\": \"预约成功\",\n  \"content\": \"你已成功预约门诊。\"\n}"
+            },
+            "description": "## 2.8.1 创建通知\n\n仅管理员可调（业务通知走 MQ 或 /internal/notifications）。\n\n**需登录（HOSPITAL_ADMIN / PHARMACY_ADMIN）**。"
+          }
+        },
+        {
+          "name": "2. 查询通知列表",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications?receiverId={{patientId}}&read=false&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications"],
+              "query": [
+                {"key": "receiverId", "value": "{{patientId}}", "description": "接收人编号（管理员可查任意人）"},
+                {"key": "read", "value": "false", "description": "是否已读：true/false"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 2.8.2 查询通知列表\n\n管理员可查任意人；普通用户当前阶段需管理员身份（JWT 无 userNo claim，RBAC 阶段精确化）。\n\n**需登录**。"
+          }
+        },
+        {
+          "name": "3. 标记已读",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/notifications/{{notificationId}}/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "notifications", "{{notificationId}}", "read"]
+            },
+            "body": {"mode": "raw", "raw": "{}"},
+            "description": "## 2.8.3 标记通知已读\n\n重复标记幂等（不报错）。\n\n**需登录**。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AuditLog 审计日志",
+      "description": "业务审计日志查询（接口文档 §4.1）",
+      "item": [
+        {
+          "name": "1. 查询审计日志",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/audit-logs?resourceType=PATIENT&action=CREATE&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "audit-logs"],
+              "query": [
+                {"key": "resourceType", "value": "PATIENT", "description": "资源类型：PATIENT/MEDICAL_RECORD/PRESCRIPTION/DRUG/SCHEDULE..."},
+                {"key": "resourceId", "value": "", "disabled": true, "description": "资源编号"},
+                {"key": "operatorId", "value": "", "disabled": true, "description": "操作人编号"},
+                {"key": "action", "value": "CREATE", "description": "VIEW/CREATE/UPDATE/DELETE/EXPORT/LOGIN/LOGOUT"},
+                {"key": "dateFrom", "value": "", "disabled": true, "description": "起始时间 ISO 8601"},
+                {"key": "dateTo", "value": "", "disabled": true, "description": "结束时间 ISO 8601"},
+                {"key": "page", "value": "1"},
+                {"key": "pageSize", "value": "20"}
+              ]
+            },
+            "description": "## 4.1 查询审计日志\n\n多条件过滤（resourceType/resourceId/operatorId/action/dateRange）。\n\n**需登录（HOSPITAL_ADMIN / PHARMACY_ADMIN）**。审计日志含敏感信息（IP/UA/操作人），仅管理员可查。"
           }
         }
       ]

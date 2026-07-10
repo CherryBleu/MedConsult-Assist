@@ -57,12 +57,63 @@
 > **抢号并发**：预约创建用 Redis 分布式锁（`lock:schedule:{id}`）防超卖，架构文档 §7.1。
 > **状态机**：appointment `BOOKED→CHECKED_IN→IN_PROGRESS→COMPLETED`（或→NO_SHOW/CANCELLED）。
 
-### 待加入（随服务实现同步更新）
+### Drug 药品库存服务（接口文档 §2.7）
 
-- medical-record-service（§2.6）：病历/处方
-- drug-service（§2.7）：药品/库存
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/drugs` | 创建药品（**自动保存 drugNo**） | 需登录 |
+| 2 | GET | `/api/v1/drugs?keyword=` | 药品列表（模糊搜通用名/商品名） | 需登录 |
+| 3 | POST | `/api/v1/drugs/{drugNo}/stock/inbound` | 入库（FEFO 批次累加） | 需登录 |
+| 4 | POST | `/api/v1/drugs/{drugNo}/stock/outbound` | 出库（FEFO 近效期优先） | 需登录 |
+| 5 | GET | `/api/v1/drugs/{drugNo}/stock/flows` | 库存流水 | 需登录 |
+| 6 | GET | `/api/v1/drugs/stock/alerts` | 库存预警（LOW_STOCK / NEAR_EXPIRY） | 需登录 |
+
+### MedicalRecord 电子病历服务（接口文档 §2.6）
+
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/medical-records` | 创建病历（**自动保存 recordId**） | 需登录（DOCTOR） |
+| 2 | GET | `/api/v1/medical-records/{recordId}` | 病历详情（PATIENT IDOR SELF） | 需登录 |
+| 3 | GET | `/api/v1/medical-records?patientId=` | 病历列表 | 需登录 |
+| 4 | PUT | `/api/v1/medical-records/{recordId}` | 更新草稿（仅 DRAFT 可改） | 需登录（DOCTOR） |
+| 5 | POST | `/api/v1/medical-records/{recordId}/archive` | 归档（DRAFT→ARCHIVED 不可逆） | 需登录（DOCTOR） |
+
+### Prescription 处方（修改建议 §2.1，8 态状态机）
+
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/prescriptions` | 开方（**自动保存 prescriptionId**） | 需登录（DOCTOR） |
+| 2 | GET | `/api/v1/prescriptions?status=` | 处方列表 | 需登录 |
+| 3 | GET | `/api/v1/prescriptions/{prescriptionId}` | 处方详情（含明细） | 需登录 |
+| 4 | POST | `/api/v1/prescriptions/{id}/submit` | 提交审方（DRAFT→PENDING_REVIEW） | 需登录（DOCTOR） |
+| 5 | POST | `/api/v1/prescriptions/{id}/review` | 审方（→APPROVED/REJECTED） | 需登录（PHARMACY_ADMIN） |
+| 6 | POST | `/api/v1/prescriptions/{id}/pay` | 缴费（APPROVED→PAID） | 需登录 |
+| 7 | POST | `/api/v1/prescriptions/{id}/dispense` | 调剂发药（→DISPENSED，FEFO 同步出库） | 需登录（PHARMACY_ADMIN） |
+| 8 | POST | `/api/v1/prescriptions/{id}/complete` | 完成（DISPENSED→COMPLETED） | 需登录 |
+| 9 | POST | `/api/v1/prescriptions/{id}/cancel` | 退方（→CANCELLED） | 需登录 |
+
+> **状态机**：DRAFT→PENDING_REVIEW→APPROVED→PAID→DISPENSED→COMPLETED（或 REJECTED/CANCELLED）。
+> **调剂补偿**：dispense 多明细逐条 Feign 出库，失败自动调 drug-service rollback-outbound 补回。
+
+### Notification 通知服务（接口文档 §2.8）
+
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | POST | `/api/v1/notifications` | 创建通知 | 需登录（管理员） |
+| 2 | GET | `/api/v1/notifications?receiverId=&read=` | 通知列表 | 需登录 |
+| 3 | PATCH | `/api/v1/notifications/{id}/read` | 标记已读（幂等） | 需登录 |
+
+### AuditLog 审计日志（接口文档 §4.1）
+
+| # | 方法 | 路径 | 说明 | 鉴权 |
+|---|---|---|---|---|
+| 1 | GET | `/api/v1/audit-logs` | 多条件查询审计日志 | 需登录（管理员） |
+
+> **集合共 46 接口**（8 文件夹），覆盖全部 6 业务服务的对外 /api/v1/* 接口。
+
+### 待加入（后续服务实现后同步）
+
 - ai-service（§3）：症状自诊/分诊/摘要/用药/影像
-- notification-service（§4）：通知/审计
 
 ## 自动脚本说明
 
@@ -101,6 +152,15 @@
 | `baseUrl` | `http://localhost:8080` | Gateway 地址（本地冒烟） |
 | `accessToken` | （空） | 登录后自动填充 |
 | `refreshToken` | （空） | 登录后自动填充 |
+| `patientId` | （空） | 患者编号 patient_no |
+| `doctorId` | `1` | 医生编号 |
+| `departmentId` | `1` | 科室编号 |
+| `scheduleId` | （空） | 排班编号 schedule_no |
+| `appointmentId` | （空） | 预约编号 appointment_no |
+| `drugNo` | （空） | 药品编号 drug_no |
+| `recordId` | （空） | 病历编号 record_no |
+| `prescriptionId` | （空） | 处方编号 prescription_no |
+| `notificationId` | （空） | 通知编号 notification_no |
 
 ## 启动后端
 

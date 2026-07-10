@@ -42,21 +42,27 @@ public class DrugDTO {
         @Schema(description = "通用名")
         private String genericName;
         /** 商品名，如 拜新同 */
+        @Size(max = 100, message = "商品名长度不能超过 100")
         @Schema(description = "商品名")
         private String tradeName;
         /** 规格，如 30mg*7片 */
+        @Size(max = 100, message = "规格长度不能超过 100")
         @Schema(description = "规格")
         private String specification;
         /** 剂型，如 控释片 */
+        @Size(max = 50, message = "剂型长度不能超过 50")
         @Schema(description = "剂型")
         private String dosageForm;
         /** 生产厂家 */
+        @Size(max = 200, message = "生产厂家长度不能超过 200")
         @Schema(description = "生产厂家")
         private String manufacturer;
         /** 批准文号（国药准字） */
+        @Size(max = 100, message = "批准文号长度不能超过 100")
         @Schema(description = "批准文号")
         private String approvalNo;
         /** 单位，如 盒 */
+        @Size(max = 20, message = "单位长度不能超过 20")
         @Schema(description = "单位")
         private String unit;
         /** 最低库存阈值 */
@@ -115,6 +121,7 @@ public class DrugDTO {
     public static class InboundRequest {
         /** 批次号（同 batchNo 则累加 quantity） */
         @NotBlank(message = "批次号不能为空")
+        @Size(max = 64, message = "批次号长度不能超过 64")
         @Schema(description = "批次号")
         private String batchNo;
         /** 入库数量 */
@@ -134,6 +141,7 @@ public class DrugDTO {
         @Schema(description = "过期日期")
         private LocalDate expireDate;
         /** 供应商 */
+        @Size(max = 200, message = "供应商长度不能超过 200")
         @Schema(description = "供应商")
         private String supplier;
     }

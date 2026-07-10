@@ -1,13 +1,10 @@
 package com.medconsult.medicalrecord.medicalrecord.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.PastOrPresent;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -46,18 +43,22 @@ public class MedicalRecordDTO {
         @Schema(description = "主诉")
         private String chiefComplaint;
         /** 现病史 */
+        @Size(max = 4000, message = "现病史不能超过 4000 字")
         @Schema(description = "现病史")
         private String presentIllness;
         /** 既往史 */
+        @Size(max = 4000, message = "既往史不能超过 4000 字")
         @Schema(description = "既往史")
         private String pastHistory;
         /** 体格检查 */
+        @Size(max = 4000, message = "体格检查不能超过 4000 字")
         @Schema(description = "体格检查")
         private String physicalExam;
         /** 初步诊断（字符串数组，service 层序列化为 JSON 串入库） */
         @Schema(description = "初步诊断")
         private List<String> initialDiagnosis;
         /** 医嘱 */
+        @Size(max = 4000, message = "医嘱不能超过 4000 字")
         @Schema(description = "医嘱")
         private String doctorAdvice;
     }
@@ -99,12 +100,15 @@ public class MedicalRecordDTO {
     @Schema(description = "更新草稿病历请求")
     public static class UpdateDraftRequest {
         /** 现病史（DRAFT 可改） */
+        @Size(max = 4000, message = "现病史不能超过 4000 字")
         @Schema(description = "现病史")
         private String presentIllness;
         /** 既往史 */
+        @Size(max = 4000, message = "既往史不能超过 4000 字")
         @Schema(description = "既往史")
         private String pastHistory;
         /** 体格检查 */
+        @Size(max = 4000, message = "体格检查不能超过 4000 字")
         @Schema(description = "体格检查")
         private String physicalExam;
         /** 主诉 */
@@ -115,6 +119,7 @@ public class MedicalRecordDTO {
         @Schema(description = "最终诊断")
         private List<String> finalDiagnosis;
         /** 医嘱 */
+        @Size(max = 4000, message = "医嘱不能超过 4000 字")
         @Schema(description = "医嘱")
         private String doctorAdvice;
     }

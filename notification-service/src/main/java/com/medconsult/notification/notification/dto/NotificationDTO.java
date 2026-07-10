@@ -21,6 +21,7 @@ public class NotificationDTO {
     @Schema(description = "创建通知请求")
     public static class CreateRequest {
         @NotBlank(message = "接收人编号不能为空")
+        @Size(max = 32, message = "接收人编号不能超过 32 字")
         @Schema(description = "接收人编号")
         private String receiverId;
         @NotBlank(message = "接收人角色不能为空")
@@ -40,8 +41,10 @@ public class NotificationDTO {
         @Size(max = 1000, message = "内容不能超过 1000 字")
         @Schema(description = "内容")
         private String content;
+        @Size(max = 50, message = "关联业务类型不能超过 50 字")
         @Schema(description = "关联业务类型")
         private String relatedType;
+        @Size(max = 64, message = "关联业务编号不能超过 64 字")
         @Schema(description = "关联业务编号")
         private String relatedId;
     }

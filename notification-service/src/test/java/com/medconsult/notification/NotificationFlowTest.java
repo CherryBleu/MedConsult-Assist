@@ -71,7 +71,11 @@ class NotificationFlowTest {
                 {"receiverId":"%s","receiverRole":"PATIENT","type":"APPOINTMENT",
                  "title":"预约成功","content":"你已成功预约 2026-07-08 上午心内科王医生门诊。",
                  "relatedType":"APPOINTMENT","relatedId":"A202607060001"}""".formatted(RECEIVER);
-        mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body))
+        // POST 创建仅管理员（@Permission(roles=管理员)），带管理员身份头
+        mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body)
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.notificationId").exists())
@@ -83,7 +87,11 @@ class NotificationFlowTest {
         String body = """
                 {"receiverId":"%s","receiverRole":"PATIENT","type":"INVALID",
                  "title":"测试"}""".formatted(RECEIVER);
-        mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body))
+        // 带管理员身份头过角色校验，让 type 校验（400001）成为失败原因
+        mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body)
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
@@ -137,6 +145,29 @@ class NotificationFlowTest {
         mvc.perform(patch("/api/v1/notifications/N_NOT_EXIST/read")
                         .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
+    void createNotification_nonAdminForbidden() throws Exception {
+        // POST /api/v1/notifications 仅管理员（@Permission(roles=管理员)）；
+        // PATIENT 身份应被 PermissionAspect 拒绝 403。
+        String body = """
+                {"receiverId":"%s","receiverRole":"PATIENT","type":"APPOINTMENT","title":"测试"}""".formatted(RECEIVER);
+        mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body)
+                        .header("X-User-Id", "100")
+                        .header("X-User-Roles", "PATIENT")
+                        .header("X-User-Primary-Role", "PATIENT"))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void notificationList_nonAdminForbidden() throws Exception {
+        // 非管理员查询通知列表：JWT 无 userNo claim 无法与 receiver_id 匹配 → FORBIDDEN（R1-2 修复）
+        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER)
+                        .header("X-User-Id", "100")
+                        .header("X-User-Roles", "PATIENT")
+                        .header("X-User-Primary-Role", "PATIENT"))
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
@@ -223,7 +254,11 @@ class NotificationFlowTest {
         String body = """
                 {"receiverId":"%s","receiverRole":"PATIENT","type":"APPOINTMENT",
                  "title":"预约成功","content":"你已成功预约 2026-07-08 上午心内科王医生门诊。"}""".formatted(RECEIVER);
-        MvcResult r = mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body))
+        // POST 创建仅管理员（@Permission(roles=管理员)），带管理员身份头
+        MvcResult r = mvc.perform(post("/api/v1/notifications").contentType("application/json").content(body)
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/notificationId").asText();
