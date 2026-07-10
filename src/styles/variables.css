@@ -1,0 +1,39 @@
+:root {
+  /* 主题色 - 医疗蓝 */
+  --primary-color: #1677ff;
+  --primary-light: #4096ff;
+  --primary-dark: #0958d9;
+
+  /* 功能状态色 */
+  --success-color: #52c41a;
+  --warning-color: #faad14;
+  --danger-color: #ff4d4f;
+  --info-color: #909399;
+
+  /* 文字色 */
+  --text-primary: #303133;
+  --text-regular: #606266;
+  --text-secondary: #909399;
+  --text-placeholder: #c0c4cc;
+
+  /* 背景色 */
+  --bg-page: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-hover: #f5f7fa;
+
+  /* 边框色 */
+  --border-color: #dcdfe6;
+  --border-light: #e4e7ed;
+
+  /* 字号 */
+  --font-xs: 12px;
+  --font-sm: 14px;
+  --font-base: 16px;
+  --font-lg: 18px;
+  --font-xl: 20px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-lg: 8px;
+}
