@@ -9,8 +9,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Knife4j（OpenAPI3）接口文档配置（对齐《接口文档》§2.2 患者档案）。
  *
- * <p>{@code pathsToMatch("/api/v1/**")} 只暴露对外接口，自动排除
- * {@code /internal/**}（Feign 内部接口）。
+ * <p>{@code pathsToMatch("/api/v1/**")} 只暴露对外接口；
+ * {@code pathsToExclude} 显式排除 {@code /internal/**}（Feign 内部接口）与 {@code /health/**}（冒烟接口）。
  */
 @Configuration
 public class Knife4jConfig {
@@ -20,6 +20,7 @@ public class Knife4jConfig {
         return GroupedOpenApi.builder()
                 .group("public-api")
                 .pathsToMatch("/api/v1/**")
+                .pathsToExclude("/internal/**", "/health/**")
                 .build();
     }
 

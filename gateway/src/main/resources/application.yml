@@ -110,7 +110,9 @@ logging:
 # 不用 discover：discover 会从业务路由 Path 谓词推导文档 URL（/api/v1/auth/** → /api/v1/auth/v3/api-docs），
 # 但该路径经网关转发不剥前缀，下游 springdoc 在 /v3/api-docs → 404。
 # manual 显式声明每个服务的文档 URL，配合上方 /doc/{service}/** + StripPrefix=2 专用路由：
-# 浏览器 GET /doc/auth/v3/api-docs → 网关剥 /doc/auth → 下游收到 /v3/api-docs → 200。
+# 浏览器 GET /doc/auth/v3/api-docs/public-api → 网关剥 /doc/auth → 下游收到 /v3/api-docs/public-api → 200。
+# springdoc 2.3.0 用路径变量 /v3/api-docs/{group}（非 ?group= 查询参数），
+# /public-api 让下游返回 GroupedOpenApi 过滤后的文档（pathsToExclude 排除 /internal/** 和 /health/**）。
 # 访问入口：http://localhost:8080/doc.html
 knife4j:
   gateway:
@@ -118,26 +120,26 @@ knife4j:
     strategy: manual
     routes:
       - name: 用户认证服务
-        url: /doc/auth/v3/api-docs
+        url: /doc/auth/v3/api-docs/public-api
         service-name: auth-service
         order: 1
       - name: 患者档案服务
-        url: /doc/patient/v3/api-docs
+        url: /doc/patient/v3/api-docs/public-api
         service-name: patient-service
         order: 2
       - name: 门诊服务
-        url: /doc/outpatient/v3/api-docs
+        url: /doc/outpatient/v3/api-docs/public-api
         service-name: outpatient-service
         order: 3
       - name: 药品库存服务
-        url: /doc/drug/v3/api-docs
+        url: /doc/drug/v3/api-docs/public-api
         service-name: drug-service
         order: 4
       - name: 电子病历+处方服务
-        url: /doc/medical-record/v3/api-docs
+        url: /doc/medical-record/v3/api-docs/public-api
         service-name: medical-record-service
         order: 5
       - name: 通知+审计服务
-        url: /doc/notification/v3/api-docs
+        url: /doc/notification/v3/api-docs/public-api
         service-name: notification-service
         order: 6
