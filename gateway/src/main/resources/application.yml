@@ -64,3 +64,28 @@ logging:
   level:
     com.medconsult: DEBUG
     org.springframework.cloud.gateway: INFO
+
+# Knife4j 网关聚合（OpenAPI3）
+# 服务发现聚合：自动从 Nacos 拉取已注册业务服务的 /v3/api-docs，按服务名分组展示。
+# 访问入口：http://localhost:8080/doc.html
+knife4j:
+  gateway:
+    enabled: true
+    strategy: discover
+    discover:
+      enabled: true
+      version: openapi3
+      # 各服务分组显示名（对齐《接口文档》章节）
+      service-config:
+        auth-service:
+          name: 用户认证服务
+        patient-service:
+          name: 患者档案服务
+        outpatient-service:
+          name: 门诊服务
+        drug-service:
+          name: 药品库存服务
+        medical-record-service:
+          name: 电子病历+处方服务
+        notification-service:
+          name: 通知+审计服务

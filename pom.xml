@@ -57,6 +57,9 @@
 
         <!-- ShedLock（定时任务选主，架构文档 §8.4；auth/gateway 暂不用，业务服务用） -->
         <shedlock.version>5.10.0</shedlock.version>
+
+        <!-- Knife4j（OpenAPI3 接口文档，4.5.0 适配 Boot 3.2.x + Jakarta + JDK 21） -->
+        <knife4j.version>4.5.0</knife4j.version>
     </properties>
 
     <dependencyManagement>
@@ -98,6 +101,20 @@
                 <groupId>net.javacrumbs.shedlock</groupId>
                 <artifactId>shedlock-provider-redis-spring</artifactId>
                 <version>${shedlock.version}</version>
+            </dependency>
+
+            <!-- Knife4j（OpenAPI3 接口文档） -->
+            <!-- 业务服务（servlet 栈）：knife4j-openapi3-jakarta-spring-boot-starter -->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+                <version>${knife4j.version}</version>
+            </dependency>
+            <!-- 网关聚合（WebFlux 栈）：knife4j-gateway-spring-boot-starter -->
+            <dependency>
+                <groupId>com.github.xiaoymin</groupId>
+                <artifactId>knife4j-gateway-spring-boot-starter</artifactId>
+                <version>${knife4j.version}</version>
             </dependency>
 
             <!-- ===== 本项目 common 子模块（自引用，版本统一管理）===== -->
