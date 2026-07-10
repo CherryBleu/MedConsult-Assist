@@ -5,7 +5,6 @@ import com.medconsult.ai.client.OpenAiCompatibleClient;
 import com.medconsult.ai.config.AiProperties;
 import com.medconsult.ai.dto.AiModels.MedicationAnalysisRequest;
 import com.medconsult.ai.dto.AiModels.MedicationAnalysisResponse;
-import com.medconsult.ai.dto.AiModels.PrescriptionDto;
 import com.medconsult.ai.persistence.entity.AiMedicationAnalysisEntity;
 import com.medconsult.ai.persistence.mapper.AiMedicationAnalysisMapper;
 import com.medconsult.ai.util.BusinessIds;
@@ -13,15 +12,17 @@ import com.medconsult.ai.util.JsonUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Service
 public class MedicationAnalysisService {
     private static final String PROMPT = """
-            你是用药安全分析助手。请基于处方、过敏史、既往史和当前用药生成 JSON：
+            You are a medication safety assistant.
+            Use only the prescription, patient context, and controlledFunctionResult provided in the payload.
+            Return JSON only:
             {
               "overallRiskLevel":"LOW|MEDIUM|HIGH|CRITICAL",
               "contraindicationRisks":[],
@@ -29,42 +30,67 @@ public class MedicationAnalysisService {
               "reminders":[],
               "functionTrace":[]
             }
-            不要自动修改处方，只给风险提醒。
+            Do not change the prescription. Only provide risk reminders.
             """;
 
     private final OpenAiCompatibleClient llmClient;
     private final AiMedicationAnalysisMapper analysisMapper;
     private final AiProperties properties;
     private final AiCallLogService callLogService;
+    private final MedicationFunctionService functionService;
 
-    public MedicationAnalysisService(OpenAiCompatibleClient llmClient, AiMedicationAnalysisMapper analysisMapper,
-                                     AiProperties properties, AiCallLogService callLogService) {
+    public MedicationAnalysisService(OpenAiCompatibleClient llmClient,
+                                     AiMedicationAnalysisMapper analysisMapper,
+                                     AiProperties properties,
+                                     AiCallLogService callLogService,
+                                     MedicationFunctionService functionService) {
         this.llmClient = llmClient;
         this.analysisMapper = analysisMapper;
         this.properties = properties;
         this.callLogService = callLogService;
+        this.functionService = functionService;
     }
 
     public MedicationAnalysisResponse analyze(MedicationAnalysisRequest request) {
+        return analyze(request, null);
+    }
+
+    public MedicationAnalysisResponse analyzeStream(MedicationAnalysisRequest request, Consumer<String> tokenConsumer) {
+        return analyze(request, tokenConsumer);
+    }
+
+    private MedicationAnalysisResponse analyze(MedicationAnalysisRequest request, Consumer<String> tokenConsumer) {
         long started = System.currentTimeMillis();
-        Map<String, Object> fallback = ruleBased(request);
-        Map<String, Object> result = llmClient.chatJson(PROMPT, JsonUtils.toJson(request))
+        MedicationFunctionService.FunctionResult functionResult = functionService.execute(request);
+        Map<String, Object> fallback = resultMap(functionResult);
+        Map<String, Object> llmPayload = new LinkedHashMap<>();
+        llmPayload.put("prescriptions", request.prescriptions());
+        llmPayload.put("patientContext", functionResult.patientContext());
+        llmPayload.put("controlledFunctionResult", fallback);
+
+        Map<String, Object> result = (tokenConsumer == null
+                ? llmClient.chatJson(PROMPT, JsonUtils.toJson(llmPayload))
+                : llmClient.chatJsonStream(PROMPT, JsonUtils.toJson(llmPayload), tokenConsumer))
                 .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
                 .orElse(fallback);
+        result.putIfAbsent("functionTrace", functionResult.functionTrace());
+
         String analysisNo = BusinessIds.next("MA");
         AiMedicationAnalysisEntity entity = new AiMedicationAnalysisEntity();
         entity.setAnalysisNo(analysisNo);
         entity.setPatientId(BusinessIds.numericId(request.patientId()));
         entity.setRecordId(BusinessIds.numericId(request.recordId()));
+        entity.setPrescriptionId(BusinessIds.numericId(request.prescriptionId()));
         entity.setPrescriptions(JsonUtils.toJson(request.prescriptions()));
-        entity.setOverallRiskLevel(string(result.getOrDefault("overallRiskLevel", "LOW")));
+        entity.setOverallRiskLevel(string(result.getOrDefault("overallRiskLevel", functionResult.overallRiskLevel())));
         entity.setContraindicationRisks(JsonUtils.toJson(result.getOrDefault("contraindicationRisks", List.of())));
         entity.setInteractionRisks(JsonUtils.toJson(result.getOrDefault("interactionRisks", List.of())));
         entity.setReminders(JsonUtils.toJson(result.getOrDefault("reminders", List.of())));
-        entity.setFunctionTrace(JsonUtils.toJson(result.getOrDefault("functionTrace", List.of())));
+        entity.setFunctionTrace(JsonUtils.toJson(result.getOrDefault("functionTrace", functionResult.functionTrace())));
         entity.setModelName(properties.llm().model());
         entity.setCreatedAt(LocalDateTime.now());
         analysisMapper.insert(entity);
+
         callLogService.success("MEDICATION_ANALYSIS", request.patientId(), analysisNo, properties.llm().model(),
                 JsonUtils.toJson(request.prescriptions()), JsonUtils.toJson(result), entity.getOverallRiskLevel(),
                 System.currentTimeMillis() - started);
@@ -78,55 +104,14 @@ public class MedicationAnalysisService {
         );
     }
 
-    private Map<String, Object> ruleBased(MedicationAnalysisRequest request) {
-        List<Map<String, Object>> contraindications = new ArrayList<>();
-        List<Map<String, Object>> interactions = new ArrayList<>();
-        List<Map<String, Object>> reminders = new ArrayList<>();
-        for (PrescriptionDto prescription : request.prescriptions()) {
-            if (containsAny(prescription.drugName(), "布洛芬", "阿司匹林")
-                    && request.patientContext() != null
-                    && request.patientContext().pastMedicalHistory() != null
-                    && request.patientContext().pastMedicalHistory().stream().anyMatch(item -> item.contains("胃"))) {
-                contraindications.add(Map.of(
-                        "drugName", prescription.drugName(),
-                        "riskLevel", "MEDIUM",
-                        "description", "胃部疾病患者使用 NSAIDs 需谨慎。",
-                        "suggestion", "建议医生评估胃肠道风险。"
-                ));
-            }
-            reminders.add(Map.of(
-                    "drugName", prescription.drugName(),
-                    "reminder", "请按医嘱剂量和频次使用，若出现不适及时联系医生。"
-            ));
-        }
-        if (drugNames(request).contains("布洛芬") && drugNames(request).contains("阿司匹林")) {
-            interactions.add(Map.of(
-                    "drugA", "布洛芬",
-                    "drugB", "阿司匹林",
-                    "riskLevel", "MEDIUM",
-                    "description", "合用可能增加胃肠道不良反应风险。"
-            ));
-        }
+    private static Map<String, Object> resultMap(MedicationFunctionService.FunctionResult functionResult) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("overallRiskLevel", contraindications.isEmpty() && interactions.isEmpty() ? "LOW" : "MEDIUM");
-        result.put("contraindicationRisks", contraindications);
-        result.put("interactionRisks", interactions);
-        result.put("reminders", reminders);
-        result.put("functionTrace", List.of(Map.of("functionName", "localMedicationRules", "resultSummary", "完成本地用药规则分析")));
+        result.put("overallRiskLevel", functionResult.overallRiskLevel());
+        result.put("contraindicationRisks", functionResult.contraindicationRisks());
+        result.put("interactionRisks", functionResult.interactionRisks());
+        result.put("reminders", functionResult.reminders());
+        result.put("functionTrace", functionResult.functionTrace());
         return result;
-    }
-
-    private static String drugNames(MedicationAnalysisRequest request) {
-        return request.prescriptions().stream().map(PrescriptionDto::drugName).reduce("", (a, b) -> a + " " + b);
-    }
-
-    private static boolean containsAny(String text, String... terms) {
-        for (String term : terms) {
-            if (text != null && text.contains(term)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String string(Object value) {

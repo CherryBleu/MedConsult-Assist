@@ -18,6 +18,8 @@ public class AiChatMessageEntity {
     private String riskLevel;
     private Integer emergencyAdvice;
     private String modelName;
+    private String queryEmbeddingModel;
+    private String ruleVersion;
     private LocalDateTime createdAt;
 
     public Long getId() {
@@ -98,6 +100,22 @@ public class AiChatMessageEntity {
 
     public void setModelName(String modelName) {
         this.modelName = modelName;
+    }
+
+    public String getQueryEmbeddingModel() {
+        return queryEmbeddingModel;
+    }
+
+    public void setQueryEmbeddingModel(String queryEmbeddingModel) {
+        this.queryEmbeddingModel = queryEmbeddingModel;
+    }
+
+    public String getRuleVersion() {
+        return ruleVersion;
+    }
+
+    public void setRuleVersion(String ruleVersion) {
+        this.ruleVersion = ruleVersion;
     }
 
     public LocalDateTime getCreatedAt() {

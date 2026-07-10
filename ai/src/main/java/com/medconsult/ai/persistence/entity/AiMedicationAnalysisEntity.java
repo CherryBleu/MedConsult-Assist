@@ -12,6 +12,7 @@ public class AiMedicationAnalysisEntity {
     private String analysisNo;
     private Long patientId;
     private Long recordId;
+    private Long prescriptionId;
     private String prescriptions;
     private String overallRiskLevel;
     private String allergyRisks;
@@ -52,6 +53,14 @@ public class AiMedicationAnalysisEntity {
 
     public void setRecordId(Long recordId) {
         this.recordId = recordId;
+    }
+
+    public Long getPrescriptionId() {
+        return prescriptionId;
+    }
+
+    public void setPrescriptionId(Long prescriptionId) {
+        this.prescriptionId = prescriptionId;
     }
 
     public String getPrescriptions() {

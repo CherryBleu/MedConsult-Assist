@@ -14,6 +14,10 @@
     <artifactId>medconsult-gateway</artifactId>
     <name>medconsult-gateway</name>
 
+    <properties>
+        <spring-boot.run.skip>false</spring-boot.run.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.cloud</groupId>

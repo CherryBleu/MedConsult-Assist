@@ -1,5 +1,7 @@
-package com.medconsult.ai.common;
+package com.medconsult.common.web;
 
+import com.medconsult.common.core.ApiResponse;
+import com.medconsult.common.core.BizException;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;

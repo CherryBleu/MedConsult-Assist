@@ -1,4 +1,4 @@
-package com.medconsult.ai.common;
+package com.medconsult.common.core;
 
 import java.util.List;
 

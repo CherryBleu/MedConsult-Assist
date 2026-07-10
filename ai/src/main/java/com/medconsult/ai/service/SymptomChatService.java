@@ -45,6 +45,7 @@ public class SymptomChatService {
             6. 第二段再用简洁语言综合相关条目，不要罗列一堆病名吓唬用户；
             7. 第三段说明建议就诊科室、可与医生沟通的检查方向和需要立刻就医的警示信号；
             8. 语气自然、简洁，不输出 Markdown 表格。
+            
             """;
 
     private final DiseaseSearchService diseaseSearchService;
@@ -108,6 +109,8 @@ public class SymptomChatService {
             message.setRiskLevel(risk.riskLevel());
             message.setEmergencyAdvice(risk.emergencyAdvice() ? 1 : 0);
             message.setModelName(properties.llm().model());
+            message.setQueryEmbeddingModel(properties.embedding().model());
+            message.setRuleVersion("v1");
             message.setCreatedAt(LocalDateTime.now());
             chatMessageMapper.insert(message);
             log.info("[AI-TIMER] symptomChat.dbWrite={}ms", elapsed(stepStarted));
@@ -194,6 +197,7 @@ public class SymptomChatService {
                 .eq(AiChatSessionEntity::getSessionNo, request.sessionId())
                 .last("limit 1"));
         if (existing != null) {
+            existing.setContextSymptoms(JsonUtils.toJson(List.of(request.message())));
             existing.setUpdatedAt(LocalDateTime.now());
             chatSessionMapper.updateById(existing);
             return existing;
@@ -203,6 +207,7 @@ public class SymptomChatService {
         session.setPatientId(BusinessIds.numericId(request.patientId()));
         session.setTitle(truncate(request.message(), 60));
         session.setStatus("ACTIVE");
+        session.setContextSymptoms(JsonUtils.toJson(List.of(request.message())));
         session.setCreatedAt(LocalDateTime.now());
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionMapper.insert(session);

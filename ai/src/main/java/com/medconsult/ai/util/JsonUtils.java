@@ -13,6 +13,8 @@ public final class JsonUtils {
     };
     private static final TypeReference<List<Map<String, Object>>> LIST_MAP_TYPE = new TypeReference<>() {
     };
+    private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
+    };
 
     private JsonUtils() {
     }
@@ -42,6 +44,17 @@ public final class JsonUtils {
         }
         try {
             return MAPPER.readValue(json, LIST_MAP_TYPE);
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    public static List<String> toStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(json, STRING_LIST_TYPE);
         } catch (Exception ex) {
             return List.of();
         }

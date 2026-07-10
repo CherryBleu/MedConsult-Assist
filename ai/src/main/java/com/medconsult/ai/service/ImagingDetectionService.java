@@ -1,17 +1,31 @@
 package com.medconsult.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.medconsult.ai.client.MedicalImageFetcher;
+import com.medconsult.ai.client.MedicalImageFetcher.MedicalImagePayload;
+import com.medconsult.ai.client.MedicalVisionClient;
 import com.medconsult.ai.client.OpenAiCompatibleClient;
-import com.medconsult.ai.common.BizException;
 import com.medconsult.ai.config.AiProperties;
-import com.medconsult.ai.dto.AiModels.ImagingDetectionRequest;
-import com.medconsult.ai.dto.AiModels.ImagingDetectionResponse;
-import com.medconsult.ai.dto.AiModels.ImagingReviewRequest;
+import com.medconsult.ai.dto.AiModels.AiReviewRequest;
+import com.medconsult.ai.dto.AiModels.ExternalModelDto;
+import com.medconsult.ai.dto.AiModels.ImageDetectionRequest;
+import com.medconsult.ai.dto.AiModels.ImageDetectionResponse;
 import com.medconsult.ai.dto.AiModels.ImagingReviewResponse;
-import com.medconsult.ai.persistence.entity.AiImagingDetectionEntity;
-import com.medconsult.ai.persistence.mapper.AiImagingDetectionMapper;
+import com.medconsult.ai.dto.AiModels.ReportAnalysisRequest;
+import com.medconsult.ai.dto.AiModels.ReportAnalysisResponse;
+import com.medconsult.ai.mq.AiMqConfig;
+import com.medconsult.ai.mq.ImageDetectionTaskMessage;
+import com.medconsult.ai.persistence.entity.AiImageDetectionEntity;
+import com.medconsult.ai.persistence.entity.AiReportTextAnalysisEntity;
+import com.medconsult.ai.persistence.mapper.AiImageDetectionMapper;
+import com.medconsult.ai.persistence.mapper.AiReportTextAnalysisMapper;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.ai.util.JsonUtils;
+import com.medconsult.common.core.BizException;
+import com.medconsult.common.web.RequestContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -20,94 +34,247 @@ import java.util.Map;
 
 @Service
 public class ImagingDetectionService {
+    private static final Logger log = LoggerFactory.getLogger(ImagingDetectionService.class);
+
     private static final String PROMPT = """
-            你是影像报告异常初筛助手。请根据报告文本和影像类型生成 JSON：
+            You are a medical report abnormality screening assistant.
+            Generate JSON only:
             {"abnormalDetected":true,"findings":[{"abnormalType":"","location":"","riskLevel":"LOW","confidence":0.0,"suggestion":""}]}
-            结果仅作初筛参考。
+            The result is only for preliminary screening reference.
             """;
 
     private final OpenAiCompatibleClient llmClient;
-    private final AiImagingDetectionMapper detectionMapper;
+    private final AiReportTextAnalysisMapper reportTextAnalysisMapper;
+    private final AiImageDetectionMapper imageDetectionMapper;
     private final AiProperties properties;
     private final AiCallLogService callLogService;
+    private final RabbitTemplate rabbitTemplate;
+    private final MedicalImageFetcher imageFetcher;
+    private final MedicalVisionClient visionClient;
 
-    public ImagingDetectionService(OpenAiCompatibleClient llmClient, AiImagingDetectionMapper detectionMapper,
-                                   AiProperties properties, AiCallLogService callLogService) {
+    public ImagingDetectionService(OpenAiCompatibleClient llmClient,
+                                   AiReportTextAnalysisMapper reportTextAnalysisMapper,
+                                   AiImageDetectionMapper imageDetectionMapper,
+                                   AiProperties properties,
+                                   AiCallLogService callLogService,
+                                   RabbitTemplate rabbitTemplate,
+                                   MedicalImageFetcher imageFetcher,
+                                   MedicalVisionClient visionClient) {
         this.llmClient = llmClient;
-        this.detectionMapper = detectionMapper;
+        this.reportTextAnalysisMapper = reportTextAnalysisMapper;
+        this.imageDetectionMapper = imageDetectionMapper;
         this.properties = properties;
         this.callLogService = callLogService;
+        this.rabbitTemplate = rabbitTemplate;
+        this.imageFetcher = imageFetcher;
+        this.visionClient = visionClient;
     }
 
-    public ImagingDetectionResponse detect(ImagingDetectionRequest request) {
+    public ReportAnalysisResponse analyzeReport(ReportAnalysisRequest request) {
         long started = System.currentTimeMillis();
-        Map<String, Object> result = llmClient.chatJson(PROMPT, JsonUtils.toJson(request))
-                .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
-                .orElseGet(() -> fallback(request.reportText()));
-        String detectionNo = BusinessIds.next("IMG");
+        Map<String, Object> result = analyzeTextPayload(request.reportText(), request.reportType(), request.externalModel());
+        String analysisNo = BusinessIds.next("RPT");
         List<Map<String, Object>> findings = listMap(result.get("findings"));
         boolean abnormal = Boolean.TRUE.equals(result.get("abnormalDetected")) || !findings.isEmpty();
-        AiImagingDetectionEntity entity = new AiImagingDetectionEntity();
+        LocalDateTime now = LocalDateTime.now();
+
+        AiReportTextAnalysisEntity entity = new AiReportTextAnalysisEntity();
+        entity.setAnalysisNo(analysisNo);
+        entity.setPatientId(BusinessIds.numericId(request.patientId()));
+        entity.setRecordId(BusinessIds.numericId(request.recordId()));
+        entity.setAttachmentId(BusinessIds.numericId(request.attachmentId()));
+        entity.setReportType(request.reportType());
+        entity.setReportText(request.reportText());
+        entity.setStatus("COMPLETED");
+        entity.setAbnormalDetected(abnormal ? 1 : 0);
+        entity.setFindings(JsonUtils.toJson(findings));
+        entity.setExternalProvider(provider(request.externalModel()));
+        entity.setExternalModel(model(request.externalModel()));
+        entity.setLatencyMs((int) (System.currentTimeMillis() - started));
+        entity.setReviewStatus("UNREVIEWED");
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        reportTextAnalysisMapper.insert(entity);
+
+        callLogService.success("REPORT_ANALYSIS", request.patientId(), analysisNo, entity.getExternalModel(),
+                request.reportText(), JsonUtils.toJson(result), firstRisk(findings), System.currentTimeMillis() - started);
+        return new ReportAnalysisResponse(analysisNo, "COMPLETED", abnormal, findings, disclaimer());
+    }
+
+    public ImageDetectionResponse submitImageDetection(ImageDetectionRequest request) {
+        String detectionNo = BusinessIds.next("IMG");
+        LocalDateTime now = LocalDateTime.now();
+        AiImageDetectionEntity entity = new AiImageDetectionEntity();
         entity.setDetectionNo(detectionNo);
         entity.setPatientId(BusinessIds.numericId(request.patientId()));
         entity.setRecordId(BusinessIds.numericId(request.recordId()));
         entity.setImageType(request.imageType());
-        entity.setReportText(request.reportText());
         entity.setImageUrls(JsonUtils.toJson(request.imageUrls()));
-        entity.setStatus("COMPLETED");
-        entity.setAbnormalDetected(abnormal ? 1 : 0);
-        entity.setFindings(JsonUtils.toJson(findings));
-        entity.setExternalProvider(request.externalModel() == null ? properties.imaging().provider() : request.externalModel().provider());
-        entity.setExternalModel(request.externalModel() == null ? properties.imaging().model() : request.externalModel().model());
-        entity.setLatencyMs((int) (System.currentTimeMillis() - started));
+        entity.setStorageType(request.storageType() == null || request.storageType().isBlank() ? "OSS" : request.storageType());
+        entity.setStatus("PENDING");
+        entity.setAbnormalDetected(0);
+        entity.setFindings(JsonUtils.toJson(List.of()));
+        entity.setExternalProvider(provider(request.externalModel()));
+        entity.setExternalModel(model(request.externalModel()));
         entity.setReviewStatus("UNREVIEWED");
-        entity.setCreatedAt(LocalDateTime.now());
-        detectionMapper.insert(entity);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        imageDetectionMapper.insert(entity);
+
         callLogService.success("IMAGING_DETECTION", request.patientId(), detectionNo, entity.getExternalModel(),
-                request.reportText(), JsonUtils.toJson(result), findings.isEmpty() ? "LOW" : string(findings.getFirst().get("riskLevel")),
-                System.currentTimeMillis() - started);
-        return new ImagingDetectionResponse(detectionNo, "COMPLETED", abnormal, findings,
-                "AI 结果仅作为初步筛查参考，不能替代医生诊断。");
+                JsonUtils.toJson(request.imageUrls()), "PENDING", null, 0);
+        try {
+            rabbitTemplate.convertAndSend(properties.mq().exchange(), AiMqConfig.IMAGE_DETECTION_ROUTING_KEY,
+                    new ImageDetectionTaskMessage(detectionNo, RequestContext.traceId()));
+        } catch (RuntimeException ex) {
+            log.warn("submit image detection task failed, detectionNo={}", detectionNo, ex);
+            callLogService.failed("IMAGING_DETECTION_QUEUE", request.patientId(), detectionNo, entity.getExternalModel(),
+                    JsonUtils.toJson(request.imageUrls()), 0, ex);
+        }
+        return new ImageDetectionResponse(detectionNo, "PENDING", false, List.of(), disclaimer());
     }
 
-    public ImagingDetectionResponse get(String detectionId) {
-        AiImagingDetectionEntity entity = findByNo(detectionId);
-        return new ImagingDetectionResponse(
+    public void processImageDetection(String detectionId) {
+        long started = System.currentTimeMillis();
+        AiImageDetectionEntity entity = findImageByNo(detectionId);
+        if ("COMPLETED".equals(entity.getStatus())) {
+            return;
+        }
+        entity.setStatus("PROCESSING");
+        entity.setUpdatedAt(LocalDateTime.now());
+        imageDetectionMapper.updateById(entity);
+        try {
+            Map<String, Object> result = analyzeImagePayload(entity);
+            List<Map<String, Object>> findings = listMap(result.get("findings"));
+            boolean abnormal = Boolean.TRUE.equals(result.get("abnormalDetected")) || !findings.isEmpty();
+            entity.setStatus("COMPLETED");
+            entity.setAbnormalDetected(abnormal ? 1 : 0);
+            entity.setFindings(JsonUtils.toJson(findings));
+            entity.setLatencyMs((int) (System.currentTimeMillis() - started));
+            entity.setUpdatedAt(LocalDateTime.now());
+            imageDetectionMapper.updateById(entity);
+            callLogService.success("IMAGING_DETECTION", BusinessIds.businessOrEmpty(String.valueOf(entity.getPatientId())), detectionId,
+                    entity.getExternalModel(), entity.getImageUrls(), JsonUtils.toJson(result), firstRisk(findings),
+                    System.currentTimeMillis() - started);
+        } catch (RuntimeException ex) {
+            entity.setStatus("FAILED");
+            entity.setUpdatedAt(LocalDateTime.now());
+            imageDetectionMapper.updateById(entity);
+            callLogService.failed("IMAGING_DETECTION", BusinessIds.businessOrEmpty(String.valueOf(entity.getPatientId())), detectionId,
+                    entity.getExternalModel(), entity.getImageUrls(), System.currentTimeMillis() - started, ex);
+            throw ex;
+        }
+    }
+
+    public ImageDetectionResponse getImageDetection(String detectionId) {
+        AiImageDetectionEntity entity = findImageByNo(detectionId);
+        return new ImageDetectionResponse(
                 entity.getDetectionNo(),
                 entity.getStatus(),
                 entity.getAbnormalDetected() != null && entity.getAbnormalDetected() == 1,
                 JsonUtils.toListMap(entity.getFindings()),
-                "AI 结果仅作为初步筛查参考，不能替代医生诊断。"
+                disclaimer()
         );
     }
 
-    public ImagingReviewResponse review(String detectionId, ImagingReviewRequest request) {
-        AiImagingDetectionEntity entity = findByNo(detectionId);
+    public ImagingReviewResponse reviewImageDetection(String detectionId, AiReviewRequest request) {
+        AiImageDetectionEntity entity = findImageByNo(detectionId);
         entity.setReviewStatus("REVIEWED");
         entity.setReviewedBy(BusinessIds.numericId(request.reviewedBy()));
         entity.setReviewComment(request.reviewComment());
         entity.setReviewedAt(LocalDateTime.now());
-        detectionMapper.updateById(entity);
+        entity.setUpdatedAt(LocalDateTime.now());
+        imageDetectionMapper.updateById(entity);
         return new ImagingReviewResponse(detectionId, "REVIEWED");
     }
 
-    private AiImagingDetectionEntity findByNo(String detectionId) {
-        AiImagingDetectionEntity entity = detectionMapper.selectOne(new LambdaQueryWrapper<AiImagingDetectionEntity>()
-                .eq(AiImagingDetectionEntity::getDetectionNo, detectionId)
+    public ImagingReviewResponse reviewReportAnalysis(String analysisId, AiReviewRequest request) {
+        AiReportTextAnalysisEntity entity = findReportByNo(analysisId);
+        entity.setReviewStatus("REVIEWED");
+        entity.setReviewedBy(BusinessIds.numericId(request.reviewedBy()));
+        entity.setReviewComment(request.reviewComment());
+        entity.setReviewedAt(LocalDateTime.now());
+        entity.setUpdatedAt(LocalDateTime.now());
+        reportTextAnalysisMapper.updateById(entity);
+        return new ImagingReviewResponse(analysisId, "REVIEWED");
+    }
+
+    private AiImageDetectionEntity findImageByNo(String detectionId) {
+        AiImageDetectionEntity entity = imageDetectionMapper.selectOne(new LambdaQueryWrapper<AiImageDetectionEntity>()
+                .eq(AiImageDetectionEntity::getDetectionNo, detectionId)
                 .last("limit 1"));
         if (entity == null) {
-            throw new BizException(404001, "影像检测结果不存在");
+            throw new BizException(404001, "image detection result not found");
         }
         return entity;
     }
 
+    private AiReportTextAnalysisEntity findReportByNo(String analysisId) {
+        AiReportTextAnalysisEntity entity = reportTextAnalysisMapper.selectOne(new LambdaQueryWrapper<AiReportTextAnalysisEntity>()
+                .eq(AiReportTextAnalysisEntity::getAnalysisNo, analysisId)
+                .last("limit 1"));
+        if (entity == null) {
+            throw new BizException(404001, "report analysis result not found");
+        }
+        return entity;
+    }
+
+    private Map<String, Object> analyzeTextPayload(String reportText, String reportType, ExternalModelDto externalModel) {
+        Map<String, Object> payload = Map.of(
+                "reportType", reportType == null ? "" : reportType,
+                "reportText", reportText == null ? "" : reportText,
+                "externalModel", externalModel == null ? Map.of() : externalModel
+        );
+        return llmClient.chatJson(PROMPT, JsonUtils.toJson(payload))
+                .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
+                .orElseGet(() -> fallback(reportText));
+    }
+
+    private Map<String, Object> analyzeImagePayload(AiImageDetectionEntity entity) {
+        List<MedicalImagePayload> images = imageFetcher.fetch(JsonUtils.toStringList(entity.getImageUrls()));
+        return visionClient.detect(entity.getImageType(), images)
+                .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
+                .orElseGet(() -> imageFallback(images));
+    }
+
+    private String provider(ExternalModelDto externalModel) {
+        return externalModel == null || externalModel.provider() == null || externalModel.provider().isBlank()
+                ? properties.imaging().provider()
+                : externalModel.provider();
+    }
+
+    private String model(ExternalModelDto externalModel) {
+        return externalModel == null || externalModel.model() == null || externalModel.model().isBlank()
+                ? properties.imaging().model()
+                : externalModel.model();
+    }
+
     private static Map<String, Object> fallback(String reportText) {
-        boolean abnormal = reportText != null && (reportText.contains("结节") || reportText.contains("异常") || reportText.contains("占位"));
+        boolean abnormal = reportText != null
+                && (reportText.toLowerCase().contains("abnormal")
+                || reportText.contains("结节")
+                || reportText.contains("异常")
+                || reportText.contains("占位"));
         return Map.of(
                 "abnormalDetected", abnormal,
                 "findings", abnormal
-                        ? List.of(Map.of("abnormalType", "REPORT_ABNORMAL", "location", "", "riskLevel", "LOW", "confidence", 0.6, "suggestion", "建议医生复核报告并结合影像原片判断。"))
+                        ? List.of(Map.of("abnormalType", "REPORT_ABNORMAL", "location", "", "riskLevel", "LOW",
+                        "confidence", 0.6, "suggestion", "Please ask a doctor to review the report and original image."))
                         : List.of()
+        );
+    }
+
+    private static Map<String, Object> imageFallback(List<MedicalImagePayload> images) {
+        return Map.of(
+                "abnormalDetected", false,
+                "findings", List.of(),
+                "imageFiles", images.stream()
+                        .map(image -> Map.of(
+                                "sourceUrl", image.sourceUrl(),
+                                "contentType", image.contentType(),
+                                "byteSize", image.byteSize()
+                        ))
+                        .toList()
         );
     }
 
@@ -118,7 +285,15 @@ public class ImagingDetectionService {
         return List.of();
     }
 
+    private static String firstRisk(List<Map<String, Object>> findings) {
+        return findings.isEmpty() ? "LOW" : string(findings.getFirst().get("riskLevel"));
+    }
+
     private static String string(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private static String disclaimer() {
+        return "AI result is only for preliminary screening reference and cannot replace a doctor's diagnosis.";
     }
 }

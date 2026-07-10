@@ -154,6 +154,7 @@ public final class AiModels {
     public record MedicationAnalysisRequest(
             String patientId,
             String recordId,
+            String prescriptionId,
             @Valid @NotEmpty List<PrescriptionDto> prescriptions,
             PatientContext patientContext,
             Boolean returnFunctionTrace
@@ -180,13 +181,62 @@ public final class AiModels {
     ) {
     }
 
-    public record ImagingDetectionRequest(
+    public record ReportAnalysisRequest(
+            String patientId,
+            String recordId,
+            String attachmentId,
+            @NotBlank String reportType,
+            @NotBlank String reportText,
+            ExternalModelDto externalModel
+    ) {
+    }
+
+    public record ReportAnalysisResponse(
+            String analysisId,
+            String status,
+            boolean abnormalDetected,
+            List<Map<String, Object>> findings,
+            String disclaimer
+    ) {
+    }
+
+    public record ImageDetectionRequest(
             String patientId,
             String recordId,
             @NotBlank String imageType,
-            String reportText,
-            List<String> imageUrls,
+            @NotEmpty List<String> imageUrls,
+            String storageType,
             ExternalModelDto externalModel
+    ) {
+    }
+
+    public record ImageDetectionResponse(
+            String detectionId,
+            String status,
+            boolean abnormalDetected,
+            List<Map<String, Object>> findings,
+            String disclaimer
+    ) {
+    }
+
+    public record FileUploadResponse(
+            String fileId,
+            String fileUrl,
+            Long fileSize,
+            String fileType,
+            String storageType,
+            String bucket,
+            String objectKey,
+            String originalFilename
+    ) {
+    }
+
+    public record ChunkUploadResponse(
+            String uploadId,
+            int chunkIndex,
+            int totalChunks,
+            boolean completed,
+            FileUploadResponse file
     ) {
     }
 
@@ -196,25 +246,16 @@ public final class AiModels {
     ) {
     }
 
-    public record ImagingDetectionResponse(
-            String detectionId,
-            String status,
-            boolean abnormalDetected,
-            List<Map<String, Object>> findings,
-            String disclaimer
-    ) {
-    }
-
-    public record ImagingReviewRequest(
-            @NotBlank String reviewedBy,
-            @NotBlank String reviewResult,
-            String reviewComment
-    ) {
-    }
-
     public record ImagingReviewResponse(
             String detectionId,
             String reviewStatus
+    ) {
+    }
+
+    public record AiReviewRequest(
+            @NotBlank String reviewedBy,
+            @NotBlank String reviewResult,
+            String reviewComment
     ) {
     }
 

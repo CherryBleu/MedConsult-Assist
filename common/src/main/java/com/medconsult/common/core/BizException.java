@@ -1,4 +1,4 @@
-package com.medconsult.ai.common;
+package com.medconsult.common.core;
 
 public class BizException extends RuntimeException {
     private final int code;

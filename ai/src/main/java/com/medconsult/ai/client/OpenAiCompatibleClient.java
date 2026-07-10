@@ -8,10 +8,13 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.output.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +23,10 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 @Component
 public class OpenAiCompatibleClient {
@@ -28,12 +35,16 @@ public class OpenAiCompatibleClient {
     private final AiProperties properties;
     private final ChatLanguageModel jsonChatModel;
     private final ChatLanguageModel textChatModel;
+    private final StreamingChatLanguageModel streamingJsonChatModel;
+    private final StreamingChatLanguageModel streamingTextChatModel;
     private final EmbeddingModel embeddingModel;
 
     public OpenAiCompatibleClient(AiProperties properties) {
         this.properties = properties;
         this.jsonChatModel = createChatModel(true);
         this.textChatModel = createChatModel(false);
+        this.streamingJsonChatModel = createStreamingChatModel(true);
+        this.streamingTextChatModel = createStreamingChatModel(false);
         this.embeddingModel = createEmbeddingModel();
     }
 
@@ -56,6 +67,29 @@ public class OpenAiCompatibleClient {
         long started = System.currentTimeMillis();
         ChatCallResult result = chat(systemPrompt, userPrompt, false);
         log.info("[AI-TIMER] llm.chatText={}ms success={} reason={} error={}",
+                elapsed(started), result.content().isPresent(), result.reason(), result.error());
+        return result.content();
+    }
+
+    public Optional<JsonNode> chatJsonStream(String systemPrompt, String userPrompt, Consumer<String> tokenConsumer) {
+        long started = System.currentTimeMillis();
+        try {
+            ChatCallResult chatResult = stream(systemPrompt, userPrompt, true, tokenConsumer);
+            Optional<JsonNode> result = chatResult.content().map(JsonUtils::readTree);
+            log.info("[AI-TIMER] llm.chatJsonStream={}ms success={} reason={} error={}",
+                    elapsed(started), result.isPresent(), chatResult.reason(), chatResult.error());
+            return result;
+        } catch (RuntimeException ex) {
+            log.info("[AI-TIMER] llm.chatJsonStream={}ms success=false reason=parse_or_unhandled error={}",
+                    elapsed(started), describe(ex));
+            throw ex;
+        }
+    }
+
+    public Optional<String> chatTextStream(String systemPrompt, String userPrompt, Consumer<String> tokenConsumer) {
+        long started = System.currentTimeMillis();
+        ChatCallResult result = stream(systemPrompt, userPrompt, false, tokenConsumer);
+        log.info("[AI-TIMER] llm.chatTextStream={}ms success={} reason={} error={}",
                 elapsed(started), result.content().isPresent(), result.reason(), result.error());
         return result.content();
     }
@@ -109,6 +143,65 @@ public class OpenAiCompatibleClient {
         }
     }
 
+    private ChatCallResult stream(String systemPrompt, String userPrompt, boolean jsonResponse, Consumer<String> tokenConsumer) {
+        AiProperties.LlmProperties llm = properties.llm();
+        if (llm == null || isBlank(llm.apiKey()) || isBlank(llm.baseUrl()) || isBlank(llm.model())) {
+            return ChatCallResult.failed("config_missing", "");
+        }
+        try {
+            StreamingChatLanguageModel model = jsonResponse ? streamingJsonChatModel : streamingTextChatModel;
+            if (model == null) {
+                return ChatCallResult.failed("model_missing", "");
+            }
+            List<ChatMessage> messages = List.of(
+                    SystemMessage.from(systemPrompt),
+                    UserMessage.from(userPrompt)
+            );
+            StringBuilder content = new StringBuilder();
+            CountDownLatch done = new CountDownLatch(1);
+            AtomicReference<Throwable> error = new AtomicReference<>();
+            model.generate(messages, new StreamingResponseHandler<>() {
+                @Override
+                public void onNext(String token) {
+                    if (token == null || token.isEmpty()) {
+                        return;
+                    }
+                    content.append(token);
+                    if (tokenConsumer != null) {
+                        tokenConsumer.accept(token);
+                    }
+                }
+
+                @Override
+                public void onComplete(Response<AiMessage> response) {
+                    done.countDown();
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                    error.set(throwable);
+                    done.countDown();
+                }
+            });
+            boolean completed = done.await(Math.max(5, llm.timeoutSeconds()) + 5L, TimeUnit.SECONDS);
+            if (!completed) {
+                return ChatCallResult.failed("timeout", "");
+            }
+            if (error.get() != null) {
+                return ChatCallResult.failed("exception", describe(error.get()));
+            }
+            if (content.isEmpty()) {
+                return ChatCallResult.failed("empty_content", "");
+            }
+            return ChatCallResult.success(content.toString());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return ChatCallResult.failed("interrupted", describe(ex));
+        } catch (RuntimeException ex) {
+            return ChatCallResult.failed("exception", describe(ex));
+        }
+    }
+
     private ChatLanguageModel createChatModel(boolean jsonResponse) {
         AiProperties.LlmProperties llm = properties.llm();
         if (llm == null || isBlank(llm.apiKey()) || isBlank(llm.baseUrl()) || isBlank(llm.model())) {
@@ -122,6 +215,21 @@ public class OpenAiCompatibleClient {
                 .responseFormat(jsonResponse ? "json_object" : null)
                 .timeout(Duration.ofSeconds(Math.max(5, llm.timeoutSeconds())))
                 .maxRetries(0)
+                .build();
+    }
+
+    private StreamingChatLanguageModel createStreamingChatModel(boolean jsonResponse) {
+        AiProperties.LlmProperties llm = properties.llm();
+        if (llm == null || isBlank(llm.apiKey()) || isBlank(llm.baseUrl()) || isBlank(llm.model())) {
+            return null;
+        }
+        return OpenAiStreamingChatModel.builder()
+                .baseUrl(openAiBaseUrl(llm.baseUrl()))
+                .apiKey(llm.apiKey())
+                .modelName(llm.model())
+                .temperature(jsonResponse ? 0.1 : 0.2)
+                .responseFormat(jsonResponse ? "json_object" : null)
+                .timeout(Duration.ofSeconds(Math.max(5, llm.timeoutSeconds())))
                 .build();
     }
 

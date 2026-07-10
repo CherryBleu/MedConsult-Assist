@@ -2,8 +2,8 @@ package com.medconsult.ai.util;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 import java.util.Objects;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,7 +15,7 @@ public final class BusinessIds {
     }
 
     public static String next(String prefix) {
-        int random = ThreadLocalRandom.current().nextInt(1000, 10000);
+        String random = UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         return prefix + LocalDate.now().format(BASIC_DATE) + random;
     }
 

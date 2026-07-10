@@ -13,6 +13,8 @@ public class AiChatSessionEntity {
     private Long patientId;
     private String title;
     private String status;
+    private String lastRiskLevel;
+    private String contextSymptoms;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -54,6 +56,22 @@ public class AiChatSessionEntity {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getLastRiskLevel() {
+        return lastRiskLevel;
+    }
+
+    public void setLastRiskLevel(String lastRiskLevel) {
+        this.lastRiskLevel = lastRiskLevel;
+    }
+
+    public String getContextSymptoms() {
+        return contextSymptoms;
+    }
+
+    public void setContextSymptoms(String contextSymptoms) {
+        this.contextSymptoms = contextSymptoms;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -13,6 +13,11 @@ public class AiCallLogEntity {
     private String callType;
     private Long patientId;
     private String relatedId;
+    private String callerService;
+    private Long triggerUserId;
+    private String traceId;
+    private Integer costTokens;
+    private String requestId;
     private String modelName;
     private String modelVersion;
     private String knowledgeSource;
@@ -62,6 +67,46 @@ public class AiCallLogEntity {
 
     public void setRelatedId(String relatedId) {
         this.relatedId = relatedId;
+    }
+
+    public String getCallerService() {
+        return callerService;
+    }
+
+    public void setCallerService(String callerService) {
+        this.callerService = callerService;
+    }
+
+    public Long getTriggerUserId() {
+        return triggerUserId;
+    }
+
+    public void setTriggerUserId(Long triggerUserId) {
+        this.triggerUserId = triggerUserId;
+    }
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
+    }
+
+    public Integer getCostTokens() {
+        return costTokens;
+    }
+
+    public void setCostTokens(Integer costTokens) {
+        this.costTokens = costTokens;
+    }
+
+    public String getRequestId() {
+        return requestId;
+    }
+
+    public void setRequestId(String requestId) {
+        this.requestId = requestId;
     }
 
     public String getModelName() {

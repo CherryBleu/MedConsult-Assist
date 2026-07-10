@@ -1,7 +1,5 @@
 server:
   port: 8082
-  servlet:
-    context-path: /api/v1
 
 spring:
   application:
@@ -57,20 +55,24 @@ spring:
       password:
   rabbitmq:
     host: localhost
-    port: 5672
+    port: 5773
     username: guest
     password: guest
+  servlet:
+    multipart:
+      max-file-size: ${AI_UPLOAD_MAX_FILE_SIZE:200MB}
+      max-request-size: ${AI_UPLOAD_MAX_REQUEST_SIZE:220MB}
 
 medconsult:
   ai:
     llm:
-      base-url: 
-      api-key: 
+      base-url: ${OPENAI_BASE_URL}
+      api-key: ${OPENAI_API_KEY}
       model: gpt-5.5
       timeout-seconds: 30
     embedding:
-      base-url: 
-      api-key: 
+      base-url: ${OPENAI_BASE_URL}
+      api-key: ${OPENAI_API_KEY}
       model: text-embedding-3-small
       timeout-seconds: 30
     mongo:
@@ -89,6 +91,43 @@ medconsult:
     imaging:
       provider: external-ai-provider
       model: chest-ct-abnormal-detector
+    vision:
+      base-url: ${VISION_BASE_URL:${OPENAI_BASE_URL}}
+      api-key: ${VISION_API_KEY:${OPENAI_API_KEY}}
+      model: ${VISION_MODEL:chest-ct-abnormal-detector}
+      timeout-seconds: ${VISION_TIMEOUT_SECONDS:60}
+      max-bytes-per-image: ${VISION_MAX_BYTES_PER_IMAGE:15728640}
+    file-storage:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:medconsult}
+      object-prefix: ${MINIO_OBJECT_PREFIX:imaging}
+      chunk-prefix: ${MINIO_CHUNK_PREFIX:chunks}
+      auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
+    internal:
+      service-code: ai-service
+      api-key: ${AI_INTERNAL_API_KEY:dev-ai-internal-key}
+      service-token: ${AI_INTERNAL_SERVICE_TOKEN:dev-ai-service-token}
+      auth-service-verify-enabled: ${AI_AUTH_SERVICE_VERIFY_ENABLED:false}
+      legacy-api-key-enabled: ${AI_LEGACY_API_KEY_ENABLED:true}
+    mq:
+      exchange: ai.exchange
+      image-detection-queue: ai.image.detect.queue
+      call-log-queue: ai.calllog.queue
+    rate-limit:
+      enabled: ${AI_RATE_LIMIT_ENABLED:true}
+      max-requests: ${AI_RATE_LIMIT_MAX_REQUESTS:60}
+      window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS:60}
+      include-internal: ${AI_RATE_LIMIT_INCLUDE_INTERNAL:false}
+      endpoint-max-requests:
+        "POST /api/v1/ai/symptom-chat": ${AI_RATE_LIMIT_SYMPTOM_CHAT:30}
+        "POST /api/v1/ai/triage": ${AI_RATE_LIMIT_TRIAGE:30}
+        "POST /api/v1/ai/medical-record-summary": ${AI_RATE_LIMIT_SUMMARY:20}
+        "POST /api/v1/ai/medication-analysis": ${AI_RATE_LIMIT_MEDICATION:20}
+        "POST /api/v1/ai/report-analysis": ${AI_RATE_LIMIT_REPORT:20}
+        "POST /api/v1/ai/image-detection": ${AI_RATE_LIMIT_IMAGE:20}
 
 ---
 spring:
@@ -123,6 +162,10 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME}
     password: ${RABBITMQ_PASSWORD}
+  servlet:
+    multipart:
+      max-file-size: ${AI_UPLOAD_MAX_FILE_SIZE:200MB}
+      max-request-size: ${AI_UPLOAD_MAX_REQUEST_SIZE:220MB}
 
 medconsult:
   ai:
@@ -152,3 +195,40 @@ medconsult:
     imaging:
       provider: ${IMAGING_PROVIDER:external-ai-provider}
       model: ${IMAGING_MODEL:chest-ct-abnormal-detector}
+    vision:
+      base-url: ${VISION_BASE_URL}
+      api-key: ${VISION_API_KEY}
+      model: ${VISION_MODEL:chest-ct-abnormal-detector}
+      timeout-seconds: ${VISION_TIMEOUT_SECONDS:60}
+      max-bytes-per-image: ${VISION_MAX_BYTES_PER_IMAGE:15728640}
+    file-storage:
+      endpoint: ${MINIO_ENDPOINT}
+      public-endpoint: ${MINIO_PUBLIC_ENDPOINT:${MINIO_ENDPOINT}}
+      access-key: ${MINIO_ACCESS_KEY}
+      secret-key: ${MINIO_SECRET_KEY}
+      bucket: ${MINIO_BUCKET:medconsult}
+      object-prefix: ${MINIO_OBJECT_PREFIX:imaging}
+      chunk-prefix: ${MINIO_CHUNK_PREFIX:chunks}
+      auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:false}
+    internal:
+      service-code: ${AI_INTERNAL_SERVICE_CODE:ai-service}
+      api-key: ${AI_INTERNAL_API_KEY}
+      service-token: ${AI_INTERNAL_SERVICE_TOKEN}
+      auth-service-verify-enabled: ${AI_AUTH_SERVICE_VERIFY_ENABLED:true}
+      legacy-api-key-enabled: ${AI_LEGACY_API_KEY_ENABLED:false}
+    mq:
+      exchange: ${AI_MQ_EXCHANGE:ai.exchange}
+      image-detection-queue: ${AI_IMAGE_DETECTION_QUEUE:ai.image.detect.queue}
+      call-log-queue: ${AI_CALL_LOG_QUEUE:ai.calllog.queue}
+    rate-limit:
+      enabled: ${AI_RATE_LIMIT_ENABLED:true}
+      max-requests: ${AI_RATE_LIMIT_MAX_REQUESTS:60}
+      window-seconds: ${AI_RATE_LIMIT_WINDOW_SECONDS:60}
+      include-internal: ${AI_RATE_LIMIT_INCLUDE_INTERNAL:false}
+      endpoint-max-requests:
+        "POST /api/v1/ai/symptom-chat": ${AI_RATE_LIMIT_SYMPTOM_CHAT:30}
+        "POST /api/v1/ai/triage": ${AI_RATE_LIMIT_TRIAGE:30}
+        "POST /api/v1/ai/medical-record-summary": ${AI_RATE_LIMIT_SUMMARY:20}
+        "POST /api/v1/ai/medication-analysis": ${AI_RATE_LIMIT_MEDICATION:20}
+        "POST /api/v1/ai/report-analysis": ${AI_RATE_LIMIT_REPORT:20}
+        "POST /api/v1/ai/image-detection": ${AI_RATE_LIMIT_IMAGE:20}

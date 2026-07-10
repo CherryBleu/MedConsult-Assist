@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.medconsult.ai", "com.medconsult.common"})
 @MapperScan("com.medconsult.ai.persistence.mapper")
 @EnableConfigurationProperties(AiProperties.class)
 @EnableFeignClients

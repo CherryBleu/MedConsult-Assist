@@ -5,16 +5,16 @@ import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
 
-@TableName("ai_imaging_detection")
-public class AiImagingDetectionEntity {
+@TableName("ai_image_detection")
+public class AiImageDetectionEntity {
     @TableId
     private Long id;
     private String detectionNo;
     private Long patientId;
     private Long recordId;
     private String imageType;
-    private String reportText;
     private String imageUrls;
+    private String storageType;
     private String status;
     private Integer abnormalDetected;
     private String findings;
@@ -25,6 +25,7 @@ public class AiImagingDetectionEntity {
     private Long reviewedBy;
     private String reviewComment;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private LocalDateTime reviewedAt;
 
     public Long getId() {
@@ -67,20 +68,20 @@ public class AiImagingDetectionEntity {
         this.imageType = imageType;
     }
 
-    public String getReportText() {
-        return reportText;
-    }
-
-    public void setReportText(String reportText) {
-        this.reportText = reportText;
-    }
-
     public String getImageUrls() {
         return imageUrls;
     }
 
     public void setImageUrls(String imageUrls) {
         this.imageUrls = imageUrls;
+    }
+
+    public String getStorageType() {
+        return storageType;
+    }
+
+    public void setStorageType(String storageType) {
+        this.storageType = storageType;
     }
 
     public String getStatus() {
@@ -161,6 +162,14 @@ public class AiImagingDetectionEntity {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public LocalDateTime getReviewedAt() {
