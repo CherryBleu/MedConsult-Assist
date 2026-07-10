@@ -48,11 +48,18 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
     /**
      * 白名单前缀：以下前缀的路径无需 token（Knife4j/OpenAPI3 文档资源 + actuator）。
-     * <p>Knife4j 聚合文档的资源路径（/doc.html / /webjars/** / /v3/api-docs/** 等）
-     * 不在 /api/v1/ 业务前缀下，也无 /internal/，此处显式放行让网关本机 doc.html 可匿名访问。
+     * <p>Knife4j 聚合文档的资源路径：
+     * <ul>
+     *   <li>/doc.html — 聚合文档首页</li>
+     *   <li>/doc/ — manual 策略下各服务 api-docs 的专用路由前缀（/doc/{service}/v3/api-docs → StripPrefix → 下游 /v3/api-docs）</li>
+     *   <li>/webjars/ /swagger-ui /swagger-resources — Knife4j 前端静态资源</li>
+     *   <li>/v3/api-docs — 网关自身的 OpenAPI 端点（聚合元数据）</li>
+     * </ul>
+     * 这些路径不在 /api/v1/ 业务前缀下，也无 /internal/，显式放行让 doc.html 可匿名访问。
      */
     private static final java.util.Set<String> WHITELIST_PREFIXES = java.util.Set.of(
             "/actuator/",
+            "/doc/",
             "/webjars/",
             "/v3/api-docs",
             "/swagger-ui",

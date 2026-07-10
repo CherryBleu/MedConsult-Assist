@@ -53,6 +53,47 @@ spring:
             - Path=/api/v1/notifications/**,/api/v1/audit-logs/**
         # 后续业务服务陆续加入：
         # - id: ai-service ...
+        # ===== Knife4j 文档聚合专用路由 =====
+        # discover 策略会从业务路由 Path 谓词推导文档 URL（如 /api/v1/auth/** → /api/v1/auth/v3/api-docs），
+        # 但该 URL 经网关转发到下游时未剥前缀，下游 springdoc 服务在 /v3/api-docs 而非 /api/v1/auth/v3/api-docs → 404。
+        # 改用 manual 策略 + 专用 StripPrefix 路由：浏览器 GET /doc/auth/v3/api-docs → 网关 StripPrefix=2
+        # 剥离 /doc/auth → 下游收到 /v3/api-docs → 200。JwtAuthFilter 白名单放行 /doc/**。
+        - id: doc-auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/doc/auth/**
+          filters:
+            - StripPrefix=2
+        - id: doc-patient-service
+          uri: lb://patient-service
+          predicates:
+            - Path=/doc/patient/**
+          filters:
+            - StripPrefix=2
+        - id: doc-outpatient-service
+          uri: lb://outpatient-service
+          predicates:
+            - Path=/doc/outpatient/**
+          filters:
+            - StripPrefix=2
+        - id: doc-drug-service
+          uri: lb://drug-service
+          predicates:
+            - Path=/doc/drug/**
+          filters:
+            - StripPrefix=2
+        - id: doc-medical-record-service
+          uri: lb://medical-record-service
+          predicates:
+            - Path=/doc/medical-record/**
+          filters:
+            - StripPrefix=2
+        - id: doc-notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/doc/notification/**
+          filters:
+            - StripPrefix=2
 
 # JWT（冒烟用固定密钥；生产从 Nacos/KMS 注入）
 medconsult:
@@ -65,27 +106,38 @@ logging:
     com.medconsult: DEBUG
     org.springframework.cloud.gateway: INFO
 
-# Knife4j 网关聚合（OpenAPI3）
-# 服务发现聚合：自动从 Nacos 拉取已注册业务服务的 /v3/api-docs，按服务名分组展示。
+# Knife4j 网关聚合（OpenAPI3）—— manual 策略
+# 不用 discover：discover 会从业务路由 Path 谓词推导文档 URL（/api/v1/auth/** → /api/v1/auth/v3/api-docs），
+# 但该路径经网关转发不剥前缀，下游 springdoc 在 /v3/api-docs → 404。
+# manual 显式声明每个服务的文档 URL，配合上方 /doc/{service}/** + StripPrefix=2 专用路由：
+# 浏览器 GET /doc/auth/v3/api-docs → 网关剥 /doc/auth → 下游收到 /v3/api-docs → 200。
 # 访问入口：http://localhost:8080/doc.html
 knife4j:
   gateway:
     enabled: true
-    strategy: discover
-    discover:
-      enabled: true
-      version: openapi3
-      # 各服务分组显示名（对齐《接口文档》章节）
-      service-config:
-        auth-service:
-          name: 用户认证服务
-        patient-service:
-          name: 患者档案服务
-        outpatient-service:
-          name: 门诊服务
-        drug-service:
-          name: 药品库存服务
-        medical-record-service:
-          name: 电子病历+处方服务
-        notification-service:
-          name: 通知+审计服务
+    strategy: manual
+    routes:
+      - name: 用户认证服务
+        url: /doc/auth/v3/api-docs
+        service-name: auth-service
+        order: 1
+      - name: 患者档案服务
+        url: /doc/patient/v3/api-docs
+        service-name: patient-service
+        order: 2
+      - name: 门诊服务
+        url: /doc/outpatient/v3/api-docs
+        service-name: outpatient-service
+        order: 3
+      - name: 药品库存服务
+        url: /doc/drug/v3/api-docs
+        service-name: drug-service
+        order: 4
+      - name: 电子病历+处方服务
+        url: /doc/medical-record/v3/api-docs
+        service-name: medical-record-service
+        order: 5
+      - name: 通知+审计服务
+        url: /doc/notification/v3/api-docs
+        service-name: notification-service
+        order: 6
