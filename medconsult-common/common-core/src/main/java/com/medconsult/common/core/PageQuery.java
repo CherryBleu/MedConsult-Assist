@@ -51,4 +51,27 @@ public class PageQuery {
     public long getOffset() {
         return (long) (page - 1) * pageSize;
     }
+
+    /**
+     * 归一化 page 参数（静态工具，供未继承 PageQuery 的分页接口复用）。
+     * <p>小于 1 归一为 1，避免 MyBatis-Plus Page 对非正页码的异常行为。
+     */
+    public static int normalizePage(int page) {
+        return page < 1 ? 1 : page;
+    }
+
+    /**
+     * 归一化 pageSize 参数（静态工具）：小于等于 0 取默认值，超过上限截断。
+     * <p>关键防滥用：未限上限的 pageSize（如 1_000_000）会一次性加载海量行，
+     * 造成 DB / JVM 内存压力（DoS）。所有 list 接口必须经过本方法或继承 PageQuery。
+     */
+    public static int normalizePageSize(int pageSize) {
+        if (pageSize < 1) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        if (pageSize > MAX_PAGE_SIZE) {
+            return MAX_PAGE_SIZE;
+        }
+        return pageSize;
+    }
 }

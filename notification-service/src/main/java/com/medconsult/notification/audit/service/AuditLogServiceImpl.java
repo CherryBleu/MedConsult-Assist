@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.notification.audit.dto.AuditLogDTO;
 import com.medconsult.notification.audit.entity.AuditLog;
 import com.medconsult.notification.audit.mapper.AuditLogMapper;
@@ -61,7 +62,7 @@ public class AuditLogServiceImpl implements AuditLogService {
                                                   String resourceType, String resourceId,
                                                   String operatorId, String action,
                                                   LocalDateTime dateFrom, LocalDateTime dateTo) {
-        Page<AuditLog> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<AuditLog> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<AuditLog> qw = new QueryWrapper<>();
         if (resourceType != null && !resourceType.isBlank()) {
             qw.eq("resource_type", resourceType);

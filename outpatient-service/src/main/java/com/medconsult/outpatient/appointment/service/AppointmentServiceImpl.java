@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
@@ -129,7 +130,7 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     public PageResult<AppointmentDTO.ListItem> list(int page, int pageSize, String patientId, String status) {
-        Page<Appointment> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<Appointment> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Appointment> qw = new QueryWrapper<>();
         if (status != null && !status.isBlank()) {
             qw.eq("appointment_status", status);

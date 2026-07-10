@@ -157,8 +157,9 @@ class PatientFlowTest {
         Long patientId = jdbc.queryForObject(
                 "SELECT id FROM patient WHERE patient_no = ?", Long.class, patientNo);
 
-        // /internal/patients/{id}/context
-        mvc.perform(get("/internal/patients/" + patientId + "/context"))
+        // /internal/patients/{id}/context（需带 X-Caller-Service 头通过 requireService 鉴权）
+        mvc.perform(get("/internal/patients/" + patientId + "/context")
+                        .header("X-Caller-Service", "test-service"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.patientId").value(patientId))
@@ -169,18 +170,21 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.data.pastMedicalHistory[0]").value("哮喘"));
 
         // /internal/patients/{id}/allergies
-        mvc.perform(get("/internal/patients/" + patientId + "/allergies"))
+        mvc.perform(get("/internal/patients/" + patientId + "/allergies")
+                        .header("X-Caller-Service", "test-service"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0]").value("青霉素"))
                 .andExpect(jsonPath("$.data[1]").value("阿司匹林"));
 
         // 不存在的主键 → context 降级返回 empty（不抛异常）
-        mvc.perform(get("/internal/patients/9999999999/context"))
+        mvc.perform(get("/internal/patients/9999999999/context")
+                        .header("X-Caller-Service", "test-service"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.patientId").value(9999999999L))
                 .andExpect(jsonPath("$.data.allergies").isArray());
-        mvc.perform(get("/internal/patients/9999999999/allergies"))
+        mvc.perform(get("/internal/patients/9999999999/allergies")
+                        .header("X-Caller-Service", "test-service"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray());
     }

@@ -173,6 +173,13 @@ public class PrescriptionTxService {
                         intQty, fresh.getId(), item.getId());
                 Result<DispenseDTO.OutboundResponse> outResp = drugFeignClient.outbound(drugNo, outReq);
                 DispenseDTO.OutboundResponse outData = outResp == null ? null : outResp.data();
+                // 下游 HTTP 200 但 data=null（不应发生，但防御）：库存实际未扣减，不能静默继续
+                // 推进状态机，否则处方标 DISPENSED 却没出货，库存与处方不一致。
+                if (outData == null) {
+                    throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+                            "药品出库返回空数据（库存可能未扣减）: drugNo=" + drugNo
+                                    + " itemId=" + item.getId() + "（请核查 drug-service 日志）");
+                }
 
                 // 回写明细已发数量
                 item.setDispensedQuantity(BigDecimal.valueOf(intQty));

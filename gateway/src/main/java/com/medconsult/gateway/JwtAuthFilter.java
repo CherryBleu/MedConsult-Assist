@@ -109,6 +109,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         // 5. 注入身份头（剥离原 Authorization，防止业务侧误用原始 token）
         if (payload.isUser()) {
             reqBuilder.header("X-User-Id", String.valueOf(payload.userId()));
+            if (payload.name() != null && !payload.name().isBlank()) {
+                reqBuilder.header("X-User-Name", payload.name());
+            }
             if (payload.roles() != null && !payload.roles().isEmpty()) {
                 reqBuilder.header("X-User-Roles", String.join(",", payload.roles()));
             }

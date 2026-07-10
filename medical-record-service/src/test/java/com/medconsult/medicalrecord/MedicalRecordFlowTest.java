@@ -274,7 +274,8 @@ class MedicalRecordFlowTest {
         String recordNo = createRecord();
         // 内部接口用 BIGINT 主键，需先查出 id（H2 直接查）
         Long id = resolveRecordId(recordNo);
-        mvc.perform(get("/internal/medical-records/" + id + "/full"))
+        mvc.perform(get("/internal/medical-records/" + id + "/full")
+                        .header("X-Caller-Service", "test-service"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordNo").value(recordNo))

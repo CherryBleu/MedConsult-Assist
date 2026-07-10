@@ -90,44 +90,52 @@ class NotificationFlowTest {
     @Test
     void notificationList_filterByReceiverAndRead() throws Exception {
         String no = createNotification();
-        // 未读过滤
-        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "false"))
+        // 未读过滤（以管理员身份查询，带 X-User-Id + X-User-Primary-Role 头通过 IDOR 鉴权）
+        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "false")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].title").value("预约成功"))
                 .andExpect(jsonPath("$.data.items[0].read").value(false));
         // 已读过滤应为 0
-        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "true"))
+        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "true")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(0));
     }
 
     @Test
     void markRead_success() throws Exception {
         String no = createNotification();
-        mvc.perform(patch("/api/v1/notifications/" + no + "/read"))
+        mvc.perform(patch("/api/v1/notifications/" + no + "/read")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.read").value(true))
                 .andExpect(jsonPath("$.data.readAt").exists());
         // 标记后已读列表有 1 条
-        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "true"))
+        mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER).param("read", "true")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(1));
     }
 
     @Test
     void markRead_alreadyRead_idempotent() throws Exception {
         String no = createNotification();
-        mvc.perform(patch("/api/v1/notifications/" + no + "/read")).andExpect(status().isOk());
+        mvc.perform(patch("/api/v1/notifications/" + no + "/read")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
+                .andExpect(status().isOk());
         // 重复标记不报错
-        mvc.perform(patch("/api/v1/notifications/" + no + "/read"))
+        mvc.perform(patch("/api/v1/notifications/" + no + "/read")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.read").value(true));
     }
 
     @Test
     void markRead_notFound() throws Exception {
-        mvc.perform(patch("/api/v1/notifications/N_NOT_EXIST/read"))
+        mvc.perform(patch("/api/v1/notifications/N_NOT_EXIST/read")
+                        .header("X-User-Id", "1").header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.code").value(404001));
     }
 
@@ -137,7 +145,8 @@ class NotificationFlowTest {
         String body = """
                 {"receiverId":"D10001","receiverRole":"DOCTOR","type":"SYSTEM",
                  "title":"系统通知","content":"测试内部接口"}""";
-        mvc.perform(post("/internal/notifications").contentType("application/json").content(body))
+        mvc.perform(post("/internal/notifications").header("X-Caller-Service", "test-service")
+                        .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.notificationId").exists());
@@ -151,7 +160,8 @@ class NotificationFlowTest {
                 {"resourceType":"PATIENT","resourceId":"P202607060001","resourceName":"张三",
                  "action":"CREATE","operatorId":"U001","operatorRole":"HOSPITAL_ADMIN",
                  "operatorName":"管理员","ip":"127.0.0.1","result":"SUCCESS"}""";
-        mvc.perform(post("/internal/audit-logs").contentType("application/json").content(body))
+        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+                        .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.auditNo").exists())
@@ -164,23 +174,37 @@ class NotificationFlowTest {
         writeAudit("PATIENT", "CREATE", "U001");
         writeAudit("PRESCRIPTION", "UPDATE", "U002");
 
+        // 审计查询仅管理员可访问（@Permission(roles={HOSPITAL_ADMIN,PHARMACY_ADMIN})），
+        // 故所有 GET /api/v1/audit-logs 带管理员身份头（X-User-Roles 供 PermissionAspect 角色校验）。
         // resourceType 过滤
-        mvc.perform(get("/api/v1/audit-logs").param("resourceType", "PATIENT"))
+        mvc.perform(get("/api/v1/audit-logs").param("resourceType", "PATIENT")
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].resourceType").value("PATIENT"));
 
         // operatorId 过滤
-        mvc.perform(get("/api/v1/audit-logs").param("operatorId", "U002"))
+        mvc.perform(get("/api/v1/audit-logs").param("operatorId", "U002")
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].action").value("UPDATE"));
 
         // action 过滤
-        mvc.perform(get("/api/v1/audit-logs").param("action", "CREATE"))
+        mvc.perform(get("/api/v1/audit-logs").param("action", "CREATE")
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(1));
 
         // 全量应为 2
-        mvc.perform(get("/api/v1/audit-logs"))
+        mvc.perform(get("/api/v1/audit-logs")
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(2));
     }
 
@@ -188,7 +212,8 @@ class NotificationFlowTest {
     void writeAuditLog_invalidAction_rejected() throws Exception {
         String body = """
                 {"resourceType":"PATIENT","action":"INVALID","operatorId":"U001"}""";
-        mvc.perform(post("/internal/audit-logs").contentType("application/json").content(body))
+        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+                        .contentType("application/json").content(body))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
@@ -208,7 +233,8 @@ class NotificationFlowTest {
         String body = """
                 {"resourceType":"%s","action":"%s","operatorId":"%s","result":"SUCCESS"}"""
                 .formatted(resourceType, action, operatorId);
-        mvc.perform(post("/internal/audit-logs").contentType("application/json").content(body))
+        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+                        .contentType("application/json").content(body))
                 .andExpect(status().isOk());
     }
 }

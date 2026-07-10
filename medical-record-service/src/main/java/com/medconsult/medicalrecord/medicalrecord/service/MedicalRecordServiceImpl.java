@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.core.Result;
@@ -134,7 +135,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     @Override
     public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId) {
-        Page<MedicalRecord> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<MedicalRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
         // 越权防护（IDOR）：PATIENT 只能列自己的病历（架构 §4.3 SELF 数据范围）。
         // PATIENT 身份时忽略入参 patientId，强制限定为本人 patientId，防用他人 patient_no 越权拉取。

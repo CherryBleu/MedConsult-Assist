@@ -76,5 +76,8 @@ CREATE TABLE IF NOT EXISTS drug_stock_flow (
     PRIMARY KEY (id),
     UNIQUE KEY uk_flow_no (flow_no),
     KEY idx_flow_drug (drug_id),
-    KEY idx_flow_created (created_at)
+    KEY idx_flow_created (created_at),
+    -- 调剂失败回滚补偿查询：WHERE drug_id=? AND prescription_item_id=? AND type=?
+    -- 回滚是 dispense 失败路径，单药品流水量大时无此索引会 filesort 全扫。
+    KEY idx_flow_drug_item (drug_id, prescription_item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='药品库存流水表（只追加）';

@@ -82,3 +82,4 @@ CREATE TABLE IF NOT EXISTS appointment (
     PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_appointment_no ON appointment(appointment_no);
+CREATE INDEX IF NOT EXISTS idx_appointment_patient_schedule ON appointment(patient_no, schedule_id);

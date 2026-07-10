@@ -14,8 +14,10 @@ spring:
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
-    username: guest
-    password: guest
+    # 凭证与 infra/docker-compose.yml 的 RABBITMQ_DEFAULT_USER/PASS 一致
+    #（docker-compose 创建的是 medconsult/medconsult123，不是默认的 guest/guest）
+    username: ${RABBITMQ_USER:medconsult}
+    password: ${RABBITMQ_PASSWORD:medconsult123}
     # publisher confirm（MessageDispatcher 可靠投递测试前提）
     publisher-confirm-type: correlated
   data:

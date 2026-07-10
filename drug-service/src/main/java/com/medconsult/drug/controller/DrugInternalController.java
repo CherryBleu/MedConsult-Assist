@@ -2,6 +2,7 @@ package com.medconsult.drug.controller;
 
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.drug.dto.DrugDTO;
 import com.medconsult.drug.service.DrugService;
 import jakarta.validation.Valid;
@@ -14,6 +15,8 @@ import java.util.List;
  * 药品库存服务对内接口（架构文档 §2.3，/internal/drugs）。
  *
  * <p>路径前缀 /internal/drugs（不配 Gateway 路由，由 JwtAuthFilter 拦截，仅服务间 Feign 调用）。
+ *
+ * <p><b>鉴权</b>：强制服务身份（{@link SecurityContext#requireService()}），防网关误配暴露库存操作。
  *
  * <p><b>路径变量语义</b>（注意两种）：
  * <ul>
@@ -39,6 +42,7 @@ public class DrugInternalController {
     /** 用药风险信息（禁忌 / 相互作用，DrugRiskInfoDTO） */
     @GetMapping("/{drugId}/risk-info")
     public Result<DrugRiskInfoDTO> getRiskInfo(@PathVariable Long drugId) {
+        SecurityContext.requireService();
         return Result.ok(drugService.getRiskInfo(drugId));
     }
 
@@ -47,12 +51,14 @@ public class DrugInternalController {
     public Result<List<DrugDTO.BatchInfo>> ffeoBatches(
             @RequestParam Long drugId,
             @RequestParam(defaultValue = "1") int quantity) {
+        SecurityContext.requireService();
         return Result.ok(drugService.ffeoBatches(drugId, quantity));
     }
 
     /** 当前总库存（drug.current_stock） */
     @GetMapping("/{drugId}/current-stock")
     public Result<Integer> getCurrentStock(@PathVariable Long drugId) {
+        SecurityContext.requireService();
         return Result.ok(drugService.getCurrentStock(drugId));
     }
 
@@ -70,6 +76,7 @@ public class DrugInternalController {
     public Result<DrugDTO.OutboundResponse> outbound(
             @PathVariable String drugNo,
             @Valid @RequestBody DrugDTO.OutboundRequest req) {
+        SecurityContext.requireService();
         return Result.ok(drugService.outbound(drugNo, req));
     }
 
@@ -82,6 +89,7 @@ public class DrugInternalController {
     public Result<Integer> rollbackOutbound(
             @PathVariable String drugNo,
             @RequestParam Long prescriptionItemId) {
+        SecurityContext.requireService();
         return Result.ok(drugService.rollbackOutboundByItem(drugNo, prescriptionItemId));
     }
 }

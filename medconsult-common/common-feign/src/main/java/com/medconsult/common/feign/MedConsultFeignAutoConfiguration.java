@@ -1,9 +1,12 @@
 package com.medconsult.common.feign;
 
 import feign.codec.ErrorDecoder;
+import jakarta.servlet.Filter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 
 /**
@@ -13,8 +16,9 @@ import org.springframework.context.annotation.Bean;
  * <ul>
  *   <li>{@link AuthRelayInterceptor} 注册为全局 Feign 拦截器（透传身份/traceId）</li>
  *   <li>{@link FeignErrorDecoder} 作为 Feign 错误解码器（下游错误→BusinessException）</li>
- *   <li>默认 ServiceTokenProvider/UserTokenProvider 返回 null（无 token 透传），
- *       业务服务自行覆盖（auth-service 换发服务 token / AuthFilter 提供用户 token）</li>
+ *   <li>{@link RequestContextRelayFilter}（servlet 环境）接线请求级 token/traceId 到
+ *       {@link RequestContext}，并在请求结束清理 ThreadLocal 防泄漏</li>
+ *   <li>默认 ServiceTokenProvider 返回 null（无服务 token），业务服务自行覆盖</li>
  * </ul>
  *
  * <p>前提：业务服务须 {@code @EnableFeignClients} 启用 Feign（本模块不强制开启）。
@@ -43,5 +47,21 @@ public class MedConsultFeignAutoConfiguration {
     @ConditionalOnMissingBean
     public ErrorDecoder feignErrorDecoder() {
         return new FeignErrorDecoder();
+    }
+
+    /**
+     * 请求级上下文接线 filter：把当前请求的原始 token 写入 RequestContext ThreadLocal，
+     * 供 AuthRelayInterceptor 透传；请求结束 finally 清理防泄漏。
+     * <p>只在 servlet（非 reactive）web 环境注册——reactive gateway 不走 servlet filter。
+     */
+    @Bean
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    @ConditionalOnClass(Filter.class)
+    public RequestContextRelayFilter requestContextRelayFilter(
+            @Value("${spring.application.name:unknown}") String applicationName) {
+        // callerService 是服务级常量（spring.application.name），启动时设一次，
+        // AuthRelayInterceptor 每次 Feign 调用读取它注入 X-Caller-Service 头。
+        RequestContext.setCallerService(applicationName);
+        return new RequestContextRelayFilter();
     }
 }

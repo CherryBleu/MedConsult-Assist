@@ -63,3 +63,5 @@ CREATE TABLE IF NOT EXISTS drug_stock_flow (
     PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_flow_no ON drug_stock_flow(flow_no);
+CREATE INDEX IF NOT EXISTS idx_flow_drug ON drug_stock_flow(drug_id);
+CREATE INDEX IF NOT EXISTS idx_flow_drug_item ON drug_stock_flow(drug_id, prescription_item_id);

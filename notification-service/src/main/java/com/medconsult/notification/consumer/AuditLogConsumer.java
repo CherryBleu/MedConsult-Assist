@@ -18,12 +18,9 @@ import java.time.Duration;
  *
  * <p>监听 {@link MqConstants#QUEUE_AUDIT_LOG}，消费审计事件写 audit_log。
  *
- * <p><b>幂等三步法</b>（同 NotificationConsumer）：
- * <ol>
- *   <li>{@code isAlreadyProcessed(messageNo)} → true 跳过</li>
- *   <li>执行业务（反序列化 + 调 AuditLogService.write）；失败抛异常 → MQ 重投</li>
- *   <li>业务成功后 {@code markProcessed(messageNo, 72h)}</li>
- * </ol>
+ * <p><b>幂等：原子 SETNX 先行（{@code executeOnce}）</b>。
+ * <p>同 NotificationConsumer：早期用"判重→业务→标记"三步法，但多实例并发消费同一重复消息时
+ * 存在 TOCTOU 窗口（两消费者都过判重 → 各自写库 → 审计日志重复）。改用原子 SETNX 先行。
  * <p>幂等键：消息头 messageNo，回退 resourceType+resourceId+action+operatorId 拼接。
  * <p>注意：fallback 路径下，72h 内同 (resourceType, resourceId, action, operatorId) 的不同审计事件会被去重。
  * 实际生产路径 Dispatcher 总会 setHeader messageNo（唯一），fallback 几乎不触发。
@@ -50,32 +47,31 @@ public class AuditLogConsumer {
                 : "audit:" + event.getResourceType() + ":" + event.getResourceId()
                         + ":" + event.getAction() + ":" + event.getOperatorId();
 
-        // 三步法：先判重
-        if (idempotentConsumer.isAlreadyProcessed(idemKey)) {
+        // 原子幂等：SETNX 先行，首个消费者进业务，重复消费者拿到 null 跳过。
+        // 业务抛异常时 executeOnce 内部删除占位，允许 MQ 重投重试。
+        Integer done = idempotentConsumer.executeOnce(idemKey, IDEMPOTENT_WINDOW, () -> {
+            AuditLogDTO.WriteRequest req = new AuditLogDTO.WriteRequest();
+            req.setTraceId(event.getTraceId());
+            req.setResourceType(event.getResourceType());
+            req.setResourceId(event.getResourceId());
+            req.setResourceName(event.getResourceName());
+            req.setAction(event.getAction());
+            req.setOperatorId(event.getOperatorId());
+            req.setOperatorRole(event.getOperatorRole());
+            req.setOperatorName(event.getOperatorName());
+            req.setTargetOwnerId(event.getTargetOwnerId());
+            req.setDetail(event.getDetail());
+            req.setIp(event.getIp());
+            req.setUserAgent(event.getUserAgent());
+            req.setResult(event.getResult());
+            auditLogService.write(req);
+            return 1;
+        });
+        if (done == null) {
             log.info("审计消息重复，跳过: idemKey={}", idemKey);
-            return;
+        } else {
+            log.info("审计消息消费成功: idemKey={} resourceType={} action={}",
+                    idemKey, event.getResourceType(), event.getAction());
         }
-
-        // 执行业务（失败抛异常 → MQ 重投，不误标幂等）
-        AuditLogDTO.WriteRequest req = new AuditLogDTO.WriteRequest();
-        req.setTraceId(event.getTraceId());
-        req.setResourceType(event.getResourceType());
-        req.setResourceId(event.getResourceId());
-        req.setResourceName(event.getResourceName());
-        req.setAction(event.getAction());
-        req.setOperatorId(event.getOperatorId());
-        req.setOperatorRole(event.getOperatorRole());
-        req.setOperatorName(event.getOperatorName());
-        req.setTargetOwnerId(event.getTargetOwnerId());
-        req.setDetail(event.getDetail());
-        req.setIp(event.getIp());
-        req.setUserAgent(event.getUserAgent());
-        req.setResult(event.getResult());
-        auditLogService.write(req);
-
-        // 业务成功后标记幂等
-        idempotentConsumer.markProcessed(idemKey, IDEMPOTENT_WINDOW);
-        log.info("审计消息消费成功: idemKey={} resourceType={} action={}",
-                idemKey, event.getResourceType(), event.getAction());
     }
 }

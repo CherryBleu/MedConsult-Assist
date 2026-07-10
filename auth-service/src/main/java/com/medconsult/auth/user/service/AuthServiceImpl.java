@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -231,7 +232,15 @@ public class AuthServiceImpl implements AuthService {
         return "medconsult:auth:role:" + userId;
     }
 
-    private void writeLoginLog(Long userId, String account, String ip, String userAgent,
+    /**
+     * 写登录日志。
+     * <p><b>独立事务</b>（REQUIRES_NEW）：login/register 方法标了 @Transactional，失败分支
+     * （密码错/账号禁用）抛 BusinessException 会回滚外层事务；若日志用默认 REQUIRED，
+     * 会加入外层事务一并回滚 → 失败登录日志丢失，安全审计断链。REQUIRES_NEW 让日志在
+     * 独立事务里提交，外层回滚不影响它。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void writeLoginLog(Long userId, String account, String ip, String userAgent,
                                String loginType, String result) {
         LoginLog log = new LoginLog();
         log.setUserId(userId);

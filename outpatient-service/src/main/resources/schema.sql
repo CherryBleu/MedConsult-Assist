@@ -91,5 +91,9 @@ CREATE TABLE IF NOT EXISTS appointment (
     UNIQUE KEY uk_appointment_no (appointment_no),
     KEY idx_appointment_patient (patient_id),
     KEY idx_appointment_patient_no (patient_no),
-    KEY idx_appointment_schedule (schedule_id)
+    KEY idx_appointment_schedule (schedule_id),
+    -- 重复预约校验（createInTx）：WHERE patient_no=? AND schedule_id=? AND appointment_status != 'CANCELLED'
+    -- 单列 idx_appointment_patient_no 能过滤 patient_no，但 schedule_id 部分回表；
+    -- 热门专家号同患者多次抢号时，复合索引避免回表扫描。
+    KEY idx_appointment_patient_schedule (patient_no, schedule_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预约挂号表';

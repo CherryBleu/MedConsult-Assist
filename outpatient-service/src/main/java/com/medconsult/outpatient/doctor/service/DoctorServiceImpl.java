@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.outpatient.department.entity.Department;
 import com.medconsult.outpatient.department.mapper.DepartmentMapper;
@@ -53,7 +54,7 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     public PageResult<DoctorDTO.ListItem> list(int page, int pageSize, String departmentId, Boolean enabled) {
-        Page<Doctor> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<Doctor> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Doctor> qw = new QueryWrapper<>();
         if (enabled != null) {
             qw.eq("enabled", enabled ? 1 : 0);

@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
@@ -120,8 +121,10 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         // 插入主表先拿到 id
         prescriptionMapper.insert(p);
 
-        // 遍历明细：累加 totalFee + 落库明细
+        // 遍历明细：累加 totalFee + 组装明细对象（批量落库，避免 N+1 写）
+        // 处方常有十几味药，逐条 insert 会产生 N+1 写；此处先组装列表再 saveBatch 一次性入库。
         BigDecimal totalFee = BigDecimal.ZERO;
+        List<PrescriptionItem> items = new ArrayList<>(req.getItems().size());
         for (PrescriptionDTO.ItemRequest item : req.getItems()) {
             PrescriptionItem pi = new PrescriptionItem();
             pi.setPrescriptionId(p.getId());
@@ -140,9 +143,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             BigDecimal qty = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
             BigDecimal subtotal = unitPrice.multiply(qty);
             pi.setSubtotal(subtotal);
-            itemMapper.insert(pi);
+            items.add(pi);
             totalFee = totalFee.add(subtotal);
         }
+        // 批量插入明细（一次 SQL 批次，替代循环内逐条 insert）
+        com.baomidou.mybatisplus.extension.toolkit.Db.saveBatch(items);
         // 回填 totalFee
         p.setTotalFee(totalFee);
         prescriptionMapper.updateById(p);
@@ -156,7 +161,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
 
     @Override
     public PageResult<PrescriptionDTO.ListItem> list(int page, int pageSize, String status) {
-        Page<Prescription> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<Prescription> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Prescription> qw = new QueryWrapper<>();
         if (status != null && !status.isBlank()) {
             qw.eq("status", status);

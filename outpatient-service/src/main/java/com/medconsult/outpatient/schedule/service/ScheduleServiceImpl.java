@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
 import com.medconsult.outpatient.department.entity.Department;
@@ -127,7 +128,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     public PageResult<ScheduleDTO.ListItem> list(int page, int pageSize, String departmentId,
                                                   LocalDate dateFrom, LocalDate dateTo) {
-        Page<DoctorSchedule> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<DoctorSchedule> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<DoctorSchedule> qw = new QueryWrapper<>();
         if (departmentId != null && !departmentId.isBlank()) {
             Department dept = departmentMapper.selectOne(
@@ -157,8 +158,11 @@ public class ScheduleServiceImpl implements ScheduleService {
                 deptIds.add(s.getDepartmentId());
             }
         }
-        Map<Long, Doctor> doctorMap = toMap(doctorMapper.selectBatchIds(doctorIds));
-        Map<Long, Department> deptMap = toDeptMap(departmentMapper.selectBatchIds(deptIds));
+        // selectBatchIds 空列表会产生 WHERE id IN () 非法 SQL，空则跳过查询返回空 map
+        Map<Long, Doctor> doctorMap = doctorIds.isEmpty()
+                ? new HashMap<>() : toMap(doctorMapper.selectBatchIds(doctorIds));
+        Map<Long, Department> deptMap = deptIds.isEmpty()
+                ? new HashMap<>() : toDeptMap(departmentMapper.selectBatchIds(deptIds));
 
         List<ScheduleDTO.ListItem> items = new ArrayList<>();
         for (DoctorSchedule s : result.getRecords()) {
@@ -207,7 +211,9 @@ public class ScheduleServiceImpl implements ScheduleService {
                 doctorIds.add(s.getDoctorId());
             }
         }
-        Map<Long, Doctor> doctorMap = toMap(doctorMapper.selectBatchIds(doctorIds));
+        // selectBatchIds 空列表会产生 WHERE id IN () 非法 SQL，空则跳过查询返回空 map
+        Map<Long, Doctor> doctorMap = doctorIds.isEmpty()
+                ? new HashMap<>() : toMap(doctorMapper.selectBatchIds(doctorIds));
 
         List<ScheduleDTO.AvailableItem> items = new ArrayList<>();
         for (DoctorSchedule s : schedules) {

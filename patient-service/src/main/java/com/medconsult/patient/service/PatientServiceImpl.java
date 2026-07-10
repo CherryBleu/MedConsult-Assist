@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import com.medconsult.common.web.MaskType;
@@ -130,7 +131,7 @@ public class PatientServiceImpl implements PatientService {
 
     @Override
     public PageResult<PatientDTO.ListItem> list(int page, int pageSize, String keyword) {
-        Page<Patient> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<Patient> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Patient> qw = new QueryWrapper<>();
         if (keyword != null && !keyword.isBlank()) {
             // 按 姓名/手机号/证件号/患者编号 模糊检索（需求 §4.1.1 核心功能 3）

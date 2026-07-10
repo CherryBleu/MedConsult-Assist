@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
@@ -99,7 +100,7 @@ public class DrugServiceImpl implements DrugService {
 
     @Override
     public PageResult<DrugDTO.DrugListItem> listDrugs(int page, int pageSize, String keyword) {
-        Page<Drug> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<Drug> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Drug> qw = new QueryWrapper<>();
         if (keyword != null && !keyword.isBlank()) {
             // 模糊匹配通用名 / 商品名
@@ -151,7 +152,7 @@ public class DrugServiceImpl implements DrugService {
     @Override
     public PageResult<DrugDTO.StockFlowListItem> listFlows(String drugNo, int page, int pageSize) {
         Drug d = requireByDrugNo(drugNo);
-        Page<DrugStockFlow> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
+        Page<DrugStockFlow> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<DrugStockFlow> qw = new QueryWrapper<DrugStockFlow>()
                 .eq("drug_id", d.getId())
                 .orderByDesc("created_at");
@@ -182,8 +183,8 @@ public class DrugServiceImpl implements DrugService {
     @Override
     public PageResult<DrugDTO.AlertItem> listAlerts(String type, int page, int pageSize) {
         String alertType = (type == null || type.isBlank()) ? "LOW_STOCK" : type.toUpperCase();
-        int pNo = page <= 0 ? 1 : page;
-        int pSize = pageSize <= 0 ? 10 : pageSize;
+        int pNo = PageQuery.normalizePage(page);
+        int pSize = PageQuery.normalizePageSize(pageSize);
 
         if ("LOW_STOCK".equals(alertType)) {
             // LOW_STOCK：current_stock < min_stock_threshold AND status=ACTIVE

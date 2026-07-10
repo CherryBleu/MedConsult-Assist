@@ -42,12 +42,24 @@ public class MedConsultRedisAutoConfiguration {
     /**
      * Pub/Sub 监听容器。SseEventBus 用它注册/取消订阅 channel。
      * 必须显式声明——Spring Boot 默认不创建此 bean。
+     *
+     * <p><b>taskExecutor</b>：显式设为有界线程池。不设的话 Spring 默认用 SimpleAsyncTaskExecutor，
+     * 它对每个消息回调 new 一个线程（无上限），在多 channel / 高频 Pub/Sub 下会无限制创建线程，
+     * 造成资源泄漏 / OOM。这里用核心 2 / 最大 8 的池，够 SSE 广播场景用。
      */
     @Bean
     @ConditionalOnMissingBean
     public RedisMessageListenerContainer redisMessageListenerContainer(RedisConnectionFactory connectionFactory) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
+        org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor executor =
+                new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("redis-sub-");
+        executor.initialize();
+        container.setTaskExecutor(executor);
         return container;
     }
 

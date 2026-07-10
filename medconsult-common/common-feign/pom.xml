@@ -40,6 +40,22 @@
             <artifactId>spring-boot-starter-json</artifactId>
         </dependency>
 
+        <!-- Servlet API（provided + optional）：RequestContextRelayFilter 需要。
+             common-feign 被业务服务（servlet 栈）引入时由 starter-web 提供；
+             非 servlet 环境（如纯 reactive gateway）不引入，filter 自动失效（@ConditionalOnClass）。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

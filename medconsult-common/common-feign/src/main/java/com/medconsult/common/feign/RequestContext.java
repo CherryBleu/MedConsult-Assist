@@ -16,18 +16,21 @@ import com.medconsult.common.security.JwtPayload;
  * traceId 与 callerService 走 ThreadLocal（调用链短生命周期，Feign 同步调用期间有效），
  * 对虚拟线程友好（虚拟线程是守护线程，ThreadLocal 正常工作）。
  *
- * <p><b>当前接线状态（TODO）</b>：{@code setUserToken} / {@code setCallerService} 尚未被任何
- * 过滤器调用——即原始用户 JWT 不会经本类透传到下游。身份转发目前依赖
- * {@link AuthRelayInterceptor} 从 {@link #currentUser()} 读 SecurityContext 后注入
- * {@code X-User-Id} / {@code X-User-Roles} 头（下游按架构 §4.4 信任网关头重建身份），
- * 故审计归属与身份可用性不受影响；原始 token 透传（如下游需二次校验签名）留待后续补
- * 一个请求级 filter 调 {@code setUserToken} + 请求结束 {@code clearAll()}。
+ * <p><b>接线状态</b>：{@link RequestContextRelayFilter}（servlet 环境）在每个请求开始时
+ * 把原始用户 token 写入 {@code setUserToken}，请求结束 finally 调 {@link #clearAll()} 清理；
+ * {@code callerService} 由 {@link MedConsultFeignAutoConfiguration} 启动时设为
+ * spring.application.name（应用级常量，不随请求清理）。
  */
 public final class RequestContext {
 
-    /** 调用方服务名（ThreadLocal，Feign 同步调用链内有效） */
-    private static final ThreadLocal<String> CALLER_SERVICE = new ThreadLocal<>();
-    /** 当前请求的原始用户 token（透传用，ThreadLocal） */
+    /**
+     * 调用方服务名（应用级常量，非 ThreadLocal）。
+     * <p>由 {@link MedConsultFeignAutoConfiguration} 启动时从 spring.application.name 设一次，
+     * 全实例共享，不随请求清理。这样 {@code clearAll()}（每请求结束清理）不会误清服务名。
+     */
+    private static volatile String callerService;
+
+    /** 当前请求的原始用户 token（透传用，ThreadLocal，请求结束须清理） */
     private static final ThreadLocal<String> USER_TOKEN = new ThreadLocal<>();
     /** traceId（ThreadLocal，优先由 TraceIdFilter 设置的 MDC 读取） */
     private static final ThreadLocal<String> TRACE_ID = new ThreadLocal<>();
@@ -48,9 +51,8 @@ public final class RequestContext {
         return com.medconsult.common.security.SecurityContext.getPayload();
     }
 
-    public static void setCallerService(String service) { CALLER_SERVICE.set(service); }
-    public static String getCallerService() { return CALLER_SERVICE.get(); }
-    public static void clearCallerService() { CALLER_SERVICE.remove(); }
+    public static void setCallerService(String service) { callerService = service; }
+    public static String getCallerService() { return callerService; }
 
     public static void setUserToken(String token) { USER_TOKEN.set(token); }
     public static String getUserToken() { return USER_TOKEN.get(); }
@@ -66,10 +68,11 @@ public final class RequestContext {
     public static void clearTraceId() { TRACE_ID.remove(); }
 
     /**
-     * 清理所有 ThreadLocal（建议在请求结束时调用，防线程复用泄漏）。
+     * 清理请求级 ThreadLocal（userToken / traceId），在请求结束时由
+     * {@link RequestContextRelayFilter} 调用，防线程复用泄漏。
+     * <p>callerService 是应用级常量（非 ThreadLocal），不在此清理。
      */
     public static void clearAll() {
-        clearCallerService();
         clearUserToken();
         clearTraceId();
     }
