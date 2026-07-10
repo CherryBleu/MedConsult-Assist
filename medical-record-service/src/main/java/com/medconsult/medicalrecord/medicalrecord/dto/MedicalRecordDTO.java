@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -26,100 +27,125 @@ public class MedicalRecordDTO {
     // ===== §2.6.1 创建电子病历 =====
 
     @Data
+    @Schema(description = "创建病历请求")
     public static class CreateRequest {
         /** 患者编号 patient_no（如 P202607060001） */
         @NotBlank(message = "患者编号不能为空")
+        @Schema(description = "患者编号")
         private String patientId;
         /** 医生编号 doctor_no（如 D10001） */
         @NotBlank(message = "医生编号不能为空")
+        @Schema(description = "医生编号")
         private String doctorId;
         /** 预约编号 appointment_no（可空，复诊/急诊可能无预约） */
+        @Schema(description = "预约编号")
         private String appointmentId;
 
         /** 主诉 */
         @Size(max = 1000, message = "主诉不能超过 1000 字")
+        @Schema(description = "主诉")
         private String chiefComplaint;
         /** 现病史 */
+        @Schema(description = "现病史")
         private String presentIllness;
         /** 既往史 */
+        @Schema(description = "既往史")
         private String pastHistory;
         /** 体格检查 */
+        @Schema(description = "体格检查")
         private String physicalExam;
         /** 初步诊断（字符串数组，service 层序列化为 JSON 串入库） */
+        @Schema(description = "初步诊断")
         private List<String> initialDiagnosis;
         /** 医嘱 */
+        @Schema(description = "医嘱")
         private String doctorAdvice;
     }
 
     /** §2.6.1 创建响应 */
+    @Schema(description = "创建病历响应")
     public record CreateResponse(
-            String recordId,     // record_no
-            String status        // DRAFT
+            @Schema(description = "病历编号") String recordId,     // record_no
+            @Schema(description = "状态：DRAFT / ARCHIVED / REVISED") String status        // DRAFT
     ) {}
 
     // ===== §2.6.2 病历详情 =====
 
     /** §2.6.2 详情响应（精简版，对齐《接口文档》示例字段） */
+    @Schema(description = "病历详情响应")
     public record DetailResponse(
-            String recordId,                  // record_no
-            String patientId,                 // patient_no（透传业务编号）
-            String doctorId,                  // doctor_no
-            String chiefComplaint,
-            List<String> initialDiagnosis,    // 解析 JSON 串
-            String status
+            @Schema(description = "病历编号") String recordId,                  // record_no
+            @Schema(description = "患者编号") String patientId,                 // patient_no（透传业务编号）
+            @Schema(description = "医生编号") String doctorId,                  // doctor_no
+            @Schema(description = "主诉") String chiefComplaint,
+            @Schema(description = "初步诊断") List<String> initialDiagnosis,    // 解析 JSON 串
+            @Schema(description = "病历状态") String status
     ) {}
 
     // ===== §2.6.3 分页列表 =====
 
     /** §2.6.3 列表项 */
+    @Schema(description = "病历列表项")
     public record ListItem(
-            String recordId,          // record_no
-            String doctorName,        // 本批无医生信息（跨服务），暂留 null，后续 Feign 组装
-            String chiefComplaint,
-            String status
+            @Schema(description = "病历编号") String recordId,          // record_no
+            @Schema(description = "医生姓名") String doctorName,        // 本批无医生信息（跨服务），暂留 null，后续 Feign 组装
+            @Schema(description = "主诉") String chiefComplaint,
+            @Schema(description = "状态") String status
     ) {}
 
     // ===== §2.6.4 更新草稿 =====
 
     @Data
+    @Schema(description = "更新草稿病历请求")
     public static class UpdateDraftRequest {
         /** 现病史（DRAFT 可改） */
+        @Schema(description = "现病史")
         private String presentIllness;
         /** 既往史 */
+        @Schema(description = "既往史")
         private String pastHistory;
         /** 体格检查 */
+        @Schema(description = "体格检查")
         private String physicalExam;
         /** 主诉 */
         @Size(max = 1000, message = "主诉不能超过 1000 字")
+        @Schema(description = "主诉")
         private String chiefComplaint;
         /** 最终诊断（归档前可补，JSON 数组串） */
+        @Schema(description = "最终诊断")
         private List<String> finalDiagnosis;
         /** 医嘱 */
+        @Schema(description = "医嘱")
         private String doctorAdvice;
     }
 
     /** §2.6.4 更新响应 */
+    @Schema(description = "更新病历响应")
     public record UpdateResponse(
-            String recordId,       // record_no
-            LocalDateTime updatedAt
+            @Schema(description = "病历编号") String recordId,       // record_no
+            @Schema(description = "更新时间") LocalDateTime updatedAt
     ) {}
 
     // ===== §2.6.5 归档 =====
 
     @Data
+    @Schema(description = "归档病历请求")
     public static class ArchiveRequest {
         /** 确认人编号 doctor_no（医生本人） */
         @NotBlank(message = "确认人不能为空")
+        @Schema(description = "确认人编号")
         private String confirmBy;
         /** 确认识注 */
         @Size(max = 500, message = "确认识注不能超过 500 字")
+        @Schema(description = "确认备注")
         private String confirmNote;
     }
 
     /** §2.6.5 归档响应 */
+    @Schema(description = "归档病历响应")
     public record ArchiveResponse(
-            String recordId,       // record_no
-            String status          // ARCHIVED
+            @Schema(description = "病历编号") String recordId,       // record_no
+            @Schema(description = "当前状态") String status          // ARCHIVED
     ) {}
 
     // ===== 内部接口 /internal/medical-records/{id}/full =====

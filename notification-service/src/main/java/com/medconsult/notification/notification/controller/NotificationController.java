@@ -4,6 +4,9 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.notification.notification.dto.NotificationDTO;
 import com.medconsult.notification.notification.service.NotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -17,29 +20,33 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
+@Tag(name = "通知接口", description = "站内通知管理（§2.8）")
 public class NotificationController {
 
     private final NotificationService notificationService;
 
     /** §2.8.1 创建通知 */
     @PostMapping
+    @Operation(summary = "创建通知")
     public Result<NotificationDTO.CreateResponse> create(@Valid @RequestBody NotificationDTO.CreateRequest req) {
         return Result.ok(notificationService.create(req));
     }
 
     /** §2.8.2 查询通知列表（可按 receiverId / read 过滤） */
     @GetMapping
+    @Operation(summary = "查询通知列表")
     public Result<PageResult<NotificationDTO.ListItem>> list(
-            @RequestParam(required = false) String receiverId,
-            @RequestParam(required = false) Boolean read,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize) {
+            @Parameter(description = "接收人编号") @RequestParam(required = false) String receiverId,
+            @Parameter(description = "是否已读") @RequestParam(required = false) Boolean read,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") int pageSize) {
         return Result.ok(notificationService.list(page, pageSize, receiverId, read));
     }
 
     /** §2.8.3 标记通知已读 */
     @PatchMapping("/{notificationId}/read")
-    public Result<NotificationDTO.ReadResponse> markRead(@PathVariable String notificationId) {
+    @Operation(summary = "标记通知已读")
+    public Result<NotificationDTO.ReadResponse> markRead(@Parameter(description = "通知编号", required = true) @PathVariable String notificationId) {
         return Result.ok(notificationService.markRead(notificationId));
     }
 }

@@ -4,6 +4,9 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.service.PrescriptionService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -20,49 +23,56 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/prescriptions")
 @RequiredArgsConstructor
+@Tag(name = "处方接口", description = "处方开具 + 8 态状态机（§2.6 处方）")
 public class PrescriptionController {
 
     private final PrescriptionService prescriptionService;
 
     /** 开方（初始 DRAFT，写主表 + 明细） */
     @PostMapping
+    @Operation(summary = "创建处方")
     public Result<PrescriptionDTO.CreateResponse> create(@Valid @RequestBody PrescriptionDTO.CreateRequest req) {
         return Result.ok(prescriptionService.create(req));
     }
 
     /** 处方列表（可按 status 过滤，药师审方工作台） */
     @GetMapping
+    @Operation(summary = "分页查询处方")
     public Result<PageResult<PrescriptionDTO.ListItem>> list(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String status) {
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int pageSize,
+            @Parameter(description = "处方状态") @RequestParam(required = false) String status) {
         return Result.ok(prescriptionService.list(page, pageSize, status));
     }
 
     /** 处方详情（含明细） */
     @GetMapping("/{prescriptionId}")
-    public Result<PrescriptionDTO.DetailResponse> detail(@PathVariable String prescriptionId) {
+    @Operation(summary = "查询处方详情")
+    public Result<PrescriptionDTO.DetailResponse> detail(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.detail(prescriptionId));
     }
 
     /** 提交审方（DRAFT → PENDING_REVIEW） */
     @PostMapping("/{prescriptionId}/submit")
-    public Result<PrescriptionDTO.SubmitResponse> submit(@PathVariable String prescriptionId) {
+    @Operation(summary = "提交处方（草稿→待审）")
+    public Result<PrescriptionDTO.SubmitResponse> submit(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.submit(prescriptionId));
     }
 
     /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发） */
     @PostMapping("/{prescriptionId}/review")
+    @Operation(summary = "药师审方（待审→已通过/已驳回）")
     public Result<PrescriptionDTO.ReviewResponse> review(
-            @PathVariable String prescriptionId,
+            @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.ReviewRequest req) {
         return Result.ok(prescriptionService.review(prescriptionId, req));
     }
 
     /** 缴费（APPROVED → PAID） */
     @PostMapping("/{prescriptionId}/pay")
+    @Operation(summary = "处方缴费（已通过→已缴费）")
     public Result<PrescriptionDTO.PayResponse> pay(
-            @PathVariable String prescriptionId,
+            @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.PayRequest req) {
         return Result.ok(prescriptionService.pay(prescriptionId, req));
     }
@@ -72,22 +82,25 @@ public class PrescriptionController {
      * <p>架构文档 §6.2 原写 MQ 异步，本批务实采用同步 Feign（MQ 化为后续待办）。
      */
     @PostMapping("/{prescriptionId}/dispense")
+    @Operation(summary = "调剂发药（已缴费→已调配）")
     public Result<PrescriptionDTO.DispenseResponse> dispense(
-            @PathVariable String prescriptionId,
+            @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.DispenseRequest req) {
         return Result.ok(prescriptionService.dispense(prescriptionId, req));
     }
 
     /** 完成（DISPENSED → COMPLETED） */
     @PostMapping("/{prescriptionId}/complete")
-    public Result<PrescriptionDTO.CompleteResponse> complete(@PathVariable String prescriptionId) {
+    @Operation(summary = "发药完成（已调配→已完成）")
+    public Result<PrescriptionDTO.CompleteResponse> complete(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.complete(prescriptionId));
     }
 
     /** 退方（APPROVED/PAID → CANCELLED） */
     @PostMapping("/{prescriptionId}/cancel")
+    @Operation(summary = "取消处方")
     public Result<PrescriptionDTO.CancelResponse> cancel(
-            @PathVariable String prescriptionId,
+            @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.CancelRequest req) {
         return Result.ok(prescriptionService.cancel(prescriptionId, req));
     }

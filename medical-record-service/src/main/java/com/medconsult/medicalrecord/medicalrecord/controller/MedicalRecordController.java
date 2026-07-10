@@ -4,6 +4,9 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
 import com.medconsult.medicalrecord.medicalrecord.service.MedicalRecordService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -20,43 +23,49 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/medical-records")
 @RequiredArgsConstructor
+@Tag(name = "电子病历接口", description = "电子病历存储管理（§2.6）")
 public class MedicalRecordController {
 
     private final MedicalRecordService medicalRecordService;
 
     /** §2.6.1 创建电子病历（初始 DRAFT） */
     @PostMapping
+    @Operation(summary = "创建电子病历")
     public Result<MedicalRecordDTO.CreateResponse> create(@Valid @RequestBody MedicalRecordDTO.CreateRequest req) {
         return Result.ok(medicalRecordService.create(req));
     }
 
     /** §2.6.2 查询病历详情 */
     @GetMapping("/{recordId}")
-    public Result<MedicalRecordDTO.DetailResponse> detail(@PathVariable String recordId) {
+    @Operation(summary = "查询病历详情")
+    public Result<MedicalRecordDTO.DetailResponse> detail(@Parameter(description = "病历编号", required = true) @PathVariable String recordId) {
         return Result.ok(medicalRecordService.detail(recordId));
     }
 
     /** §2.6.3 分页查询病历（可按 patientId 过滤） */
     @GetMapping
+    @Operation(summary = "分页查询病历")
     public Result<PageResult<MedicalRecordDTO.ListItem>> list(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String patientId) {
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int pageSize,
+            @Parameter(description = "患者编号") @RequestParam(required = false) String patientId) {
         return Result.ok(medicalRecordService.list(page, pageSize, patientId));
     }
 
     /** §2.6.4 更新草稿病历（仅 DRAFT 可改） */
     @PutMapping("/{recordId}")
+    @Operation(summary = "更新草稿病历")
     public Result<MedicalRecordDTO.UpdateResponse> updateDraft(
-            @PathVariable String recordId,
+            @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.UpdateDraftRequest req) {
         return Result.ok(medicalRecordService.updateDraft(recordId, req));
     }
 
     /** §2.6.5 归档病历（DRAFT → ARCHIVED，不可逆） */
     @PostMapping("/{recordId}/archive")
+    @Operation(summary = "归档病历")
     public Result<MedicalRecordDTO.ArchiveResponse> archive(
-            @PathVariable String recordId,
+            @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.ArchiveRequest req) {
         return Result.ok(medicalRecordService.archive(recordId, req));
     }

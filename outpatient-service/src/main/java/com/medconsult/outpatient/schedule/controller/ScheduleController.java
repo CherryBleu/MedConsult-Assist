@@ -4,6 +4,9 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.outpatient.schedule.dto.ScheduleDTO;
 import com.medconsult.outpatient.schedule.service.ScheduleService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -21,38 +24,43 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/schedules")
 @RequiredArgsConstructor
+@Tag(name = "排班接口", description = "医生排班管理（§2.4）")
 public class ScheduleController {
 
     private final ScheduleService scheduleService;
 
     /** §2.4.1 创建排班 */
     @PostMapping
+    @Operation(summary = "创建医生排班")
     public Result<ScheduleDTO.CreateResponse> create(@Valid @RequestBody ScheduleDTO.CreateRequest req) {
         return Result.ok(scheduleService.create(req));
     }
 
     /** §2.4.2 查询排班列表 */
     @GetMapping
+    @Operation(summary = "查询排班列表")
     public Result<PageResult<ScheduleDTO.ListItem>> list(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String departmentId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
+            @Parameter(description = "页码", required = true) @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页条数", required = true) @RequestParam(defaultValue = "10") int pageSize,
+            @Parameter(description = "科室编号", required = false) @RequestParam(required = false) String departmentId,
+            @Parameter(description = "开始日期", required = false) @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @Parameter(description = "结束日期", required = false) @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
         return Result.ok(scheduleService.list(page, pageSize, departmentId, dateFrom, dateTo));
     }
 
     /** §2.4.3 查询可预约号源 */
     @GetMapping("/available")
+    @Operation(summary = "查询可预约号源")
     public Result<List<ScheduleDTO.AvailableItem>> available(
-            @RequestParam(required = false) String departmentId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+            @Parameter(description = "科室编号", required = false) @RequestParam(required = false) String departmentId,
+            @Parameter(description = "日期", required = false) @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         return Result.ok(scheduleService.available(departmentId, date));
     }
 
     /** §2.4.4 更新排班状态 */
     @PatchMapping("/{scheduleId}/status")
-    public Result<ScheduleDTO.StatusResponse> updateStatus(@PathVariable String scheduleId,
+    @Operation(summary = "更新排班状态")
+    public Result<ScheduleDTO.StatusResponse> updateStatus(@Parameter(description = "排班编号", required = true) @PathVariable String scheduleId,
                                                             @Valid @RequestBody ScheduleDTO.StatusUpdateRequest req) {
         return Result.ok(scheduleService.updateStatus(scheduleId, req));
     }

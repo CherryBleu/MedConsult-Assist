@@ -3,6 +3,7 @@ package com.medconsult.notification.audit.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -54,16 +55,17 @@ public class AuditLogDTO {
     // ===== 对外查询 GET /audit-logs =====
 
     /** 查询列表项（对外返回，含关键字段，比《接口文档》示例更完整） */
+    @Schema(description = "审计日志列表项")
     public record ListItem(
-            String auditNo,
-            String resourceType,
-            String resourceId,
-            String resourceName,
-            String action,
-            String operatorId,
-            String operatorRole,
-            String operatorName,
-            String result,
-            LocalDateTime createdAt
+            @Schema(description = "审计编号") String auditNo,
+            @Schema(description = "资源类型") String resourceType,
+            @Schema(description = "资源编号") String resourceId,
+            @Schema(description = "资源名称") String resourceName,
+            @Schema(description = "操作类型") String action,
+            @Schema(description = "操作人编号") String operatorId,
+            @Schema(description = "操作人角色") String operatorRole,
+            @Schema(description = "操作人姓名") String operatorName,
+            @Schema(description = "操作结果") String result,
+            @Schema(description = "创建时间") LocalDateTime createdAt
     ) {}
 }

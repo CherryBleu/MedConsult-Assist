@@ -4,6 +4,9 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.notification.audit.dto.AuditLogDTO;
 import com.medconsult.notification.audit.service.AuditLogService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -19,21 +22,23 @@ import java.time.LocalDateTime;
 @RestController
 @RequestMapping("/api/v1/audit-logs")
 @RequiredArgsConstructor
+@Tag(name = "审计日志接口", description = "业务审计日志查询（§4.1）")
 public class AuditLogController {
 
     private final AuditLogService auditLogService;
 
     /** §4.1 分页查询审计日志（支持多条件过滤） */
     @GetMapping
+    @Operation(summary = "查询业务审计日志")
     public Result<PageResult<AuditLogDTO.ListItem>> list(
-            @RequestParam(required = false) String resourceType,
-            @RequestParam(required = false) String resourceId,
-            @RequestParam(required = false) String operatorId,
-            @RequestParam(required = false) String action,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int pageSize) {
+            @Parameter(description = "资源类型") @RequestParam(required = false) String resourceType,
+            @Parameter(description = "资源编号") @RequestParam(required = false) String resourceId,
+            @Parameter(description = "操作人编号") @RequestParam(required = false) String operatorId,
+            @Parameter(description = "操作类型") @RequestParam(required = false) String action,
+            @Parameter(description = "起始时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateFrom,
+            @Parameter(description = "结束时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dateTo,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") int pageSize) {
         return Result.ok(auditLogService.list(page, pageSize, resourceType, resourceId,
                 operatorId, action, dateFrom, dateTo));
     }
