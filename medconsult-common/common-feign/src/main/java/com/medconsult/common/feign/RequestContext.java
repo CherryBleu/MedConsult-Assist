@@ -15,6 +15,13 @@ import com.medconsult.common.security.JwtPayload;
  * 避免重复实现 request-scope 存储（也避免本模块直接依赖 Servlet API）。
  * traceId 与 callerService 走 ThreadLocal（调用链短生命周期，Feign 同步调用期间有效），
  * 对虚拟线程友好（虚拟线程是守护线程，ThreadLocal 正常工作）。
+ *
+ * <p><b>当前接线状态（TODO）</b>：{@code setUserToken} / {@code setCallerService} 尚未被任何
+ * 过滤器调用——即原始用户 JWT 不会经本类透传到下游。身份转发目前依赖
+ * {@link AuthRelayInterceptor} 从 {@link #currentUser()} 读 SecurityContext 后注入
+ * {@code X-User-Id} / {@code X-User-Roles} 头（下游按架构 §4.4 信任网关头重建身份），
+ * 故审计归属与身份可用性不受影响；原始 token 透传（如下游需二次校验签名）留待后续补
+ * 一个请求级 filter 调 {@code setUserToken} + 请求结束 {@code clearAll()}。
  */
 public final class RequestContext {
 

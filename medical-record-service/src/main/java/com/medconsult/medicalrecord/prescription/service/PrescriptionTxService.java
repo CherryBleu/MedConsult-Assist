@@ -191,9 +191,11 @@ public class PrescriptionTxService {
                         outData == null ? null : outData.stockFlowId());
             }
 
-            // 全部扣减成功 → 处方状态 DISPENSED（此处若异常也会触发下方 catch 补偿，保证不漏）
+            // 全部扣减成功 → 处方状态 DISPENSED（此处若异常也会触发下方 catch 补偿，保证不漏）。
+            // 注意：pharmacy_pharmacist_id 是"审方药师"（review 时回填，schema 注释明确），调剂药师
+            // 不在此覆盖它（否则丢失审方药师记录）。调剂药师身份经审计日志（audit_log）记录。
+            // TODO 后续如需按调剂药师查询，新增 dispensing_pharmacist_id 列，勿复用审方字段。
             fresh.setStatus("DISPENSED");
-            fresh.setPharmacyPharmacistId(positiveHash(req.getPharmacistId()));
             prescriptionMapper.updateById(fresh);
 
             log.info("处方调剂完成: prescriptionNo={} → DISPENSED items={}",

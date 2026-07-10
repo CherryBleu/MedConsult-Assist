@@ -206,6 +206,7 @@ public class PatientServiceImpl implements PatientService {
     public PatientDTO.StatusResponse updateStatus(String patientNo, PatientDTO.StatusUpdateRequest req) {
         Patient p = requireByPatientNo(patientNo);
 
+        String oldStatus = p.getStatus();
         String newStatus = req.getStatus();
         if (!ALLOWED_STATUS.contains(newStatus)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法档案状态: " + newStatus);
@@ -214,7 +215,7 @@ public class PatientServiceImpl implements PatientService {
         patientMapper.updateById(p);
 
         log.info("患者档案状态流转: patientNo={} {} → {} reason={}",
-                patientNo, p.getStatus(), newStatus, req.getReason());
+                patientNo, oldStatus, newStatus, req.getReason());
         return new PatientDTO.StatusResponse(p.getPatientNo(), newStatus);
     }
 

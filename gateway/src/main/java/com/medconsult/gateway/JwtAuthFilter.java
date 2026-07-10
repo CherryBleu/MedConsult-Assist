@@ -42,7 +42,21 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/api/v1/auth/login",
             "/api/v1/auth/register",
             "/api/v1/auth/refresh",
-            "/actuator/health");
+            "/actuator/health",
+            "/doc.html",
+            "/favicon.ico");
+
+    /**
+     * 白名单前缀：以下前缀的路径无需 token（Knife4j/OpenAPI3 文档资源 + actuator）。
+     * <p>Knife4j 聚合文档的资源路径（/doc.html / /webjars/** / /v3/api-docs/** 等）
+     * 不在 /api/v1/ 业务前缀下，也无 /internal/，此处显式放行让网关本机 doc.html 可匿名访问。
+     */
+    private static final java.util.Set<String> WHITELIST_PREFIXES = java.util.Set.of(
+            "/actuator/",
+            "/webjars/",
+            "/v3/api-docs",
+            "/swagger-ui",
+            "/swagger-resources");
 
     @Autowired
     private JwtCodec jwtCodec;
@@ -94,6 +108,14 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             if (payload.primaryRole() != null) {
                 reqBuilder.header("X-User-Primary-Role", payload.primaryRole());
             }
+            // 透传 patient/doctor 关联主键，供业务侧 SELF 数据范围校验（IDOR 防越权，架构 §4.3）。
+            // 不透传则下游重建的 JwtPayload.patientId/doctorId 为 null，无法做属主绑定。
+            if (payload.patientId() != null) {
+                reqBuilder.header("X-User-Patient-Id", String.valueOf(payload.patientId()));
+            }
+            if (payload.doctorId() != null) {
+                reqBuilder.header("X-User-Doctor-Id", String.valueOf(payload.doctorId()));
+            }
         }
         // 移除原 Authorization（业务服务按 X-User-* 头信任）
         reqBuilder.headers(h -> h.remove("Authorization"));
@@ -103,7 +125,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
     private boolean isWhitelisted(String path) {
         return WHITELIST.stream().anyMatch(path::equals)
-                || path.startsWith("/actuator/");
+                || WHITELIST_PREFIXES.stream().anyMatch(path::startsWith);
     }
 
     private Mono<Void> rejectUnauthorized(ServerWebExchange exchange, String reason) {

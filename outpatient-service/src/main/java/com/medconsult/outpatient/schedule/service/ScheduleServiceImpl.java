@@ -235,6 +235,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Transactional
     public ScheduleDTO.StatusResponse updateStatus(String scheduleNo, ScheduleDTO.StatusUpdateRequest req) {
         DoctorSchedule s = requireByNo(scheduleNo);
+        String oldStatus = s.getStatus();
         String newStatus = req.getStatus();
         if (!ALLOWED_STATUS.contains(newStatus)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法排班状态: " + newStatus);
@@ -250,7 +251,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         }
 
         log.info("排班状态变更: scheduleNo={} {} → {} reason={} notified={}",
-                scheduleNo, s.getStatus(), newStatus, req.getReason(), notifiedAppointments);
+                scheduleNo, oldStatus, newStatus, req.getReason(), notifiedAppointments);
         return new ScheduleDTO.StatusResponse(s.getScheduleNo(), newStatus, notifiedAppointments);
     }
 

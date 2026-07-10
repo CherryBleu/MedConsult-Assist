@@ -45,6 +45,8 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
     private static final String HDR_USER_ID = "X-User-Id";
     private static final String HDR_USER_ROLES = "X-User-Roles";
     private static final String HDR_USER_PRIMARY_ROLE = "X-User-Primary-Role";
+    private static final String HDR_USER_PATIENT_ID = "X-User-Patient-Id";
+    private static final String HDR_USER_DOCTOR_ID = "X-User-Doctor-Id";
     private static final String HDR_SERVICE_CODE = "X-Service-Code";
     private static final String HDR_AUTHORIZATION = "Authorization";
 
@@ -126,6 +128,9 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
             String primaryRole = request.getHeader(HDR_USER_PRIMARY_ROLE);
             List<String> roles = parseCsvHeader(request.getHeader(HDR_USER_ROLES));
             String name = request.getHeader("X-User-Name");
+            // 透传 patient/doctor 关联主键（网关 JwtAuthFilter 注入），供业务侧 SELF 数据范围校验
+            Long patientId = parseLongHeader(request.getHeader(HDR_USER_PATIENT_ID));
+            Long doctorId = parseLongHeader(request.getHeader(HDR_USER_DOCTOR_ID));
             return new JwtPayload(
                     JwtPayload.SubjectType.USER,
                     userId,
@@ -133,8 +138,8 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
                     name,
                     roles,
                     primaryRole,
-                    null,
-                    null,
+                    patientId,
+                    doctorId,
                     Collections.emptyList(),
                     null,
                     null
@@ -163,5 +168,15 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
             return Collections.emptyList();
         }
         return Arrays.stream(csv.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+    }
+
+    /** 头值 → Long，非法/缺失返回 null（身份头可能未透传，不应抛异常阻断请求） */
+    private static Long parseLongHeader(String v) {
+        if (v == null || v.isBlank()) return null;
+        try {
+            return Long.valueOf(v);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

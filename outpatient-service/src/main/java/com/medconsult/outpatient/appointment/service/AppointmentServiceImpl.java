@@ -7,6 +7,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.redis.DistributedLock;
+import com.medconsult.common.redis.RedisKey;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
@@ -263,9 +264,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         return map;
     }
 
-    /** 锁 key：medconsult:lock:schedule:{scheduleId}（与 RedisKey.SCHEDULE_QUOTA_LOCK 一致） */
+    /** 锁 key：复用 RedisKey.SCHEDULE_QUOTA_LOCK 常量，避免锁键字符串漂移 */
     private static String lockKey(Long scheduleId) {
-        return "medconsult:lock:schedule:" + scheduleId;
+        return RedisKey.SCHEDULE_QUOTA_LOCK + scheduleId;
     }
 
     /** 状态流转表：from → {允许的 to} */

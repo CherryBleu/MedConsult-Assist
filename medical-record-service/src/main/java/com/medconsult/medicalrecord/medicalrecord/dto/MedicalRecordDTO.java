@@ -14,10 +14,9 @@ import java.util.List;
  * 电子病历相关请求/响应 DTO（对齐《接口文档》§2.6 + 《修改建议》§2.1 调整）。
  *
  * <p>{@code recordId} 实为 {@code record_no}（业务可读编号，如 MR202607060001）。
- * {@code patientId}/{@code doctorId}/{@code appointmentId} 接口文档示例传业务编号串，
- * 但本服务<b>不跨 schema 校验</b>其存在性（patient/doctor/appointment 在其他服务），本批仅做
- * 格式校验后落库。编号→主键的解析在后续 PR 接入 Feign 后补充；当前直接存业务编号的哈希占位
- * （见 service 层注释）。
+ * {@code patientId}/{@code doctorId} 接口文档示例传业务编号串，service 层经 Feign 反查
+ * patient/outpatient 服务落真实 BIGINT 主键（patient_no/doctor_no 不存在时下游返回 NOT_FOUND，
+ * 事务回滚）。{@code appointmentId} 暂仍存正哈希占位（outpatient 尚未暴露反查接口，且非查询键）。
  *
  * <p><b>修订项 §2.1</b>：CreateRequest <b>不再</b>接受 prescriptions 入参——处方独立走
  * {@code POST /api/v1/prescriptions}，通过 record_id 反查。

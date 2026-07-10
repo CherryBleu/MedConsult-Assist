@@ -89,6 +89,34 @@ class MedicalRecordFlowTest {
     private static final String DOCTOR_NO = "D10001";
     private static final String PHARMACIST_NO = "PH2001";
 
+    // ===== 测试身份头（模拟网关 JwtAuthFilter 注入的 X-User-* 头） =====
+    // create 时 patientFeignClient stub 把任意 patient_no 反查为 1001L，
+    // 故"患者本人"身份头带 X-User-Patient-Id=1001（与记录归属一致才能通过 SELF 校验）。
+    /** 医生身份（ALL 数据范围，病历域可读全部） */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder doctorAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "5001")
+                .header("X-User-Primary-Role", "DOCTOR")
+                .header("X-User-Roles", "DOCTOR")
+                .header("X-User-Doctor-Id", "2001");
+    }
+    /** 患者本人身份（patientId=1001，与 createRecord stub 的归属主键一致） */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder selfPatientAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "6001")
+                .header("X-User-Primary-Role", "PATIENT")
+                .header("X-User-Roles", "PATIENT")
+                .header("X-User-Patient-Id", "1001");
+    }
+    /** 其他患者身份（patientId=9999，与记录归属不一致 → 越权） */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder otherPatientAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "6002")
+                .header("X-User-Primary-Role", "PATIENT")
+                .header("X-User-Roles", "PATIENT")
+                .header("X-User-Patient-Id", "9999");
+    }
+
     /**
      * 统一 stub Feign 反查：任意业务编号 → 固定确定性主键。
      * <p>用编号的稳定派生值（避免与 H2 预置数据冲突），让 create/list 行为可预期。
@@ -115,7 +143,7 @@ class MedicalRecordFlowTest {
                  "physicalExam":"血压 150/95mmHg，心率 92 次/分。",
                  "initialDiagnosis":["心律失常待查","高血压"],
                  "doctorAdvice":"完善心电图检查，监测血压。"}""".formatted(PATIENT_NO, DOCTOR_NO);
-        mvc.perform(post("/api/v1/medical-records").contentType("application/json").content(body))
+        mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").exists())
@@ -125,7 +153,7 @@ class MedicalRecordFlowTest {
     @Test
     void recordDetail_returnsFields() throws Exception {
         String recordNo = createRecord();
-        mvc.perform(get("/api/v1/medical-records/" + recordNo))
+        mvc.perform(doctorAuth(get("/api/v1/medical-records/" + recordNo)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").value(recordNo))
@@ -138,7 +166,7 @@ class MedicalRecordFlowTest {
     @Test
     void recordList_filterByPatient() throws Exception {
         createRecord();
-        mvc.perform(get("/api/v1/medical-records").param("patientId", PATIENT_NO))
+        mvc.perform(doctorAuth(get("/api/v1/medical-records").param("patientId", PATIENT_NO)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
@@ -149,8 +177,8 @@ class MedicalRecordFlowTest {
     @Test
     void updateDraft_onlyDraftAllowed() throws Exception {
         String recordNo = createRecord();
-        // DRAFT 可改
-        mvc.perform(put("/api/v1/medical-records/" + recordNo)
+        // DRAFT 可改（医生身份）
+        mvc.perform(doctorAuth(put("/api/v1/medical-records/" + recordNo))
                         .contentType("application/json")
                         .content("{\"doctorAdvice\":\"继续监测血压，1 周后复诊。\"}"))
                 .andExpect(status().isOk())
@@ -163,7 +191,7 @@ class MedicalRecordFlowTest {
         String recordNo = createRecord();
         archiveRecord(recordNo);
         // 归档后不可改 → CONFLICT
-        mvc.perform(put("/api/v1/medical-records/" + recordNo)
+        mvc.perform(doctorAuth(put("/api/v1/medical-records/" + recordNo))
                         .contentType("application/json")
                         .content("{\"doctorAdvice\":\"尝试修改已归档病历\"}"))
                 .andExpect(jsonPath("$.code").value(409001));
@@ -172,7 +200,7 @@ class MedicalRecordFlowTest {
     @Test
     void archive_draftToArchived() throws Exception {
         String recordNo = createRecord();
-        mvc.perform(post("/api/v1/medical-records/" + recordNo + "/archive")
+        mvc.perform(doctorAuth(post("/api/v1/medical-records/" + recordNo + "/archive"))
                         .contentType("application/json")
                         .content("{\"confirmBy\":\"D10001\",\"confirmNote\":\"病历内容已确认\"}"))
                 .andExpect(status().isOk())
@@ -183,7 +211,7 @@ class MedicalRecordFlowTest {
 
     @Test
     void archive_notFound() throws Exception {
-        mvc.perform(post("/api/v1/medical-records/MR_NOT_EXIST/archive")
+        mvc.perform(doctorAuth(post("/api/v1/medical-records/MR_NOT_EXIST/archive"))
                         .contentType("application/json")
                         .content("{\"confirmBy\":\"D10001\"}"))
                 .andExpect(jsonPath("$.code").value(404001));
@@ -191,16 +219,54 @@ class MedicalRecordFlowTest {
 
     @Test
     void recordDetail_notFound() throws Exception {
-        mvc.perform(get("/api/v1/medical-records/MR_NOT_EXIST"))
+        mvc.perform(doctorAuth(get("/api/v1/medical-records/MR_NOT_EXIST")))
                 .andExpect(jsonPath("$.code").value(404001));
     }
 
     @Test
     void updateDraft_notFound() throws Exception {
-        mvc.perform(put("/api/v1/medical-records/MR_NOT_EXIST")
+        mvc.perform(doctorAuth(put("/api/v1/medical-records/MR_NOT_EXIST"))
                         .contentType("application/json")
                         .content("{\"doctorAdvice\":\"尝试改不存在病历\"}"))
                 .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    // ===== 越权防护（IDOR）=====
+
+    @Test
+    void recordDetail_otherPatientForbidden() throws Exception {
+        String recordNo = createRecord(); // 归属 patientId=1001
+        // 其他患者（patientId=9999）查他人病历 → FORBIDDEN（IDOR 防护）
+        mvc.perform(otherPatientAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void recordDetail_selfPatientAllowed() throws Exception {
+        String recordNo = createRecord(); // 归属 patientId=1001
+        // 患者本人（patientId=1001）查自己病历 → 放行
+        mvc.perform(selfPatientAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void recordList_patientScopedToSelf() throws Exception {
+        createRecord(); // 归属 patientId=1001
+        // 患者本人（patientId=1001）列表：忽略入参 patientId，只返回自己的（total=1）
+        mvc.perform(selfPatientAuth(get("/api/v1/medical-records").param("patientId", "P_OTHER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1));
+    }
+
+    @Test
+    void updateDraft_otherPatientForbidden() throws Exception {
+        String recordNo = createRecord(); // 归属 patientId=1001
+        mvc.perform(otherPatientAuth(put("/api/v1/medical-records/" + recordNo))
+                        .contentType("application/json")
+                        .content("{\"doctorAdvice\":\"尝试改他人病历\"}"))
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
@@ -467,20 +533,20 @@ class MedicalRecordFlowTest {
 
     // ===== 测试助手 =====
 
-    /** 创建病历，返回 record_no */
+    /** 创建病历（医生身份），返回 record_no */
     private String createRecord() throws Exception {
         String body = """
                 {"patientId":"%s","doctorId":"%s","chiefComplaint":"胸闷、心悸 3 天",
                  "initialDiagnosis":["心律失常待查","高血压"]}""".formatted(PATIENT_NO, DOCTOR_NO);
-        MvcResult r = mvc.perform(post("/api/v1/medical-records").contentType("application/json").content(body))
+        MvcResult r = mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/recordId").asText();
     }
 
-    /** 归档病历 */
+    /** 归档病历（医生身份） */
     private void archiveRecord(String recordNo) throws Exception {
-        mvc.perform(post("/api/v1/medical-records/" + recordNo + "/archive")
+        mvc.perform(doctorAuth(post("/api/v1/medical-records/" + recordNo + "/archive"))
                         .contentType("application/json")
                         .content("{\"confirmBy\":\"D10001\",\"confirmNote\":\"确认\"}"))
                 .andExpect(status().isOk());

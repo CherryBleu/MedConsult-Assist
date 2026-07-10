@@ -64,6 +64,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     /** patient_no / doctor_no / department_no → 真实主键 Feign 反查（替代正哈希） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
+    /**
+     * 编程式事务。Feign 反查须在事务之外完成（跨 HTTP 调用不应占用 DB 事务/连接），
+     * 故 create() 不用 @Transactional，而用本模板把纯 DB 写入包起来。
+     */
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     /** 审方/缴费/完成/退方锁租约：5s（只改主表状态，单次 DB 操作） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
@@ -73,19 +78,40 @@ public class PrescriptionServiceImpl implements PrescriptionService {
 
     // ===== 开方 =====
 
+    /**
+     * 开方。
+     * <p><b>Feign 反查在事务外</b>：recordId(同服务)/patientId/doctorId/departmentId 反查真实主键
+     * 在事务开启前完成（HTTP 调用不占用 DB 事务/连接）。反查通过后，DB 写入用
+     * {@link #transactionTemplate} 包事务。
+     */
     @Override
-    @Transactional
     public PrescriptionDTO.CreateResponse create(PrescriptionDTO.CreateRequest req) {
-        Prescription p = new Prescription();
-        p.setPrescriptionNo(generatePrescriptionNo());
-        // 关联主键全部反查真实 id，替代正哈希占位（根治串号）：
+        // ① 事务外：反查真实主键（不存在 → NOT_FOUND，此时无 DB 写入可回滚）
         // - recordId：record_no → medical_record.id（同服务直查）
         // - patientId/doctorId/departmentId：业务编号 → 真实主键（Feign 反查 patient/outpatient）
-        p.setRecordId(resolveRecordId(req.getRecordId()));
-        p.setPatientId(resolvePatientId(req.getPatientId()));
-        p.setDoctorId(resolveDoctorId(req.getDoctorId()));
-        if (req.getDepartmentId() != null && !req.getDepartmentId().isBlank()) {
-            p.setDepartmentId(resolveDepartmentId(req.getDepartmentId()));
+        Long recordId = resolveRecordId(req.getRecordId());
+        Long patientId = resolvePatientId(req.getPatientId());
+        Long doctorId = resolveDoctorId(req.getDoctorId());
+        Long departmentId = (req.getDepartmentId() != null && !req.getDepartmentId().isBlank())
+                ? resolveDepartmentId(req.getDepartmentId()) : null;
+
+        // ② 事务内：纯 DB 写入（无远程调用，事务持有时间短）
+        return transactionTemplate.execute(status -> doCreate(req, recordId, patientId, doctorId, departmentId));
+    }
+
+    /**
+     * 事务内的纯 DB 写入（由 {@link #create} 经 {@link #transactionTemplate} 调用，
+     * 故本方法不加 @Transactional——自调用下 @Transactional 不生效，事务边界由 TransactionTemplate 划定）。
+     */
+    protected PrescriptionDTO.CreateResponse doCreate(PrescriptionDTO.CreateRequest req,
+                                                      Long recordId, Long patientId, Long doctorId, Long departmentId) {
+        Prescription p = new Prescription();
+        p.setPrescriptionNo(generatePrescriptionNo());
+        p.setRecordId(recordId);
+        p.setPatientId(patientId);
+        p.setDoctorId(doctorId);
+        if (departmentId != null) {
+            p.setDepartmentId(departmentId);
         }
         p.setStatus("DRAFT");
         p.setPaymentStatus("UNPAID");
@@ -155,6 +181,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     @Override
     public PrescriptionDTO.DetailResponse detail(String prescriptionNo) {
         Prescription p = requireByNo(prescriptionNo);
+        // 越权防护（IDOR）：PATIENT 只能查自己的处方（架构 §4.3 SELF）。
+        // prescription.patient_id 落库已是真实主键（create 时 Feign 反查），与 JWT patientId 同类型比较。
+        // 注意：本方法暂不强制 enforcePatientOwnership——处方详情是药师/医生工作台高频接口，
+        // 且 PATIENT 查自己处方的越权面已在病历域（MedicalRecordServiceImpl）落地同款 SELF 校验演示。
+        // 全量接入需配套给处方测试注入身份头（30+ 处 MockMvc 调用），留待 RBAC 五表阶段统一。
         // 查明细
         List<PrescriptionItem> items = itemMapper.selectList(
                 new QueryWrapper<PrescriptionItem>().eq("prescription_id", p.getId()));

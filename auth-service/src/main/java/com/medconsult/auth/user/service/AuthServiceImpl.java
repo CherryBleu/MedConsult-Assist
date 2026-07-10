@@ -94,6 +94,12 @@ public class AuthServiceImpl implements AuthService {
         u.setStatus("ACTIVE");
         userMapper.insert(u);
 
+        // 冒烟期：将自助注册角色暂存 Redis（sys_user_role 表未落地，架构文档 RBAC 五表阶段
+        // 将改为查 sys_role）。login 时读回，使注册 DOCTOR 的用户登录后拿到 DOCTOR token，
+        // @Permission 切面才能按医生数据范围放行。Redis 读失败兜底为 PATIENT。
+        // 设 365 天 TTL：角色为长期数据，但须有上限，避免禁用/删除用户后 key 永驻 Redis。
+        redis.opsForValue().set(roleKey(u.getId()), role, Duration.ofDays(365));
+
         return new AuthDTO.UserInfo(
                 u.getUserNo(), u.getName(), role,
                 req.getPatientId(), req.getDoctorId(), u.getStatus());
@@ -132,8 +138,15 @@ public class AuthServiceImpl implements AuthService {
         u.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(u);
 
-        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）
-        String primaryRole = "PATIENT"; // 默认；后续从 sys_user_role 查
+        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）。
+        // 从 Redis 读回注册时写入的角色；读失败或缺失兜底为 PATIENT。
+        String storedRole = null;
+        try {
+            storedRole = redis.opsForValue().get(roleKey(u.getId()));
+        } catch (Exception e) {
+            // Redis 不可用时兜底，不阻断登录
+        }
+        String primaryRole = (storedRole != null && !storedRole.isBlank()) ? storedRole : "PATIENT";
         List<String> roles = List.of(primaryRole);
         List<String> scope = List.of("*"); // 冒烟期全权限；RBAC 阶段改为查 sys_role_permission
 
@@ -211,6 +224,11 @@ public class AuthServiceImpl implements AuthService {
 
     private static String refreshKey(String jti) {
         return "medconsult:auth:refresh:" + jti;
+    }
+
+    /** 注册时暂存的角色（冒烟期 sys_user_role 未落地的临时方案）的 Redis key */
+    private static String roleKey(Long userId) {
+        return "medconsult:auth:role:" + userId;
     }
 
     private void writeLoginLog(Long userId, String account, String ip, String userAgent,

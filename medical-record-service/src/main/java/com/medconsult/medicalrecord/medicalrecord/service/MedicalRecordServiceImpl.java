@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
@@ -31,9 +33,9 @@ import java.util.List;
  *
  * <p>核心逻辑：
  * <ul>
- *   <li>创建：recordNo = MR + 雪花 base36；patientId/doctorId 用业务编号的正哈希落库（同款策略见
- *       outpatient AppointmentTxService——保证同编号始终映射到同 BIGINT，便于按 patientId 过滤；
- *       下一批接 Feign 后替换为真实主键反查，无需改表）；status 初始 DRAFT</li>
+ *   <li>创建：recordNo = MR + 雪花 base36；patientId/doctorId 用 Feign 反查 patient/doctor 业务编号
+ *       的真实 BIGINT 主键落库（替代早期正哈希占位，根治跨患者/医生串号）；appointmentId 暂仍用
+ *       正哈希占位（outpatient 尚未暴露反查接口，且非查询键）；status 初始 DRAFT</li>
  *   <li>initialDiagnosis/finalDiagnosis：List&lt;String&gt; 序列化为 JSON 串入库，读出时反序列化</li>
  *   <li>更新草稿：仅 DRAFT 可改（ARCHIVED 抛 CONFLICT，医疗文书不可变，§6.1）；非空字段才覆盖</li>
  *   <li>归档：DRAFT → ARCHIVED，回填 archivedAt；终态不可逆</li>
@@ -54,21 +56,44 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     /** Feign 反查 patient_no / doctor_no → 真实 BIGINT 主键（替代正哈希占位，根治串号） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
+    /**
+     * 编程式事务。Feign 反查须在事务之外完成（跨 HTTP 调用不应占用 DB 事务/连接），
+     * 故 create() 不用 @Transactional，而用本模板把纯 DB 写入包起来。
+     */
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     // ===== §2.6.1 创建 =====
 
+    /**
+     * 创建病历。
+     * <p><b>Feign 反查在事务外</b>：patient_no/doctor_no 经 Feign 反查真实主键，HTTP 调用不占用
+     * DB 事务/连接（避免长事务跨网络往返）。反查通过后，DB 写入用 {@link #transactionTemplate} 包事务。
+     */
     @Override
-    @Transactional
     public MedicalRecordDTO.CreateResponse create(MedicalRecordDTO.CreateRequest req) {
+        // ① 事务外：Feign 反查真实主键（patient_no/doctor_no 不存在 → NOT_FOUND，此时无 DB 写入可回滚）
+        Long patientId = resolvePatientId(req.getPatientId());
+        Long doctorId = resolveDoctorId(req.getDoctorId());
+        Long appointmentId = (req.getAppointmentId() != null && !req.getAppointmentId().isBlank())
+                // appointment 反查待 outpatient 暴露接口；暂用正哈希占位（可空、非查询键，影响有限）
+                ? positiveHash(req.getAppointmentId()) : null;
+
+        // ② 事务内：纯 DB 写入（无远程调用，事务持有时间短）
+        return transactionTemplate.execute(status -> doCreate(req, patientId, doctorId, appointmentId));
+    }
+
+    /**
+     * 事务内的纯 DB 写入（由 {@link #create} 经 {@link #transactionTemplate} 调用，
+     * 故本方法不加 @Transactional——自调用下 @Transactional 不生效，事务边界由 TransactionTemplate 划定）。
+     */
+    protected MedicalRecordDTO.CreateResponse doCreate(MedicalRecordDTO.CreateRequest req,
+                                                        Long patientId, Long doctorId, Long appointmentId) {
         MedicalRecord r = new MedicalRecord();
         r.setRecordNo(generateRecordNo());
-        // patient/doctor 用 Feign 反查真实主键（替代正哈希，根治跨患者/医生串号）。
-        // patient_no/doctor_no 不存在时 Feign 返回 NOT_FOUND → BusinessException，事务回滚。
-        r.setPatientId(resolvePatientId(req.getPatientId()));
-        r.setDoctorId(resolveDoctorId(req.getDoctorId()));
-        if (req.getAppointmentId() != null && !req.getAppointmentId().isBlank()) {
-            // appointment 反查待 outpatient 暴露接口；暂用正哈希占位（可空、非查询键，影响有限）
-            r.setAppointmentId(positiveHash(req.getAppointmentId()));
+        r.setPatientId(patientId);
+        r.setDoctorId(doctorId);
+        if (appointmentId != null) {
+            r.setAppointmentId(appointmentId);
         }
         r.setChiefComplaint(req.getChiefComplaint());
         r.setPresentIllness(req.getPresentIllness());
@@ -89,6 +114,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Override
     public MedicalRecordDTO.DetailResponse detail(String recordNo) {
         MedicalRecord r = requireByNo(recordNo);
+        // 越权防护（IDOR）：PATIENT 只能查自己的病历（架构 §4.3 SELF 数据范围）。
+        // medical_record.patient_id 落库已是真实主键（create 时 Feign 反查 no→id），
+        // 与 JWT 里的 patientId（BIGINT PK）同类型可直接比较。DOCTOR/管理员不限制。
+        enforcePatientOwnership(r.getPatientId());
         // patientId/doctorId 落库已是真实主键（create 时 Feign 反查 no→id）；但详情接口回传
         // 业务编号需 id→no 反向解析，目前未实现（display 反查是独立需求，留待下一批）。
         // 暂回传 null（避免传主键误导调用方当作 patient_no 使用）。
@@ -107,10 +136,12 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId) {
         Page<MedicalRecord> p = new Page<>(page <= 0 ? 1 : page, pageSize <= 0 ? 10 : pageSize);
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
-        if (patientId != null && !patientId.isBlank()) {
-            // patientId 传的是业务编号（patient_no），反查真实主键后过滤。
-            // patient_no 不存在 → NOT_FOUND（合理：查不存在的患者自然查不到病历）
-            qw.eq("patient_id", resolvePatientId(patientId));
+        // 越权防护（IDOR）：PATIENT 只能列自己的病历（架构 §4.3 SELF 数据范围）。
+        // PATIENT 身份时忽略入参 patientId，强制限定为本人 patientId，防用他人 patient_no 越权拉取。
+        // 非 PATIENT（DOCTOR/管理员）尊重入参 patientId 过滤。
+        Long scopePatientId = resolvePatientScope(patientId);
+        if (scopePatientId != null) {
+            qw.eq("patient_id", scopePatientId);
         }
         qw.orderByDesc("created_at");
         IPage<MedicalRecord> result = medicalRecordMapper.selectPage(p, qw);
@@ -132,6 +163,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Transactional
     public MedicalRecordDTO.UpdateResponse updateDraft(String recordNo, MedicalRecordDTO.UpdateDraftRequest req) {
         MedicalRecord r = requireByNo(recordNo);
+        // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿
+        enforcePatientOwnership(r.getPatientId());
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可修改，当前状态: " + r.getStatus() + "（归档后不可改，§6.1 医疗文书不可变）");
@@ -166,6 +199,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Transactional
     public MedicalRecordDTO.ArchiveResponse archive(String recordNo, MedicalRecordDTO.ArchiveRequest req) {
         MedicalRecord r = requireByNo(recordNo);
+        // 越权防护（IDOR）：PATIENT 不能归档他人病历（归档由接诊医生触发，此处防越权）
+        enforcePatientOwnership(r.getPatientId());
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可归档，当前状态: " + r.getStatus());
@@ -266,6 +301,66 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "患者不存在: " + patientNo);
         }
         return resp.data().id();
+    }
+
+    // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围）=====
+    //
+    // 当前调用者为 PATIENT 时，强制只能访问自己的数据；DOCTOR / 管理员不限制（架构 §4.3 ALL/ASSIGNED）。
+    // 身份取自 SecurityContext（网关已解析 X-User-* 头重建 JwtPayload，§4.4）。
+    // 直连（无网关头、无 token）时 SecurityContext.getPayload() 返回 null，按"匿名拒绝"处理。
+
+    /**
+     * 列表/查询的 patient 作用域解析：
+     * <ul>
+     *   <li>PATIENT 身份：忽略入参 patientId，强制返回本人 patientId（只能查自己的）</li>
+     *   <li>DOCTOR/管理员身份：尊重入参 patientId（传了则反查真实主键过滤，没传则不过滤）</li>
+     *   <li>匿名（无身份）：拒绝（401），避免未登录遍历</li>
+     * </ul>
+     *
+     * @param patientId 入参 patient_no（DOCTOR/管理员用）
+     * @return 用于查询的 patient_id 主键；null 表示不按 patient 过滤（仅 DOCTOR/管理员未传 patientId 时）
+     */
+    private Long resolvePatientScope(String patientId) {
+        JwtPayload p = SecurityContext.getPayload();
+        if (p == null || !p.isUser()) {
+            // 匿名/服务身份访问对外患者数据接口 → 拒绝
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(p)) {
+            Long selfPatientId = p.patientId();
+            if (selfPatientId == null) {
+                // PATIENT 身份但 JWT 无 patientId 关联（档案未绑定）→ 拒绝，防越权
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询病历");
+            }
+            return selfPatientId;
+        }
+        // 非 PATIENT（DOCTOR/管理员）：尊重入参
+        return (patientId != null && !patientId.isBlank()) ? resolvePatientId(patientId) : null;
+    }
+
+    /**
+     * 单条资源的归属校验（detail/update/delete 等带具体 record 的场景）。
+     * <p>PATIENT 身份：资源的 patient_id 必须等于本人 patientId，否则 FORBIDDEN。
+     * DOCTOR/管理员：不校验（可看全部/接诊范围）。
+     */
+    private void enforcePatientOwnership(Long resourcePatientId) {
+        JwtPayload p = SecurityContext.getPayload();
+        if (p == null || !p.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(p)) {
+            Long selfPatientId = p.patientId();
+            if (selfPatientId == null || !selfPatientId.equals(resourcePatientId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该患者的病历");
+            }
+        }
+    }
+
+    /** 是否 PATIENT 主角色（primaryRole 或 roles 含 PATIENT） */
+    private static boolean isPatient(JwtPayload p) {
+        if (p == null) return false;
+        if ("PATIENT".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("PATIENT");
     }
 
     /** doctor_no → 真实 BIGINT 主键（Feign 反查 outpatient-service）。 */

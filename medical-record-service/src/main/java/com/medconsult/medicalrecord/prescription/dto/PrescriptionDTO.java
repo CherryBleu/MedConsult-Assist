@@ -20,7 +20,8 @@ import java.util.Map;
  *
  * <p>{@code prescriptionId} 实为 {@code prescription_no}（业务可读编号）。
  * {@code recordId}/{@code patientId}/{@code doctorId}/{@code departmentId} 传业务编号串，
- * service 层用正哈希落库（同病历域策略，下一批接 Feign 后替换为真实主键反查）。
+ * service 层用 Feign/同服务反查落真实主键（recordId 同服务直查 medical_record.id；
+ * patientId/doctorId/departmentId 经 Feign 反查 patient/outpatient 服务）。
  *
  * <p>本批 5 接口：POST /prescriptions（开方）/ GET /prescriptions（列表）/ GET /{id}（详情）/
  * POST /{id}/submit（提交审方 DRAFT→PENDING_REVIEW）/ POST /{id}/review（审方→APPROVED|REJECTED）。
