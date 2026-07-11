@@ -10,9 +10,10 @@
 | MongoDB | 疾病知识库（`diseases` collection） | **本机安装**（用户已装） | 27017 | 无认证 |
 | Milvus 2.4 | 向量检索（症状对齐疾病） | docker-compose | 19530 / 9091 | `root:Milvus` |
 | MinIO | 医学影像文件存储 | docker-compose | 9000 / 9001 | `minioadmin/minioadmin` |
+| Embedding | 向量生成（症状→向量→Milvus 检索） | docker-compose（本地 Python 容器） | 7997 | 无需 api-key |
 | 阿里云百炼 | LLM 对话（症状问诊 / 病历摘要） | 远程 API（OpenAI 兼容） | — | 需自行申请 |
 
-> ⚠️ Embedding（向量生成）是**第 5 个隐性依赖**：阿里云百炼的 LLM 不提供 embedding 接口，需另配本地 TEI 或兼容服务。详见 §6。
+> Embedding 随 `docker compose up -d` 自动拉起，无需额外申请凭证。详见 §6。
 >
 > 变量名以 `infra/.env.example` 与 `backend/ai-service/src/main/resources/application.yml` 为准（均为 `ALIYUNBAILIAN_*`）。
 
@@ -135,7 +136,7 @@ powershell -Command "(Invoke-WebRequest http://localhost:9000/minio/health/live)
 ## 5. 阿里云百炼 LLM（OpenAI 兼容）
 
 > ai-service 通过 langchain4j 的 `OpenAiChatModel` 调用，因此任何 OpenAI 兼容协议的 LLM 均可。
-> 当前代码与 `infra/.env.example` 默认走**阿里云百炼**（通义千问 qwen-plus）。
+> 当前代码与 `infra/.env.example` 默认走**阿里云百炼**（通义千问 qwen3.7-plus）。
 
 ### 5.1 申请 API Key
 
@@ -153,7 +154,7 @@ notepad "D:\project\spring cloud alibaba\MedConsult-Assist\infra\.env"
 ```env
 ALIYUNBAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 ALIYUNBAILIAN_APIKEY=sk-你的真实key
-ALIYUNBAILIAN_MODEL=qwen-plus
+ALIYUNBAILIAN_MODEL=qwen3.7-plus
 ALIYUNBAILIAN_TIMEOUT_SECONDS=60
 ```
 
@@ -167,7 +168,7 @@ $env:ALIYUNBAILIAN_APIKEY = "sk-你的真实key"
 
 # 调阿里云百炼 chat 接口（OpenAI 兼容协议）
 $body = @{
-    model = "qwen-plus"
+    model = "qwen3.7-plus"
     messages = @(@{ role = "user"; content = "你好，回复一句" })
 } | ConvertTo-Json -Depth 5
 
@@ -182,30 +183,76 @@ $response.choices[0].message.content
 
 ---
 
-## 6. Embedding（可选，但 RAG 检索依赖它）
+## 6. Embedding（ai-service RAG 依赖，随 docker compose 自动拉起）
 
-⚠️ **关键认知**：`symptom-chat` 接口（症状问诊）的流程是「用户症状 → embedding → Milvus 检索相关疾病 → 把疾病知识喂给 LLM 生成回答」。LLM（阿里云百炼）**不提供 embedding 接口**，所以 embedding 必须单独配（本项目默认走本地 TEI 容器，见 §6.1）。
+⚠️ **关键认知**：`symptom-chat` 接口（症状问诊）的流程是「用户症状 → embedding → Milvus 检索相关疾病 → 把疾病知识喂给 LLM 生成回答」。LLM（阿里云百炼）**不提供 embedding 接口**，所以 embedding 必须单独配。
 
-### 6.1 三种选择
+本项目内置了一个本地 Embedding 容器（Flask + sentence-transformers，模型 `BAAI/bge-small-zh-v1.5`，512 维），**无需额外 API key，无需申请外部服务**。
 
-| 方案 | 配置 | 费用 | 适用 |
-|---|---|---|---|
-| OpenAI embedding | `EMBEDDING_BASE_URL=https://api.openai.com/v1`，`model=text-embedding-3-small` | ~$0.02/百万 token | 海外网络通畅 |
-| 国内兼容服务 | 智谱 / 通义 / 百川，把 base-url 和 key 换成对应服务 | 各家定价 | 国内首选 |
-| 留空降级 | `EMBEDDING_API_KEY` 保留 `sk-placeholder` | 0 | 只用 LLM 对话，不要 RAG |
+### 6.1 一键启动（默认方案，推荐）
 
-### 6.2 配置
+Embedding 容器已写进 `infra/docker-compose.yml`，随 `docker compose up -d` 自动拉起：
 
-`infra/.env` 中（替换为你的 embedding 服务凭证）：
+```powershell
+cd "D:\project\spring cloud alibaba\MedConsult-Assist"
+
+# 单独拉起 embedding（或随全量 up -d 一起）
+docker compose -f infra/docker-compose.yml up -d embedding
+
+# 查看构建日志（首次构建约 5min：下载 torch CPU wheel + sentence-transformers）
+docker compose -f infra/docker-compose.yml logs -f embedding
+```
+
+> 首次启动会从 `hf-mirror.com`（国内 HuggingFace 镜像）下载模型文件（~95MB），缓存在 Docker 命名卷 `embedding_model_cache` 内，后续重启秒加载。
+>
+> `start_period=120s` 内 healthcheck 显示 `unhealthy` 是正常的（模型还在下载/加载）。
+
+### 6.2 健康检查
+
+```powershell
+# 探测健康端点
+powershell -Command "Invoke-RestMethod http://localhost:7997/health"
+# 期望: {"status":"ok","model":"BAAI/bge-small-zh-v1.5","loaded":true,"dimension":512,"device":"cpu"}
+
+# 手动测试 embedding 接口（OpenAI 兼容格式）
+$body = @{
+    model = "BAAI/bge-small-zh-v1.5"
+    input = @("感冒发烧咳嗽")
+} | ConvertTo-Json
+$response = Invoke-RestMethod -Uri "http://localhost:7997/v1/embeddings" `
+    -Method Post -ContentType "application/json" -Body $body
+$response.data[0].embedding.Count
+# 期望: 512
+```
+
+### 6.3 配置说明
+
+`infra/.env` 中（默认值已配好，无需修改）：
 ```env
+EMBEDDING_BASE_URL=http://localhost:7997/v1
+EMBEDDING_API_KEY=not-needed
+EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
+EMBEDDING_DIMENSION=512
+HF_ENDPOINT=https://hf-mirror.com
+```
+
+- `EMBEDDING_BASE_URL`：ai-service 和数据导入器都通过此 URL 调用 embedding 接口
+- `EMBEDDING_API_KEY`：本地容器不需要鉴权，保留 `not-needed` 占位即可
+- `HF_ENDPOINT`：模型下载地址，`https://hf-mirror.com` 为国内镜像加速；海外网络可改为 `https://huggingface.co`
+
+### 6.4 可选：切换为外部 Embedding 服务
+
+如不想本地跑容器，可改用 OpenAI / 智谱 / 通义等提供的 embedding API：
+```env
+# 例：OpenAI embedding（需海外网络 + API key）
 EMBEDDING_BASE_URL=https://api.openai.com/v1
-EMBEDDING_API_KEY=sk-你的embedding-key
+EMBEDDING_API_KEY=sk-你的-openai-key
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
 ```
 
-> 留空时 `OpenAiCompatibleClient.embedOne()` 会 log `success=false reason=config_missing` 并返回空，
-> `DiseaseSearchService` 拿到空检索结果，symptom-chat 退化为纯 LLM 对话（无疾病知识增强）。
+> ⚠️ 切换模型后 Milvus 中已导入的向量与新模型向量空间不兼容，需重新导入数据。
+> 导入器和 ai-service 必须使用同一 embedding 模型，否则检索结果无意义。
 
 ---
 
@@ -221,7 +268,7 @@ docker compose -f infra/docker-compose.yml up -d
 docker compose -f infra/docker-compose.yml ps
 ```
 
-期望看到 **7 个容器**（medconsult-mysql / -redis / -rabbitmq / -qdrant / -milvus-etcd / -milvus-minio / -milvus / -minio）全部 Up / healthy。
+期望看到 **8 个容器**（medconsult-mysql / -redis / -rabbitmq / -qdrant / -milvus-etcd / -milvus-minio / -milvus / -minio / -embedding）全部 Up / healthy。
 > Milvus 主体启动较慢（约 60-90s），`start_period=90s` 内 healthcheck 显示 unhealthy 是正常的。
 
 ---

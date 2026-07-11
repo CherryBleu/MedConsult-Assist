@@ -1,0 +1,13 @@
+# Dockerfile 只 COPY app.py，其余文件无需进入构建上下文
+*.log
+*.pid
+*.pyc
+__pycache__/
+.cache/
+models/
+venv/
+.venv/
+.gitignore
+check-env.ps1
+start.ps1
+requirements.txt

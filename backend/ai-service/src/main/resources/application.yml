@@ -57,7 +57,7 @@ medconsult:
       api-key: ${ALIYUNBAILIAN_APIKEY:sk-placeholder}
       model: ${ALIYUNBAILIAN_MODEL:qwen3.7-plus}
       timeout-seconds: ${ALIYUNBAILIAN_TIMEOUT_SECONDS:60}
-    # Embedding 走本地 TEI 容器（bge-small-zh-v1.5，512 维），与 LLM 完全解耦。
+    # Embedding 走本地 Python 容器（Flask + sentence-transformers，bge-small-zh-v1.5，512 维），与 LLM 完全解耦。
     # 导入(importer)和查询(runtime)必须用同一模型，否则 Milvus 向量语义空间不一致。
     embedding:
       base-url: ${EMBEDDING_BASE_URL:http://localhost:7997/v1}

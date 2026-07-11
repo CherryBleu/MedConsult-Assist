@@ -1,6 +1,6 @@
 # MedConsult-Assist 基础设施（infra/）
 
-本目录用 `docker compose` 统一编排 **MySQL / Redis / Qdrant / RabbitMQ** 四个三方中间件。
+本目录用 `docker compose` 统一编排 **MySQL / Redis / Qdrant / RabbitMQ / Milvus / MinIO / Embedding** 等中间件。
 **Nacos 不在本 compose 内**（由独立脚本启动），见下文「启动 Nacos」。
 
 ## 端口与凭据（本地冒烟用）
@@ -11,6 +11,9 @@
 | Redis 7 | 6379 | **16379**（避开本机 memurai 6379） | 无密码（本地） |
 | Qdrant | 6333(REST)/6334(gRPC) | 6333/6334 | 无密码（本地） |
 | RabbitMQ | 5672(AMQP)/15672(UI) | 5672/15672 | medconsult/medconsult123 |
+| Milvus 2.4 | 19530/9091 | 19530/9091 | root:Milvus |
+| MinIO | 9000/9001 | 9000/9001 | minioadmin/minioadmin |
+| Embedding | 7997 | 7997 | 无需 api-key（本地 Python 容器） |
 
 > 端口选择原因：宿主机 Windows 已有 `mysqld.exe` 占 3306、`memurai.exe` 占 6379，所以容器映射到非冲突端口。
 
@@ -72,6 +75,30 @@ spring:
     password: medconsult123
     driver-class-name: com.mysql.cj.jdbc.Driver
 ```
+
+## Embedding 服务（ai-service RAG 依赖）
+
+ai-service 的症状问诊 RAG 链路需要 embedding 向量化用户症状，再从 Milvus 检索匹配疾病。
+Embedding 走本地 Python 容器（Flask + sentence-transformers，模型 `BAAI/bge-small-zh-v1.5`，512 维，~95MB），
+提供 OpenAI 兼容的 `/v1/embeddings` 接口，**无需额外 API key**。
+
+```bash
+# 随 docker compose up -d 自动拉起（首次会构建镜像 + 下载模型）
+docker compose -f infra/docker-compose.yml up -d embedding
+
+# 健康检查
+curl -s http://localhost:7997/health
+# 期望: {"status":"ok","model":"BAAI/bge-small-zh-v1.5","loaded":true,"dimension":512}
+
+# 手动测试 embedding
+curl -s -X POST http://localhost:7997/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model":"BAAI/bge-small-zh-v1.5","input":["感冒发烧"]}' | python -m json.tool
+```
+
+> **首次构建约 5min**（下载 torch CPU wheel + sentence-transformers）。
+> **首次启动约 30s**（从 hf-mirror.com 下载模型文件，缓存在命名卷 `embedding_model_cache` 内，后续重启秒加载）。
+> 模型下载走 `HF_ENDPOINT=https://hf-mirror.com` 国内镜像，如海外网络可改为 `https://huggingface.co`。
 
 ## 红线合规
 
