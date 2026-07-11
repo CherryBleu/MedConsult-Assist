@@ -20,8 +20,9 @@ export const useNoticeStore = defineStore('notice', {
 
     async fetchUnreadCount() {
       const res = await getUnreadCountApi()
-      this.unreadCount = res.data
-      return res.data
+      // 确保 unreadCount 始终为数字（防止后端返回对象导致 [object Object] 显示）
+      this.unreadCount = typeof res.data === 'number' ? res.data : 0
+      return this.unreadCount
     },
 
     async markRead(id) {

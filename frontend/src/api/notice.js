@@ -12,9 +12,17 @@ export const getNoticeListApi = (params) => {
 }
 
 // 未读数量（后端无独立 count 端点，用 read=false 过滤取 total）
-export const getUnreadCountApi = () => {
+export const getUnreadCountApi = async () => {
   if (USE_MOCK) return Promise.resolve(mockUnreadCount())
-  return request({ url: '/notifications', method: 'get', params: { read: false, pageSize: 1 } })
+  try {
+    const res = await request({ url: '/notifications', method: 'get', params: { read: false, pageSize: 1 } })
+    // 后端返回 PageResult {items,total}，取 total 作为未读数
+    const count = res.data?.total ?? (Array.isArray(res.data) ? res.data.length : 0)
+    return { code: 0, message: 'success', data: count }
+  } catch (e) {
+    // 后端报错时返回 0（不阻塞页面）
+    return { code: 0, message: 'success', data: 0 }
+  }
 }
 
 // 标记单条已读（对齐后端 PATCH /notifications/{notificationId}/read）
