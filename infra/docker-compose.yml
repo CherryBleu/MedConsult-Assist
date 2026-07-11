@@ -1,19 +1,25 @@
 # MedConsult-Assist 基础设施本地编排（架构文档 §1.1 §10）
 #
-# 范围：只编排 4 个三方中间件（MySQL / Redis / Qdrant / RabbitMQ）。
+# 范围：编排 7 个中间件 ——
+#   核心业务：MySQL / Redis / RabbitMQ
+#   AI 域：Qdrant（备用向量库）/ Milvus（向量检索，含 etcd + 内置 minio 依赖）/ MinIO（影像存储）
+#
 #   Nacos 由独立脚本启动（D:\springcloudalibaba\nacos-server-2.3.0\nacos\bin\startup.cmd），
 #   因为它有 GUI 启动习惯且部分配置走本地文件，不入 compose。
+#   MongoDB 由用户本机安装（不走容器，便于复用已有实例）。
 #
 # 端口选择（避开 Windows 主机原生服务）：
 #   - 3306 被本机 mysqld.exe 占用 → MySQL 容器走 3307
 #   - 6379 被本机 memurai.exe 占用 → Redis 容器走 16379
-#   - Qdrant / RabbitMQ 默认端口本机未占用 → 保持官方默认
+#   - 27017 本机 MongoDB 已占用 → 不再起容器（由本机实例提供）
+#   - 其余保持官方默认
 #
 # 启动：  docker compose -f infra/docker-compose.yml up -d
 # 停止：  docker compose -f infra/docker-compose.yml down
 # 重置：  docker compose -f infra/docker-compose.yml down -v   # 删数据卷
 #
 # 红线 1 合规：MySQL 8.0 / Redis / RabbitMQ / Qdrant 版本严格锁定（见 medconsult-parent pom.xml）。
+#           Milvus / MinIO 为 AI 域依赖，版本锁定见各自 image 标签。
 
 name: medconsult
 
@@ -27,8 +33,10 @@ services:
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
-      MYSQL_USER: ${MYSQL_APP_USER:-medconsult}
-      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-medconsult123}
+      # 业务库账号（与 ai-service / 各服务 application.yml 读取的 MYSQL_USER/MYSQL_PASSWORD 对齐，
+      # 避免运维改了 .env 的密码但服务仍用默认值连不上库）
+      MYSQL_USER: ${MYSQL_USER:-medconsult}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-medconsult123}
       TZ: Asia/Shanghai
     command:
       # 红线 1：utf8mb4_0900_ai_ci 是 MySQL 8.0 默认，匹配数据库设计文档 §1 通用约定
@@ -37,7 +45,8 @@ services:
       - --default-time-zone=+08:00
       - --max-connections=200
     ports:
-      - "3307:3306"
+      # 绑定 127.0.0.1：开发端口不对外暴露（避免不可信网段直连弱口令的 MySQL/Redis/MQ）
+      - "127.0.0.1:3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d:ro
@@ -59,7 +68,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "16379:6379"
+      - "127.0.0.1:16379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -74,15 +83,15 @@ services:
   # 选择 Qdrant（轻量，单容器即可；Milvus 需要 etcd+minio 三件套，过重）。
   # ai-service 独占访问。
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.12.4
     container_name: medconsult-qdrant
     restart: unless-stopped
     environment:
       QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-info}
     ports:
       # REST / gRPC（gRPC 性能更好，Spring AI Qdrant 客户端优先用 gRPC）
-      - "6333:6333"   # REST
-      - "6334:6334"   # gRPC
+      - "127.0.0.1:6333:6333"   # REST
+      - "127.0.0.1:6334:6334"   # gRPC
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -105,8 +114,8 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medconsult123}
       TZ: Asia/Shanghai
     ports:
-      - "5672:5672"     # AMQP
-      - "15672:15672"   # 管理控制台
+      - "127.0.0.1:5672:5672"     # AMQP
+      - "127.0.0.1:15672:15672"   # 管理控制台
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -117,11 +126,118 @@ services:
       start_period: 30s
     networks: [medconsult-net]
 
+  # ============== Milvus 元数据存储（etcd，Milvus 独占）==============
+  # Milvus standalone 三件套之一：etcd 存 collection/schema 元数据。
+  # 仅容器内部可见，不暴露宿主机端口。
+  milvus-etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: medconsult-milvus-etcd
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - milvus_etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks: [medconsult-net]
+
+  # ============== Milvus 内置对象存储（MinIO，Milvus 独占，与下方 app MinIO 隔离）==============
+  # Milvus standalone 三件套之二：存 segment 数据文件。
+  # 用独立容器名 + 独立卷 + 不暴露端口，避免与影像存储的 medconsult-minio 冲突。
+  milvus-minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: medconsult-milvus-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - milvus_minio_data:/minio_data
+    command: minio server /minio_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks: [medconsult-net]
+
+  # ============== Milvus standalone（向量检索 / RAG）==============
+  # 架构文档 §需求 4.2.0：疾病 JSON 切片向量存 Milvus，仅存索引。
+  # ai-service 的 MilvusRestClient 调 REST /v2/vectordb/entities/search。
+  # 版本：2.4.x 是首个提供完整 REST v2 API 的稳定线；锁定 2.4.13。
+  milvus:
+    image: milvusdb/milvus:v2.4.13
+    container_name: medconsult-milvus
+    restart: unless-stopped
+    environment:
+      ETCD_ENDPOINTS: milvus-etcd:2379
+      MINIO_ADDRESS: milvus-minio:9000
+      MINIO_REGION: ${MILVUS_REGION:-us-east-1}
+    command: ["milvus", "run", "standalone"]
+    ports:
+      - "127.0.0.1:19530:19530"   # gRPC（Milvus SDK 用）
+      - "127.0.0.1:9091:9091"     # 健康/metrics
+    depends_on:
+      milvus-etcd:
+        condition: service_healthy
+      milvus-minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 10
+      start_period: 90s
+    networks: [medconsult-net]
+
+  # ============== MinIO（影像文件存储 / FileUploadService 用）==============
+  # 需求文档 §4.2.x：医学影像上传 MinIO，ai-service 通过 minio 8.5.x SDK 访问。
+  # 与 Milvus 内置 minio 物理隔离（独立容器名、独立卷、独立端口）。
+  # auto-create-bucket=true 时 ai-service 首次启动自动建 medconsult bucket。
+  minio:
+    image: minio/minio:RELEASE.2024-08-03T04-33-23Z
+    container_name: medconsult-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BROWSER: "on"
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API（ai-service 访问）
+      - "127.0.0.1:9001:9001"   # Web 控制台
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks: [medconsult-net]
+
+  # ============== Embedding 服务（Python + sentence-transformers，不在 compose 中）==============
+  # 本地 embedding 服务用 Python Flask 独立运行（infra/embedding-server/start.ps1），
+  # 模型 BAAI/bge-small-zh-v1.5（95MB，512 维），暴露 OpenAI 兼容 /v1/embeddings。
+  # 不入 compose 是因为：(1) 官方 TEI 镜像 ghcr.io 拉取过慢；
+  # (2) 本机已有 torch+CUDA 环境，Python 直接复用更轻量；
+  # (3) 模型文件需 HuggingFace 下载，走 Python HF_ENDPOINT 镜像更可控。
+  # 启动：cd infra/embedding-server && powershell -File start.ps1 -Background
+
 volumes:
   mysql_data:
   redis_data:
   qdrant_data:
   rabbitmq_data:
+  milvus_etcd_data:
+  milvus_minio_data:
+  minio_data:
 
 networks:
   medconsult-net:

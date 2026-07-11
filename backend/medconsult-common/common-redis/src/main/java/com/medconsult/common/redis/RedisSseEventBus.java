@@ -52,4 +52,13 @@ public class RedisSseEventBus implements SseEventBus {
         }
         listenerContainer.addMessageListener(listener, new ChannelTopic(channel));
     }
+
+    @Override
+    public void unsubscribe(String channel) {
+        // 移除本实例注册的监听器，避免 SSE 连接结束后 Redis 监听器持续累积泄漏
+        MessageListener prev = listeners.remove(channel);
+        if (prev != null) {
+            listenerContainer.removeMessageListener(prev);
+        }
+    }
 }

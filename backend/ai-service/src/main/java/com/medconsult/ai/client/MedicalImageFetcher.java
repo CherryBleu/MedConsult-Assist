@@ -47,7 +47,24 @@ public class MedicalImageFetcher {
         };
     }
 
+    /**
+     * SSRF 防护：拒绝云元数据 / 链路本地地址，防止服务端伪造请求（SSRF）打内网元数据服务。
+     * 注：合法的 MinIO 可能就在 127.0.0.1 / localhost，故不拦截回环，只拦链路本地段（169.254.x.x）。
+     */
+    private static void guardSsrf(URI uri) {
+        String host = uri.getHost();
+        if (host == null) {
+            return;
+        }
+        String lower = host.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("169.254.169.254") || lower.equals("metadata.google.internal")
+                || lower.startsWith("169.254.") || lower.endsWith(".metadata")) {
+            throw new IllegalArgumentException("blocked SSRF target host: " + host);
+        }
+    }
+
     private MedicalImagePayload fetchHttp(URI uri) {
+        guardSsrf(uri);
         try {
             HttpRequest request = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(timeoutSeconds()))

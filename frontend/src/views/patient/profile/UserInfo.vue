@@ -51,15 +51,23 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getPatientInfoApi } from '@/api/patient'
+import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
+const userStore = useUserStore()
 const loading = ref(false)
 const patientInfo = ref({})
 
 const getPatientInfo = async () => {
+  // patientId 必填：从登录态 userInfo 取（/auth/me 返回 patientId），避免 URL 拼成 /patients/undefined
+  const patientId = userStore.userInfo?.patientId
+  if (!patientId) {
+    patientInfo.value = {}
+    return
+  }
   loading.value = true
   try {
-    const res = await getPatientInfoApi()
+    const res = await getPatientInfoApi(patientId)
     patientInfo.value = res.data
   } finally {
     loading.value = false

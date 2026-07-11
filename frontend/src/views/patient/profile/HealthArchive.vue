@@ -67,7 +67,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { ArrowLeft, Warning, Document, UserFilled, Phone } from '@element-plus/icons-vue'
 import { getHealthArchiveApi } from '@/api/patient'
+import { useUserStore } from '@/store/modules/user'
 
+const userStore = useUserStore()
 const loading = ref(false)
 const archive = ref({})
 
@@ -77,9 +79,15 @@ const allergyList = computed(() => {
 })
 
 const getHealthArchive = async () => {
+  // patientId 必填：从登录态 userInfo 取，避免 URL 拼成 /patients/undefined
+  const patientId = userStore.userInfo?.patientId
+  if (!patientId) {
+    archive.value = {}
+    return
+  }
   loading.value = true
   try {
-    const res = await getHealthArchiveApi()
+    const res = await getHealthArchiveApi(patientId)
     archive.value = res.data
   } finally {
     loading.value = false

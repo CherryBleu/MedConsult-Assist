@@ -56,11 +56,14 @@ public class AiCallLogService {
     }
 
     public PageResult<CallLogItem> list(String patientId, String type, int page, int pageSize) {
+        // 分页参数上下界校验，防止 pageSize 传极大值拖垮查询
+        int safePage = page < 1 ? 1 : page;
+        int safeSize = pageSize < 1 ? 10 : Math.min(pageSize, 100);
         LambdaQueryWrapper<AiCallLogEntity> wrapper = new LambdaQueryWrapper<AiCallLogEntity>()
                 .eq(type != null && !type.isBlank(), AiCallLogEntity::getCallType, type)
                 .eq(patientId != null && !patientId.isBlank(), AiCallLogEntity::getPatientId, BusinessIds.numericId(patientId))
                 .orderByDesc(AiCallLogEntity::getCreatedAt);
-        Page<AiCallLogEntity> result = callLogMapper.selectPage(Page.of(page, pageSize), wrapper);
+        Page<AiCallLogEntity> result = callLogMapper.selectPage(Page.of(safePage, safeSize), wrapper);
         return PageResult.of(
                 (int) result.getCurrent(),
                 (int) result.getSize(),
@@ -69,7 +72,8 @@ public class AiCallLogService {
                         .map(item -> new CallLogItem(
                                 item.getLogNo(),
                                 item.getCallType(),
-                                BusinessIds.businessOrEmpty(patientId),
+                                // 每条日志的真实 patientId，不能用查询参数（不带 patientId 查询时会被错填成空串）
+                                BusinessIds.businessOrEmpty(String.valueOf(item.getPatientId())),
                                 item.getRelatedId(),
                                 item.getModelName(),
                                 item.getLatencyMs(),

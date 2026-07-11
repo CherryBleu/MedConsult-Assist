@@ -391,8 +391,20 @@ public class MedicalDataMilvusImporter {
         void ensureDatabase() throws Exception {
             ObjectNode payload = MAPPER.createObjectNode();
             payload.put("dbName", config.milvusDatabase());
-            JsonNode response = postMilvus("/v2/vectordb/databases/create", payload, true);
-            assertMilvusSuccessOrAlreadyExists(response, "创建 Milvus database");
+            try {
+                JsonNode response = postMilvus("/v2/vectordb/databases/create", payload, true);
+                assertMilvusSuccessOrAlreadyExists(response, "创建 Milvus database");
+            } catch (IllegalStateException ex) {
+                // Milvus 2.4.x 没有 REST /v2/vectordb/databases/create 端点（返回 HTTP 404）。
+                // database 需通过 gRPC 预先创建（见 infra/embedding-server 或 pymilvus）。
+                // 404 时假定 database 已就绪，继续执行。
+                if (ex.getMessage().contains("404")) {
+                    System.out.println("注意：Milvus REST 不支持 database 创建（2.4.x），"
+                            + "假定 database '" + config.milvusDatabase() + "' 已通过 gRPC 预先创建。");
+                } else {
+                    throw ex;
+                }
+            }
         }
 
         void ensureCollection() throws Exception {

@@ -152,7 +152,18 @@ const archiveRecord = async () => {
       type: 'warning'
     })
     archiving.value = true
-    await archiveRecordApi(route.query.recordId || Date.now())
+    // 归档前必须先拿到真实病历 id：新建病历（无 recordId）先 create 再 archive，
+    // 不能用 Date.now() 当 recordId（后端必然 404/参数错误）。
+    let recordId = route.query.recordId
+    if (!recordId) {
+      const created = await createRecordApi(form)
+      recordId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
+      if (!recordId) {
+        ElMessage.error('保存病历失败，无法归档')
+        return
+      }
+    }
+    await archiveRecordApi(recordId)
     form.status = 'ARCHIVED'
     ElMessage.success('病历已归档')
     router.back()

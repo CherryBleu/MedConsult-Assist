@@ -234,9 +234,22 @@ public class FileUploadService {
         return required(storage().bucket(), "MINIO bucket is not configured");
     }
 
+    /** 允许的医学影像/文档 MIME 白名单（拒绝可执行/脚本等任意类型上传） */
+    private static final java.util.Set<String> ALLOWED_CONTENT_TYPES = java.util.Set.of(
+            "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp",
+            "application/dicom",
+            "application/pdf",
+            "text/plain"
+    );
+
     private static void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "file is required");
+        }
+        // MIME 白名单校验：拒绝非影像/文档类型（防止上传可执行/脚本文件到对象存储）
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase(java.util.Locale.ROOT))) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "unsupported file type: " + contentType);
         }
     }
 

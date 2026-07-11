@@ -179,7 +179,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { PictureFilled, UploadFilled, Close } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, getImagingHistoryListApi } from '@/api/ai'
@@ -391,7 +391,8 @@ const viewHistory = async (row) => {
   try {
     const res = await getImagingResultApi(row.taskId)
     detectionResult.value = res.data
-    imageUrl.value = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=medical%20CT%20scan%20chest%20x-ray%20imaging%20diagnostic%20radiology&image_size=square_hd'
+    // 还原历史影像原图：用上传时记录的 URL，不替换为第三方域名
+    imageUrl.value = row.imageUrl || row.originalImageUrl || ''
     nextTick(() => {
       setTimeout(() => drawAnnotations(), 300)
     })
@@ -402,6 +403,14 @@ const viewHistory = async (row) => {
 
 onMounted(() => {
   getHistoryList()
+})
+
+// 组件卸载清理轮询定时器，避免离开页面后持续发请求（内存/请求泄漏）
+onUnmounted(() => {
+  if (pollTimer.value) {
+    clearInterval(pollTimer.value)
+    pollTimer.value = null
+  }
 })
 </script>
 

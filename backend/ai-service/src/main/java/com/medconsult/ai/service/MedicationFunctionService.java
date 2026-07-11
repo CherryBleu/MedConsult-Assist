@@ -9,6 +9,8 @@ import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -26,6 +28,8 @@ import java.util.Map;
  */
 @Service
 public class MedicationFunctionService {
+    private static final Logger log = LoggerFactory.getLogger(MedicationFunctionService.class);
+
     private final PatientFeignClient patientClient;
     private final DrugFeignClient drugClient;
 
@@ -90,8 +94,11 @@ public class MedicationFunctionService {
                 if (res != null && res.data() != null) {
                     result.add(res.data());
                 }
-            } catch (RuntimeException ignored) {
-                // Keep local/dev flows usable when drug-service is not available yet.
+            } catch (RuntimeException ex) {
+                // 用药安全场景：drug-service 不可用时静默降级为本地规则，必须留日志便于发现，
+                // 否则用户拿不到真实禁忌/相互作用却无任何告警。
+                log.warn("drug risk info fetch failed, degrade to local rules, drugId={}",
+                        prescription.drugId(), ex);
             }
         }
         return result;

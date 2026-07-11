@@ -55,9 +55,15 @@ public class AiSseEventBus {
     public void register(String userId, String streamId, SseEmitter emitter) {
         emitters.put(streamId, emitter);
         String channel = channel(userId, streamId);
-        emitter.onCompletion(() -> emitters.remove(streamId));
-        emitter.onTimeout(() -> emitters.remove(streamId));
-        emitter.onError(e -> emitters.remove(streamId));
+        // emitter 生命周期结束（完成/超时/出错）时，同时移除本地 emitter 并取消 Redis 订阅，
+        // 否则 Redis 监听器会随连接数持续累积泄漏。
+        Runnable cleanup = () -> {
+            emitters.remove(streamId);
+            redisBus.unsubscribe(channel);
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(e -> cleanup.run());
         // 订阅 channel：收到 Redis 广播后，若本实例持有该 streamId 的 emitter 则 send
         redisBus.subscribe(channel, json -> {
             SseEmitter local = emitters.get(streamId);
@@ -73,10 +79,12 @@ public class AiSseEventBus {
                 if ("done".equals(payload.event()) || "error".equals(payload.event())) {
                     local.complete();
                     emitters.remove(streamId);
+                    redisBus.unsubscribe(channel);
                 }
             } catch (IOException | IllegalStateException ex) {
                 log.debug("sse send failed, streamId={}", streamId, ex);
                 emitters.remove(streamId);
+                redisBus.unsubscribe(channel);
             }
         });
     }

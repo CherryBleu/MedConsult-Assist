@@ -247,10 +247,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, UploadFilled, Close, Plus } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, reviewImagingDetectionApi, getImagingHistoryListApi } from '@/api/ai'
+import { useUserStore } from '@/store/modules/user'
+
+const userStore = useUserStore()
 
 const activeTab = ref('list')
 const filterStatus = ref('all')
@@ -461,7 +464,8 @@ const viewTask = async (row) => {
   try {
     const res = await getImagingResultApi(row.taskId)
     currentTask.value = { ...res.data, patientName: row.patientName }
-    imageUrl.value = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=medical%20CT%20scan%20chest%20x-ray%20imaging%20diagnostic%20radiology%20hospital&image_size=square_hd'
+    // 还原任务影像原图：用上传时记录的 URL，不替换为第三方域名
+    imageUrl.value = row.imageUrl || row.originalImageUrl || ''
     imagingForm.patientName = row.patientName || ''
     imagingForm.imagingType = row.imagingType
     imagingForm.bodyPart = row.bodyPart
@@ -510,7 +514,7 @@ const submitReview = async () => {
     currentTask.value.reviewStatus = 'REVIEWED'
     currentTask.value.reviewResult = reviewForm.reviewResult
     currentTask.value.doctorOpinion = reviewForm.doctorOpinion
-    currentTask.value.reviewedBy = '张医生'
+    currentTask.value.reviewedBy = userStore.userInfo?.name || userStore.userInfo?.username || '当前医生'
     currentTask.value.reviewedAt = new Date().toLocaleString()
     if (reviewForm.reviewResult === 'CORRECT') {
       currentTask.value.aiDiagnosis = reviewForm.correctedDiagnosis
@@ -537,6 +541,14 @@ const getReviewTagType = (result) => {
 
 onMounted(() => {
   getTaskList()
+})
+
+// 组件卸载清理轮询定时器，避免离开页面后持续发请求（内存/请求泄漏）
+onUnmounted(() => {
+  if (pollTimer.value) {
+    clearInterval(pollTimer.value)
+    pollTimer.value = null
+  }
 })
 </script>
 

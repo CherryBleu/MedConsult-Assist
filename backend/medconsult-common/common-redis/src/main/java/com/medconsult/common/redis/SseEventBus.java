@@ -36,4 +36,15 @@ public interface SseEventBus {
      * @param handler 消息处理器（持有 SSE 连接的实例在此 send）
      */
     void subscribe(String channel, java.util.function.Consumer<String> handler);
+
+    /**
+     * 取消订阅 channel（移除本实例此前通过 {@link #subscribe} 注册的 handler）。
+     *
+     * <p>SSE 连接结束（完成/超时/出错）后必须调用，否则 Redis 监听器会随连接数持续累积泄漏。
+     *
+     * @param channel 频道
+     */
+    default void unsubscribe(String channel) {
+        // 默认空实现：保持向后兼容（旧实现不管理监听器生命周期）
+    }
 }

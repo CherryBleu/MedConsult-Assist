@@ -38,6 +38,8 @@
         <module>notification-service</module>
         <module>ai-service</module>
         <module>gateway</module>
+        <!-- 工具模块（非运行时服务）：疾病 JSON → Milvus 向量导入 -->
+        <module>data</module>
     </modules>
 
     <properties>

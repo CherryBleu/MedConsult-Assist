@@ -132,7 +132,8 @@ onMounted(() => {
 
 const fillAccount = (account) => {
   loginForm.account = account
-  loginForm.password = '123456'
+  // 仅开发环境预填演示密码；生产构建不含明文密码，用户需自行输入
+  loginForm.password = import.meta.env.DEV ? '123456' : ''
 }
 
 const handleLogin = async () => {

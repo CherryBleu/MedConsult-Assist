@@ -14,8 +14,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  */
 public final class SecurityContext {
 
-    /** request attribute key（包级可见，JwtAuthServletFilter 直接用此 key 写 request） */
-    static final String PAYLOAD_ATTR_KEY = SecurityContext.class.getName() + ".payload";
+    /** request attribute key（JwtAuthServletFilter 直接用此 key 写 request；公开供其他 filter 读取，如限流过滤器） */
+    public static final String PAYLOAD_ATTR_KEY = SecurityContext.class.getName() + ".payload";
 
     private SecurityContext() {
     }

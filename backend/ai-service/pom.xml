@@ -20,7 +20,7 @@
     <properties>
         <!-- AI 专有依赖版本（不随父 pom，这些是 AI 域独有） -->
         <langchain4j.version>0.35.0</langchain4j.version>
-        <mongodb-driver.version>5.1.2</mongodb-driver.version>
+        <mongodb-driver.version>4.11.1</mongodb-driver.version>
         <minio.version>8.5.12</minio.version>
     </properties>
 

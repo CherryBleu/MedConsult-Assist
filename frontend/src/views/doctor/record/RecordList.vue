@@ -50,7 +50,8 @@ const getList = async () => {
   loading.value = true
   try {
     const res = await getRecordListApi()
-    recordList.value = res.data
+    // 后端分页返回 {records,total}；兼容 mock 返回数组
+    recordList.value = res.data?.records ?? res.data ?? []
   } finally {
     loading.value = false
   }

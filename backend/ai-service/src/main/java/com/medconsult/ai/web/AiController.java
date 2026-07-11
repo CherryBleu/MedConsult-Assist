@@ -37,6 +37,7 @@ import com.medconsult.ai.service.SymptomChatService;
 import com.medconsult.ai.service.TriageService;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.Permission;
 import com.medconsult.common.security.SecurityContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -63,7 +64,13 @@ import java.util.List;
  *
  * <p>SSE 流式接口（/stream）前端当前用 axios 不消费，保留供后续 EventSource 接入。
  */
+/**
+ * 类级 @Permission：所有接口至少要求"已登录"（用户或服务身份）。
+ * 内部接口 {@code /internal/ai/**} 额外由 {@link SecurityContext#requireService()} 强制服务身份。
+ * 管理类接口（反馈回复 / 影像复审 / 报告复审）在方法上用 roles 进一步收紧到 DOCTOR/ADMIN。
+ */
 @Tag(name = "AI 辅助问诊接口", description = "智能分诊 / 症状对话 / 病历摘要 / 用药分析 / 影像检测 / 反馈 / 调用日志")
+@Permission
 @RestController
 @RequiredArgsConstructor
 public class AiController {
@@ -165,6 +172,7 @@ public class AiController {
     }
 
     @Operation(summary = "报告文本分析复审")
+    @Permission(roles = {"DOCTOR", "HOSPITAL_ADMIN"})
     @PutMapping("/api/v1/ai/report-analysis/{analysisId}/review")
     public Result<ImagingReviewResponse> reportAnalysisReview(
             @PathVariable("analysisId") String analysisId,
@@ -185,6 +193,7 @@ public class AiController {
     }
 
     @Operation(summary = "影像检测复审")
+    @Permission(roles = {"DOCTOR", "HOSPITAL_ADMIN"})
     @PutMapping("/api/v1/ai/imaging-detection/{detectionId}/review")
     public Result<ImagingReviewResponse> imagingDetectionReview(
             @PathVariable("detectionId") String detectionId,
@@ -217,6 +226,7 @@ public class AiController {
     }
 
     @Operation(summary = "管理员回复反馈")
+    @Permission(roles = {"HOSPITAL_ADMIN", "DOCTOR"})
     @PostMapping("/api/v1/ai/feedback/{feedbackId}/reply")
     public Result<FeedbackReplyResponse> feedbackReply(
             @PathVariable("feedbackId") String feedbackId,

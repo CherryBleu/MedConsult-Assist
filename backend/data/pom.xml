@@ -6,22 +6,30 @@
 
     <parent>
         <groupId>com.medconsult</groupId>
-        <artifactId>medconsult-assist-backend-ai</artifactId>
-        <version>1.0.0</version>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>medical-data-milvus-importer</artifactId>
+    <packaging>jar</packaging>
 
+    <name>medical-data-milvus-importer</name>
+    <description>疾病 JSON → Milvus 向量导入工具（一次性运行，非 Spring 服务）</description>
+
+    <!-- standalone 工具，不继承 spring-boot-starter-parent 的 web/test 依赖。
+         Java 版本跟随父 pom 的 java.version=21。 -->
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
     </properties>
 
     <dependencies>
+        <!-- jackson-databind pulls jackson-core + jackson-annotations transitively.
+             不指定 version，跟随 spring-boot-starter-parent 3.2.0 的 BOM（jackson 2.15.3），
+             避免 core/databind 版本不一致导致 NoSuchMethodError。 -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.17.2</version>
         </dependency>
     </dependencies>
 

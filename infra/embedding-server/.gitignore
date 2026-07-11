@@ -1,0 +1,11 @@
+# 运行时产物，不入仓
+*.pid
+*.log
+# 模型缓存（HuggingFace 下载产物）
+.cache/
+models/
+# Python 虚拟环境
+venv/
+.venv/
+__pycache__/
+*.pyc

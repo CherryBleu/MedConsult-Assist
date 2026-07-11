@@ -2,6 +2,8 @@ package com.medconsult.ai.security;
 
 import com.medconsult.ai.config.AiProperties;
 import com.medconsult.common.redis.RateLimiter;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,7 +11,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -77,23 +78,31 @@ public class AiRateLimitFilter extends OncePerRequestFilter {
         return rateLimit.windowSeconds() <= 0 ? 60 : rateLimit.windowSeconds();
     }
 
+    /**
+     * 限流 key 来源（安全考虑，优先从已解析的身份取，不信任请求头）：
+     * 1) 当前请求身份（SecurityContext / request attribute，由 JwtAuthServletFilter 写入）——防伪造头绕过限流；
+     * 2) 兜底用客户端 IP（匿名或直连场景）。
+     * 注：不再直接读 X-User-Id / X-Caller-Service 头，否则直连 ai-service 端口伪造这些头即可每次换身份绕过。
+     */
     private String redisKey(HttpServletRequest request) {
-        String identity = firstPresent(
-                request.getHeader(AiHeaders.USER_ID),
-                request.getHeader(AiHeaders.TRIGGER_USER_ID),
-                request.getHeader(AiHeaders.CALLER_SERVICE),
-                request.getRemoteAddr()
-        );
+        String identity = resolveIdentity(request);
         String prefix = properties.redis() == null ? "medical:" : properties.redis().keyPrefix();
         return prefix + "ratelimit:ai:" + identity + ":" + request.getMethod() + ":" + request.getRequestURI();
     }
 
-    private static String firstPresent(String... values) {
-        for (String value : values) {
-            if (StringUtils.hasText(value)) {
-                return value;
+    private static String resolveIdentity(HttpServletRequest request) {
+        // filter 在 dispatcher servlet 之前执行，RequestContextHolder 可能未初始化，
+        // 直接读 JwtAuthServletFilter 写入的 request attribute（与 SecurityContext 同一 key）。
+        Object payload = request.getAttribute(SecurityContext.PAYLOAD_ATTR_KEY);
+        if (payload instanceof JwtPayload jp) {
+            if (jp.isUser() && jp.userId() != null) {
+                return "u:" + jp.userId();
+            }
+            if (jp.isService() && jp.serviceCode() != null) {
+                return "s:" + jp.serviceCode();
             }
         }
-        return "anonymous";
+        // 兜底：匿名 / 直连 / 身份解析失败 → 用 IP
+        return "ip:" + request.getRemoteAddr();
     }
 }

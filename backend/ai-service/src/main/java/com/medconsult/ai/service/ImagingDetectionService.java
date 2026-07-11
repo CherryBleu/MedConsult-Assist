@@ -131,9 +131,14 @@ public class ImagingDetectionService {
             rabbitTemplate.convertAndSend(MqConstants.EXCHANGE_AI_IMAGING, MqConstants.RK_AI_IMAGE_DETECT,
                     new ImageDetectionTaskMessage(detectionNo, currentTraceId()));
         } catch (RuntimeException ex) {
+            // MQ 投递失败：把记录置为 FAILED 并如实返回，避免前端拿到 PENDING 后任务永久卡死无人处理。
             log.warn("submit image detection task failed, detectionNo={}", detectionNo, ex);
+            entity.setStatus("FAILED");
+            entity.setUpdatedAt(LocalDateTime.now());
+            imageDetectionMapper.updateById(entity);
             callLogService.failed("IMAGING_DETECTION_QUEUE", request.patientId(), detectionNo, entity.getExternalModel(),
                     JsonUtils.toJson(request.imageUrls()), 0, ex);
+            return new ImageDetectionResponse(detectionNo, "FAILED", false, List.of(), disclaimer());
         }
         return new ImageDetectionResponse(detectionNo, "PENDING", false, List.of(), disclaimer());
     }
@@ -177,10 +182,12 @@ public class ImagingDetectionService {
 
     /**
      * 按患者查询影像检测列表（对齐前端 /api/v1/ai/imaging-detection/list）。
+     * 限制最多返回 200 条（按 createdAt 倒序），避免历史记录多时全量返回大集合。
      */
     public List<ImageDetectionResponse> listByPatient(String patientId) {
         LambdaQueryWrapper<AiImageDetectionEntity> wrapper = new LambdaQueryWrapper<AiImageDetectionEntity>()
-                .orderByDesc(AiImageDetectionEntity::getCreatedAt);
+                .orderByDesc(AiImageDetectionEntity::getCreatedAt)
+                .last("limit 200");
         if (StringUtils.hasText(patientId)) {
             wrapper.eq(AiImageDetectionEntity::getPatientId, BusinessIds.numericId(patientId));
         }

@@ -9,6 +9,8 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Projections;
 import org.bson.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -19,25 +21,51 @@ import java.util.Optional;
 
 @Repository
 public class MongoDiseaseRepository {
+    private static final Logger log = LoggerFactory.getLogger(MongoDiseaseRepository.class);
+
     private final AiProperties properties;
+    /**
+     * 复用单一 MongoClient（驱动内部自带连接池，线程安全）。
+     * 之前每次查询都 MongoClients.create + try-with-resources 关闭，频繁建连开销大且易耗尽连接数。
+     * 懒初始化：首次使用时创建，之后复用；URI 配置变化在重启后生效（与原行为一致）。
+     */
+    private volatile MongoClient mongoClient;
 
     public MongoDiseaseRepository(AiProperties properties) {
         this.properties = properties;
+    }
+
+    private MongoClient mongoClient() {
+        MongoClient local = mongoClient;
+        if (local == null) {
+            synchronized (this) {
+                local = mongoClient;
+                if (local == null) {
+                    local = MongoClients.create(properties.mongo().uri());
+                    mongoClient = local;
+                }
+            }
+        }
+        return local;
     }
 
     public Optional<DiseaseKnowledge> findByNameExact(String diseaseName) {
         if (diseaseName == null || diseaseName.isBlank()) {
             return Optional.empty();
         }
-        try (MongoClient mongoClient = MongoClients.create(properties.mongo().uri())) {
-            MongoCollection<Document> collection = mongoClient
+        try {
+            MongoClient client = mongoClient();
+            MongoCollection<Document> collection = client
                     .getDatabase(properties.mongo().database())
                     .getCollection(properties.mongo().collection());
             Document doc = collection.find(new Document("name", normalizeName(diseaseName)))
                     .projection(Projections.include(projectionFields()))
                     .first();
             return Optional.ofNullable(doc).map(this::toKnowledge);
-        } catch (RuntimeException ex) {
+        } catch (Exception ex) {
+            // 连接异常 / 驱动不兼容（检查异常）也应降级为 miss，
+            // 让 DiseaseSearchService 继续走 Milvus 兜底，而不是整个链路 500。
+            log.warn("MongoDB disease exact match failed, degrade to miss: {}", ex.getMessage());
             return Optional.empty();
         }
     }

@@ -108,6 +108,18 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         // 5. 注入身份头（剥离原 Authorization，防止业务侧误用原始 token）
         if (payload.isUser()) {
+            // 先剥离客户端可能伪造的身份头，再用 JWT 解析结果重写，防止头注入越权
+            // （否则 reqBuilder.header 是 add，下游 getHeader 取首值可能命中伪造值）。
+            reqBuilder.headers(h -> {
+                h.remove("X-User-Id");
+                h.remove("X-User-Name");
+                h.remove("X-User-Roles");
+                h.remove("X-User-Primary-Role");
+                h.remove("X-User-Patient-Id");
+                h.remove("X-User-Doctor-Id");
+                h.remove("X-Caller-Service");
+                h.remove("X-Service-Code");
+            });
             reqBuilder.header("X-User-Id", String.valueOf(payload.userId()));
             if (payload.name() != null && !payload.name().isBlank()) {
                 reqBuilder.header("X-User-Name", payload.name());
