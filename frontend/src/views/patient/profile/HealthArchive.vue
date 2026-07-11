@@ -28,7 +28,7 @@
             <h3 class="section-title">既往病史</h3>
           </div>
           <div class="section-content text-content">
-            {{ archive.pastMedicalHistory || '暂无记录' }}
+            {{ formatList(archive.pastMedicalHistory) }}
           </div>
         </div>
 
@@ -39,7 +39,7 @@
             <h3 class="section-title">家族病史</h3>
           </div>
           <div class="section-content text-content">
-            {{ archive.familyHistory || '暂无记录' }}
+            {{ formatList(archive.familyHistory) }}
           </div>
         </div>
 
@@ -74,9 +74,20 @@ const loading = ref(false)
 const archive = ref({})
 
 const allergyList = computed(() => {
-  if (!archive.value.allergies) return []
-  return archive.value.allergies.split(/[,、]/).filter(i => i.trim())
+  const a = archive.value.allergies
+  if (!a) return []
+  // 后端 allergies 是数组；兼容 mock 字符串
+  if (Array.isArray(a)) return a.filter(i => i && String(i).trim())
+  if (typeof a === 'string') return a.split(/[,、]/).filter(i => i.trim())
+  return []
 })
+
+// 数组转顿号分隔字符串展示（后端 pastMedicalHistory/familyHistory 是 List<String>）
+const formatList = (v) => {
+  if (!v) return '暂无记录'
+  if (Array.isArray(v)) return v.length ? v.join('、') : '暂无记录'
+  return v || '暂无记录'
+}
 
 const getHealthArchive = async () => {
   // patientId 必填：从登录态 userInfo 取，避免 URL 拼成 /patients/undefined
