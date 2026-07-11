@@ -139,8 +139,12 @@ const sendMessage = async () => {
       content: res.data.answer || res.data.aiAnswer || '暂无回复'
     })
   } catch (e) {
-    // 发送失败时移除用户消息，避免悬挂
-    messageList.value.pop()
+    // 发送失败时保留用户消息并追加错误提示，避免用户等待后消息消失无反馈
+    messageList.value.push({
+      id: Date.now(),
+      role: 'ai',
+      content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。'
+    })
   } finally {
     loading.value = false
     scrollToBottom()

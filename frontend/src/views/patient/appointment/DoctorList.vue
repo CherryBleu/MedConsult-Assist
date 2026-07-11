@@ -58,6 +58,9 @@ const getDoctorList = async () => {
   try {
     const res = await getDoctorListApi(deptId)
     doctorList.value = res.data
+  } catch (e) {
+    // 科室不存在或接口错误时清空列表，拦截器已展示错误消息
+    doctorList.value = []
   } finally {
     loading.value = false
   }

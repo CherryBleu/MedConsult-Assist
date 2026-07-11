@@ -184,6 +184,7 @@ import { ElMessage } from 'element-plus'
 import { PictureFilled, UploadFilled, Close } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, getImagingHistoryListApi, uploadImageFileApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
+import { getToken } from '@/utils/auth'
 
 const userStore = useUserStore()
 
@@ -337,6 +338,13 @@ const startPolling = () => {
 
   let pollCount = 0
   pollTimer.value = setInterval(async () => {
+    // 退出登录后 token 被清除，立即停止轮询避免 401 死循环
+    if (!getToken()) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+      detecting.value = false
+      return
+    }
     pollCount++
     try {
       const res = await getImagingResultApi(currentTaskId.value)

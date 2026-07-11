@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { getRefreshToken } from '@/utils/auth'
 import { mockLogin, mockGetUserInfo, mockRegister, mockRefreshToken, mockLogout } from '@/mock/user'
 
 // 是否启用模拟数据
@@ -40,14 +41,15 @@ export const refreshTokenApi = (refreshToken) => {
   })
 }
 
-// 登出接口
+// 登出接口（后端 @RequestBody LogoutRequest 需要 refreshToken 字段）
 export const logoutApi = () => {
   if (USE_MOCK) {
     return Promise.resolve(mockLogout())
   }
   return request({
     url: '/auth/logout',
-    method: 'post'
+    method: 'post',
+    data: { refreshToken: getRefreshToken() }
   })
 }
 

@@ -47,11 +47,15 @@ service.interceptors.response.use(
     // 登录/注册接口的 401 是凭证错误，不是 token 过期，直接展示后端错误消息
     const url = error.config?.url || ''
     const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register')
+    // 登出接口失败不弹错误提示（userStore.logout 已 try-catch，强制清除本地状态）
+    const isLogoutEndpoint = url.includes('/auth/logout')
     if (error.response?.status === 401 && !isAuthEndpoint) {
       return handleTokenRefresh(error.config)
     }
-    const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
-    ElMessage.error(message)
+    if (!isLogoutEndpoint) {
+      const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
+      ElMessage.error(message)
+    }
     return Promise.reject(error)
   }
 )

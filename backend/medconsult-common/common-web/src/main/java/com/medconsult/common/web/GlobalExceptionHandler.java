@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -130,6 +131,16 @@ public class GlobalExceptionHandler {
                 errors.put(v.getPropertyPath().toString(), v.getMessage()));
         log.warn("[{}] Bean 校验失败: {}", request.getRequestURI(), errors);
         return ResponseEntity.status(400).body(failWithDetail(errors));
+    }
+
+    /**
+     * 请求体缺失或不可读（如 @RequestBody 接口收到空 body）→ 400，不落 500 兜底。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Result<Void>> handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("[{}] 请求体不可读: {}", request.getRequestURI(), ex.getMessage());
+        Result<Void> body = Result.fail(ErrorCode.PARAM_ERROR, "请求体缺失或格式错误");
+        return ResponseEntity.status(400).body(body);
     }
 
     // ===== 资源不存在：404 =====
