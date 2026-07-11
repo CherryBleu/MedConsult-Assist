@@ -1,0 +1,10 @@
+# MedConsult 本地 Embedding 服务依赖
+#
+# 容器化（Dockerfile）已锁版本：torch CPU / flask 3.0 / sentence-transformers 3.0 / numpy 1.26。
+# 本文件供本机直接 pip install -r 使用（容器构建不读此文件，避免 torch GPU/CPU 混淆）。
+#
+# torch 单独装（GPU 机器用 CUDA 版，CPU 机器用 --index-url https://download.pytorch.org/whl/cpu）：
+#   pip install torch
+flask>=3.0,<4.0
+sentence-transformers>=3.0,<4.0
+numpy>=1.24,<2.0

@@ -1,8 +1,9 @@
 # MedConsult-Assist 基础设施本地编排（架构文档 §1.1 §10）
 #
-# 范围：编排 7 个中间件 ——
+# 范围：编排 8 个服务 ——
 #   核心业务：MySQL / Redis / RabbitMQ
 #   AI 域：Qdrant（备用向量库）/ Milvus（向量检索，含 etcd + 内置 minio 依赖）/ MinIO（影像存储）
+#   AI 域：Embedding（bge-small-zh-v1.5，OpenAI 兼容 /v1/embeddings，随 compose 自动拉起）
 #
 #   Nacos 由独立脚本启动（D:\springcloudalibaba\nacos-server-2.3.0\nacos\bin\startup.cmd），
 #   因为它有 GUI 启动习惯且部分配置走本地文件，不入 compose。
@@ -222,13 +223,34 @@ services:
       retries: 3
     networks: [medconsult-net]
 
-  # ============== Embedding 服务（Python + sentence-transformers，不在 compose 中）==============
-  # 本地 embedding 服务用 Python Flask 独立运行（infra/embedding-server/start.ps1），
-  # 模型 BAAI/bge-small-zh-v1.5（95MB，512 维），暴露 OpenAI 兼容 /v1/embeddings。
-  # 不入 compose 是因为：(1) 官方 TEI 镜像 ghcr.io 拉取过慢；
-  # (2) 本机已有 torch+CUDA 环境，Python 直接复用更轻量；
-  # (3) 模型文件需 HuggingFace 下载，走 Python HF_ENDPOINT 镜像更可控。
-  # 启动：cd infra/embedding-server && powershell -File start.ps1 -Background
+  # ============== Embedding 服务（Python + sentence-transformers）==============
+  # ai-service RAG 链路的 embedding 组件，提供 OpenAI 兼容 /v1/embeddings。
+  # 模型 BAAI/bge-small-zh-v1.5（95MB，512 维，CPU 推理单条几十 ms）。
+  # 随 docker compose up 自动拉起；ai-service 的 EMBEDDING_BASE_URL 指向 http://localhost:7997/v1。
+  # 首次启动从 HuggingFace 下载模型（走 hf-mirror.com 镜像），缓存在命名卷内。
+  embedding:
+    build:
+      context: ./embedding-server
+      dockerfile: Dockerfile
+    image: medconsult-embedding:local
+    container_name: medconsult-embedding
+    restart: unless-stopped
+    environment:
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      EMBEDDING_PORT: 7997
+      EMBEDDING_DEVICE: cpu
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+    ports:
+      - "127.0.0.1:7997:7997"
+    volumes:
+      - embedding_model_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7997/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks: [medconsult-net]
 
 volumes:
   mysql_data:
@@ -238,6 +260,7 @@ volumes:
   milvus_etcd_data:
   milvus_minio_data:
   minio_data:
+  embedding_model_cache:
 
 networks:
   medconsult-net:
