@@ -250,7 +250,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, UploadFilled, Close, Plus } from '@element-plus/icons-vue'
-import { submitImagingDetectionApi, getImagingResultApi, reviewImagingDetectionApi, getImagingHistoryListApi } from '@/api/ai'
+import { submitImagingDetectionApi, getImagingResultApi, reviewImagingDetectionApi, getImagingHistoryListApi, uploadImageFileApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 
 const userStore = useUserStore()
@@ -397,15 +397,22 @@ const submitDetection = async () => {
   detecting.value = true
   progress.value = 0
   progressStatus.value = ''
-  progressText.value = '正在提交检测任务...'
+  progressText.value = '正在上传影像文件...'
 
   try {
+    // 1. 上传图片到 MinIO，获取可访问的 http(s) URL（blob: URL 后端无法拉取）
+    const uploadRes = await uploadImageFileApi(imageFile.value)
+    const fileUrl = uploadRes.data?.fileUrl
+    if (!fileUrl) {
+      throw new Error('文件上传失败：未返回 fileUrl')
+    }
+
+    // 2. 提交检测任务（后端 DTO: imageType + imageUrls List）
+    progressText.value = '正在提交检测任务...'
     const res = await submitImagingDetectionApi({
-      patientName: imagingForm.patientName,
-      imagingType: imagingForm.imagingType,
-      bodyPart: imagingForm.bodyPart,
-      imageUrl: imageUrl.value,
-      fileName: imageFile.value.name
+      imageType: imagingForm.imagingType,
+      imageUrls: [fileUrl],
+      patientId: imagingForm.patientName || undefined
     })
     currentTaskId.value = res.data.detectionId || res.data.taskId
     ElMessage.success('检测任务已提交，正在处理中...')

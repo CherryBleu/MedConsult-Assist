@@ -51,6 +51,8 @@ const getRecordList = async () => {
     const res = await getRecordListApi()
     // 后端分页返回 {records,total}；兼容 mock 返回数组
     recordList.value = res.data?.records ?? res.data ?? []
+  } catch (e) {
+    // 退出登录时 token 已清除，请求会 401/403；拦截器已处理跳转，此处静默
   } finally {
     loading.value = false
   }

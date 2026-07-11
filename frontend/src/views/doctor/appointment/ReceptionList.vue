@@ -152,7 +152,7 @@ const stats = computed(() => {
   const today = dayjs().format('YYYY-MM-DD')
   const todayList = allData.value.filter(i => i.scheduleDate === today)
   return {
-    pending: todayList.filter(i => ['PAID', 'CHECKED_IN'].includes(i.appointmentStatus)).length,
+    pending: todayList.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus)).length,
     inProgress: todayList.filter(i => i.appointmentStatus === 'IN_PROGRESS').length,
     completed: todayList.filter(i => i.appointmentStatus === 'COMPLETED').length
   }
@@ -161,7 +161,7 @@ const stats = computed(() => {
 const filteredData = computed(() => {
   if (activeStatus.value === 'ALL') return allData.value
   if (activeStatus.value === 'PENDING') {
-    return allData.value.filter(i => ['PAID', 'CHECKED_IN'].includes(i.appointmentStatus))
+    return allData.value.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus))
   }
   return allData.value.filter(i => i.appointmentStatus === activeStatus.value)
 })

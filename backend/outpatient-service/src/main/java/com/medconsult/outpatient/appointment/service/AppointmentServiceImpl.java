@@ -150,10 +150,13 @@ public class AppointmentServiceImpl implements AppointmentService {
             if (a.getDoctorId() != null) doctorIdSet.add(a.getDoctorId());
             if (a.getDepartmentId() != null) deptIdSet.add(a.getDepartmentId());
         }
-        Map<Long, Doctor> doctorMap = toDoctorMap(
-                doctorMapper.selectBatchIds(doctorIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(doctorIdSet)));
-        Map<Long, Department> deptMap = toDeptMap(
-                departmentMapper.selectBatchIds(deptIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(deptIdSet)));
+        // 空集合时跳过 selectBatchIds：MyBatis-Plus 对空 IN () 会生成非法 SQL 抛异常（500）。
+        Map<Long, Doctor> doctorMap = doctorIdSet.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : toDoctorMap(doctorMapper.selectBatchIds(new ArrayList<>(doctorIdSet)));
+        Map<Long, Department> deptMap = deptIdSet.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : toDeptMap(departmentMapper.selectBatchIds(new ArrayList<>(deptIdSet)));
 
         List<AppointmentDTO.ListItem> items = new ArrayList<>();
         for (Appointment a : result.getRecords()) {

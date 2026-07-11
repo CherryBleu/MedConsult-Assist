@@ -10,8 +10,7 @@
 
       <el-tabs v-model="activeTab" class="appointment-tabs" @tab-change="fetchList">
         <el-tab-pane label="全部" name="all" />
-        <el-tab-pane label="待支付" name="BOOKED" />
-        <el-tab-pane label="待就诊" name="PAID" />
+        <el-tab-pane label="待就诊" name="BOOKED" />
         <el-tab-pane label="已签到" name="CHECKED_IN" />
         <el-tab-pane label="就诊中" name="IN_PROGRESS" />
         <el-tab-pane label="已完成" name="COMPLETED" />
@@ -61,7 +60,7 @@
                 立即支付
               </el-button>
               <el-button
-                v-if="item.appointmentStatus === 'PAID'"
+                v-if="item.appointmentStatus === 'BOOKED' && item.paymentStatus === 'PAID'"
                 size="small"
                 type="primary"
                 @click="checkIn(item)"
@@ -69,7 +68,7 @@
                 签到
               </el-button>
               <el-button
-                v-if="['BOOKED', 'PAID'].includes(item.appointmentStatus)"
+                v-if="['BOOKED', 'CHECKED_IN'].includes(item.appointmentStatus)"
                 size="small"
                 type="danger"
                 plain

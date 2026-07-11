@@ -5,7 +5,8 @@ import router from '@/router'
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL + '/v1',
-  timeout: 15000
+  // AI 问诊（RAG + LLM）端到端可能耗时 30-60s，统一放宽到 90s 避免前端超时
+  timeout: 90000
 })
 
 let isRefreshing = false

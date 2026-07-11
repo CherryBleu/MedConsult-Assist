@@ -120,7 +120,7 @@ export const markNoShowApi = (id) => {
   return request({ url: `/appointments/${id}/status`, method: 'patch', data: { status: 'NO_SHOW' } })
 }
 
-// 接诊列表（医生视角，对齐后端 GET /appointments，按 status=PAID 过滤待接诊）
+// 接诊列表（医生视角，对齐后端 GET /appointments，按 status=BOOKED/CHECKED_IN 过滤待接诊）
 export const getReceptionListApi = async (params) => {
   if (USE_MOCK) return Promise.resolve(mockReceptionList(params))
   const res = await request({ url: '/appointments', method: 'get', params })

@@ -137,7 +137,12 @@ const getDeptList = async () => {
 }
 
 const handleRegister = async () => {
-  await formRef.value.validate()
+  try {
+    await formRef.value.validate()
+  } catch (e) {
+    // 校验失败时 Element Plus 已在表单项下方展示错误，无需额外处理
+    return
+  }
   submitting.value = true
   try {
     // 后端 RegisterRequest 只接受 account/password/phone/name/role；

@@ -108,6 +108,9 @@ export const medicationAnalysisApi = (data) => {
 }
 
 // 提交影像异常检测
+// 后端 ImageDetectionRequest 要求 {imageType, imageUrls: List<String>, patientId?, recordId?}
+// imageUrls 必须是可访问的 http(s) URL（MinIO/OSS），不能是 blob: URL。
+// 前端需先调用 uploadImageFileApi 上传图片获取 URL，再提交检测。
 export const submitImagingDetectionApi = (data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockImagingSubmit(data))
@@ -116,6 +119,22 @@ export const submitImagingDetectionApi = (data) => {
     url: '/ai/imaging-detection',
     method: 'post',
     data
+  })
+}
+
+// 上传医学影像文件到 MinIO，返回可访问的 http(s) URL
+// 后端 POST /api/v1/files/upload (multipart/form-data) → FileUploadResponse {fileUrl, fileId, ...}
+export const uploadImageFileApi = (file) => {
+  if (USE_MOCK) {
+    return Promise.resolve({ code: 0, message: 'success', data: { fileUrl: URL.createObjectURL(file), fileId: 'mock-' + Date.now() } })
+  }
+  const formData = new FormData()
+  formData.append('file', file)
+  return request({
+    url: '/files/upload',
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
 
