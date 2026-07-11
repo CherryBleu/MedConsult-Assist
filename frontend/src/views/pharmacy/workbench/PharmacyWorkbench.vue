@@ -87,6 +87,9 @@ const lowStockCount = computed(() => warningList.value.filter(i => i.warningType
 const expireWarningCount = computed(() => warningList.value.filter(i => i.warningType === 'EXPIRED_WARNING').length)
 const todayInOut = ref(12)
 
+// 从分页或数组响应中取数组（后端 PageResult {items,total} 或直接数组）
+const asArray = (data) => Array.isArray(data) ? data : (data?.items ?? data?.records ?? [])
+
 const getWarningList = async () => {
   loading.value = true
   try {
@@ -95,9 +98,9 @@ const getWarningList = async () => {
       getStockListApi(),
       getDrugListApi()
     ])
-    warningList.value = warnRes.data.slice(0, 5)
-    stockList.value = stockRes.data
-    drugList.value = drugRes.data
+    warningList.value = asArray(warnRes.data).slice(0, 5)
+    stockList.value = asArray(stockRes.data)
+    drugList.value = asArray(drugRes.data)
   } finally {
     loading.value = false
   }

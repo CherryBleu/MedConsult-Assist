@@ -21,8 +21,9 @@ export const getDrugListApi = async (params) => {
     return Promise.resolve(mockDrugList())
   }
   const res = await request({ url: '/drugs', method: 'get', params })
+  // 各药品视图直接把 res.data 当数组用，这里映射后直接返回数组
   const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
-  res.data = { ...(res.data || {}), records: list.map(mapDrug), items: list.map(mapDrug), total: res.data?.total ?? list.length }
+  res.data = list.map(mapDrug)
   return res
 }
 
@@ -39,15 +40,14 @@ export const addDrugApi = (data) => {
 }
 
 // 库存列表（复用药品列表 GET /drugs）
-export const getStockListApi = (params) => {
+export const getStockListApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockStockList())
   }
-  return request({
-    url: '/drugs',
-    method: 'get',
-    params
-  })
+  const res = await request({ url: '/drugs', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = list.map(mapDrug)
+  return res
 }
 
 // 库存入库（对齐后端 POST /drugs/{drugId}/stock/inbound）
@@ -75,25 +75,46 @@ export const stockOutApi = (id, quantity, remark) => {
 }
 
 // 库存预警列表（对齐后端 GET /drugs/stock/alerts）
-export const getStockWarningApi = (params) => {
+// 后端库存预警/流水字段 → 前端期望字段映射
+const mapStockWarning = (w) => ({
+  id: w.alertId ?? w.id,
+  drugId: w.drugId,
+  drugName: w.drugName ?? w.genericName,
+  warningType: w.alertType ?? w.warningType,
+  level: w.level ?? w.severity,
+  message: w.message ?? w.reason,
+  ...w
+})
+const mapStockFlow = (f) => ({
+  id: f.flowId ?? f.id,
+  drugId: f.drugId,
+  drugName: f.drugName ?? f.genericName,
+  type: f.flowType ?? f.type,
+  quantity: f.quantity,
+  remark: f.remark,
+  operator: f.operator,
+  createdAt: f.createdAt,
+  ...f
+})
+
+// 库存预警列表（对齐后端 GET /drugs/stock/alerts）
+export const getStockWarningApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockStockWarningList())
   }
-  return request({
-    url: '/drugs/stock/alerts',
-    method: 'get',
-    params
-  })
+  const res = await request({ url: '/drugs/stock/alerts', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = list.map(mapStockWarning)
+  return res
 }
 
 // 库存流水列表（对齐后端 GET /drugs/{drugId}/stock/flows）
-export const getStockFlowApi = (drugId, params) => {
+export const getStockFlowApi = async (drugId, params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockStockFlowList(params))
   }
-  return request({
-    url: `/drugs/${drugId}/stock/flows`,
-    method: 'get',
-    params
-  })
+  const res = await request({ url: `/drugs/${drugId}/stock/flows`, method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = list.map(mapStockFlow)
+  return res
 }
