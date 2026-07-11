@@ -41,7 +41,8 @@
 # 使用系统 mvn
 mvn clean install
 
-# 或使用 wrapper（首次会下载 Maven）
+# 或使用 wrapper（首次会下载 Maven）—— 在 backend/ 目录下执行
+cd backend
 ./mvnw clean install        # Linux/macOS/Git Bash
 mvnw.cmd clean install      # Windows cmd/powershell
 ```

@@ -48,6 +48,15 @@
             <groupId>com.medconsult</groupId>
             <artifactId>common-feign</artifactId>
         </dependency>
+        <!--
+            spring-cloud-starter-loadbalancer：OpenFeign 4.1.0 不再传递 loadbalancer，
+            @FeignClient(name="patient-service") 需 LoadBalancerClient 解析服务名（经 Nacos discovery）。
+            缺失会导致运行时 "No Feign Client for loadBalancing defined" 异常。
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
         <!-- common-mq：影像检测异步任务消费 + AI 调用日志异步落库（复用 MqConstants 常量） -->
         <dependency>
             <groupId>com.medconsult</groupId>

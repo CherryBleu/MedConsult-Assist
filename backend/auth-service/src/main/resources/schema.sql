@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS sys_service_account (
 -- 冒烟用固定凭证；生产环境从 KMS/Nacos 注入并轮换。
 INSERT IGNORE INTO sys_service_account (id, service_code, service_name, api_key, api_key_hash, scope, status)
 VALUES (1001, 'ai-service', 'AI 辅助问诊服务', 'dev-ai-service-api-key',
-        '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
+        '$2a$10$AJrdPShL66fUpfw5MvD0.OWxcW1k7/WjleXjfbArxQ.Y.94LuKaau',
         'patient:read,drug:read,medical-record:read', 'ACTIVE');
 
 -- login_log 登录日志表（《修改建议》§2.2，flow 表不逻辑删除、不 extends BaseEntity）

@@ -4,6 +4,13 @@ server:
   address: 0.0.0.0  # 绑定所有接口（含 IPv6 ::1），让 gateway 的 Netty 客户端可连
 
 spring:
+  # 排除 Spring Boot 的 Mongo/R2DBC 自动装配：ai-service 通过 MongoDiseaseRepository
+  # 手动创建 MongoClient（直连 medconsult.ai.mongo.uri），不依赖 Spring Data Mongo。
+  # mongodb-driver-sync 5.1.2 与 Boot 3.2 的 MongoAutoConfiguration API 不兼容（StreamFactory）。
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
   # 虚拟线程全局开启（架构文档 §8.3，servlet 服务）
   threads:
     virtual:
@@ -24,7 +31,7 @@ spring:
   # RabbitMQ：影像检测异步任务 + 调用日志异步落库（与 infra/docker-compose.yml 一致，宿主机 5673）
   rabbitmq:
     host: ${RABBITMQ_HOST:127.0.0.1}
-    port: ${RABBITMQ_PORT:5673}
+    port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:medconsult}
     password: ${RABBITMQ_PASSWORD:medconsult123}
   sql:

@@ -24,7 +24,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @SpringBootApplication(scanBasePackages = {"com.medconsult.ai", "com.medconsult.common.web"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
-@MapperScan("com.medconsult.ai.persistence.mapper")
+@MapperScan({"com.medconsult.ai.persistence.mapper", "com.medconsult.common.mq"})
 @EnableConfigurationProperties(AiProperties.class)
 public class AiServiceApplication {
     public static void main(String[] args) {
