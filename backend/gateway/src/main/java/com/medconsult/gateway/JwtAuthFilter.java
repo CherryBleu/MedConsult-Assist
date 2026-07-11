@@ -47,7 +47,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/favicon.ico");
 
     /**
-     * 白名单前缀：以下前缀的路径无需 token（Knife4j/OpenAPI3 文档资源 + actuator）。
+     * 白名单前缀：以下前缀的路径无需 token。
+     * <p>包含两类：
+     * <ul>
+     *   <li>公开业务接口：科室列表（注册页/首页公开查询，无需登录）</li>
+     *   <li>Knife4j/OpenAPI3 文档资源 + actuator（见下方详细说明）</li>
+     * </ul>
      * <p>Knife4j 聚合文档的资源路径：
      * <ul>
      *   <li>/doc.html — 聚合文档首页</li>
@@ -58,6 +63,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
      * 这些路径不在 /api/v1/ 业务前缀下，也无 /internal/，显式放行让 doc.html 可匿名访问。
      */
     private static final java.util.Set<String> WHITELIST_PREFIXES = java.util.Set.of(
+            "/api/v1/departments",
             "/actuator/",
             "/doc/",
             "/webjars/",

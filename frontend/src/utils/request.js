@@ -29,7 +29,10 @@ service.interceptors.response.use(
       if (res.code === 401) {
         return handleTokenRefresh(response.config)
       }
-      ElMessage.error(res.message || '请求失败')
+      // 未登录状态下的业务错误不弹全局提示（调用方自行处理）
+      if (getToken()) {
+        ElMessage.error(res.message || '请求失败')
+      }
       return Promise.reject(new Error(res.message || '请求失败'))
     }
     // 分页契约适配：后端 PageResult 返回 {items,total}，前端多处按 {records,total} 取值。
@@ -44,7 +47,10 @@ service.interceptors.response.use(
       return handleTokenRefresh(error.config)
     }
     const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
-    ElMessage.error(message)
+    // 未登录状态下的网络错误不弹全局提示（调用方自行处理，如注册页科室加载失败静默）
+    if (getToken()) {
+      ElMessage.error(message)
+    }
     return Promise.reject(error)
   }
 )
@@ -69,6 +75,11 @@ const doRefreshToken = async () => {
 }
 
 const handleTokenRefresh = async (config) => {
+  // 未登录状态下（无 access token）的 401 不应触发 forceLogout，
+  // 否则注册页等公开页面的 API 401 会把用户闪退到登录页。
+  if (!getToken()) {
+    return Promise.reject(new Error('未登录'))
+  }
   if (!getRefreshToken()) {
     forceLogout()
     return Promise.reject(new Error('登录已过期，请重新登录'))

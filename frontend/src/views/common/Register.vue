@@ -11,7 +11,7 @@
           <el-input v-model="form.account" placeholder="请输入账号（4-20位字母数字）" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码（6-20位）" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码（8-20位，含字母和数字）" show-password />
         </el-form-item>
         <el-form-item label="确认密码" prop="confirmPassword">
           <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" show-password />
@@ -111,7 +111,8 @@ const rules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度为6-20位', trigger: 'blur' }
+    { min: 8, max: 20, message: '密码长度为8-20位', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,}$/, message: '密码须至少含字母和数字', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请确认密码', trigger: 'blur' },
@@ -139,9 +140,20 @@ const handleRegister = async () => {
   await formRef.value.validate()
   submitting.value = true
   try {
-    await registerApi(form)
+    // 后端 RegisterRequest 只接受 account/password/phone/name/role；
+    // confirmPassword/idCard/departmentId/title/specialty 为前端辅助字段，不提交。
+    const payload = {
+      account: form.account,
+      password: form.password,
+      name: form.name,
+      phone: form.phone,
+      role: form.role
+    }
+    await registerApi(payload)
     ElMessage.success('注册成功，请登录')
     router.push('/login')
+  } catch (e) {
+    // 错误消息已由 request 拦截器 ElMessage.error 展示
   } finally {
     submitting.value = false
   }
