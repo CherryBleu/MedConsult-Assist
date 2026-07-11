@@ -243,7 +243,7 @@ services:
     ports:
       - "127.0.0.1:7997:7997"
     volumes:
-      - embedding_model_cache:/root/.cache/huggingface
+      - embedding_model_cache:/app/models
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:7997/health"]
       interval: 15s

@@ -28,7 +28,9 @@ MedConsult 本地 Embedding 服务（轻量化）
 
 import os
 import time
+import json
 import logging
+import urllib.request
 
 import numpy as np
 from flask import Flask, request, jsonify
@@ -47,6 +49,8 @@ MODEL_NAME = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
 PORT = int(os.environ.get("EMBEDDING_PORT", "7997"))
 # 默认 cpu（容器内无 GPU）；本机有 GPU 时设 EMBEDDING_DEVICE=cuda 加速
 DEVICE = os.environ.get("EMBEDDING_DEVICE", "cpu")
+# 模型本地缓存目录（容器内挂载命名卷持久化）
+MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/app/models")
 
 app = Flask(__name__)
 
@@ -55,12 +59,59 @@ _model: SentenceTransformer | None = None
 _model_dim: int = 0
 
 
+def _download_model(model_name: str, dest_dir: str) -> str:
+    """
+    用 urllib 直接下载模型文件到本地目录，绕过 huggingface_hub 的 HEAD 308 重定向问题。
+
+    huggingface_hub 0.25 对 hf-mirror.com 的 HEAD 请求返回 308 后跟随失败（LocalEntryNotFoundError），
+    但 urllib GET 可正常下载。这里手动拉取模型文件列表并逐个下载到 dest_dir/{model_name}。
+    下载完成后 SentenceTransformer 从本地路径加载（离线，不依赖 hub 库）。
+    """
+    local_path = os.path.join(dest_dir, model_name.replace("/", "_"))
+    marker = os.path.join(local_path, ".downloaded")
+    if os.path.exists(marker):
+        log.info("模型已缓存于本地: %s", local_path)
+        return local_path
+
+    os.makedirs(local_path, exist_ok=True)
+    hf_endpoint = os.environ.get("HF_ENDPOINT", "https://hf-mirror.com")
+    # 1. 拉文件列表
+    api_url = f"{hf_endpoint}/api/models/{model_name}"
+    log.info("拉取模型文件列表: %s", api_url)
+    with urllib.request.urlopen(api_url, timeout=30) as r:
+        meta = json.loads(r.read())
+    files = [s["rfilename"] for s in meta.get("siblings", [])]
+    # 跳过无用大文件冗余（pytorch_model.bin 与 model.safetensors 二选一，优先 safetensors）
+    if "model.safetensors" in files and "pytorch_model.bin" in files:
+        files = [f for f in files if f != "pytorch_model.bin"]
+    log.info("待下载文件 (%d): %s", len(files), files)
+
+    # 2. 逐个下载
+    for fname in files:
+        out_path = os.path.join(local_path, fname)
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            continue
+        os.makedirs(os.path.dirname(out_path), exist_ok=True) if os.path.dirname(fname) else None
+        url = f"{hf_endpoint}/{model_name}/resolve/main/{fname}"
+        log.info("下载 %s ...", url)
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=120) as r, open(out_path, "wb") as f:
+            f.write(r.read())
+    # 标记完成
+    with open(marker, "w") as f:
+        f.write("1")
+    log.info("模型下载完成: %s", local_path)
+    return local_path
+
+
 def get_model() -> SentenceTransformer:
     global _model, _model_dim
     if _model is None:
         log.info("加载 embedding 模型: %s (device=%s) ...", MODEL_NAME, DEVICE)
         t0 = time.time()
-        _model = SentenceTransformer(MODEL_NAME, device=DEVICE)
+        # 先确保模型文件已下载到本地（绕过 huggingface_hub HEAD 重定向问题）
+        local_path = _download_model(MODEL_NAME, MODEL_CACHE_DIR)
+        _model = SentenceTransformer(local_path, device=DEVICE)
         _model_dim = _model.get_sentence_embedding_dimension()
         log.info(
             "模型加载完成: %s, 维度=%d, 耗时=%.1fs",

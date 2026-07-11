@@ -19,18 +19,20 @@ WORKDIR /app
 
 # 先装依赖（利用 Docker 层缓存：requirements 变化才重装）
 # torch 走 CPU 专用 index，避免拉到 CUDA 版（镜像会大 2GB+）
+# transformers 锁 4.44.*：sentence-transformers 3.0 与 4.5x 不兼容（模型下载会 LocalEntryNotFoundError）
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch \
-    && pip install --no-cache-dir flask==3.0.* sentence-transformers==3.0.* numpy==1.26.*
+    && pip install --no-cache-dir flask==3.0.* sentence-transformers==3.0.* transformers==4.44.* numpy==1.26.* huggingface-hub==0.25.*
 
 COPY app.py /app/app.py
 
-# 模型缓存卷（HuggingFace 下载产物持久化，避免容器重建后重下）
-VOLUME ["/root/.cache/huggingface"]
+# 模型缓存卷（urllib 直接下载的模型文件持久化，避免容器重建后重下）
+VOLUME ["/app/models"]
 
 ENV EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
     EMBEDDING_PORT=7997 \
     EMBEDDING_DEVICE=cpu \
-    HF_ENDPOINT=https://hf-mirror.com
+    HF_ENDPOINT=https://hf-mirror.com \
+    MODEL_CACHE_DIR=/app/models
 
 EXPOSE 7997
 
