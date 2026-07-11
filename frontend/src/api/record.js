@@ -5,6 +5,7 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 // 后端 MedicalRecord 字段 → 前端期望字段映射
 // 后端 ListItem: recordId/doctorName/chiefComplaint/status
+// 详情接口额外含: presentIllness/pastHistory/physicalExam/doctorAdvice
 const mapRecord = (r) => ({
   id: r.recordId ?? r.recordNo ?? r.id,
   recordId: r.recordId ?? r.recordNo,
@@ -13,6 +14,10 @@ const mapRecord = (r) => ({
   doctorName: r.doctorName,
   deptName: r.departmentName ?? r.deptName,
   chiefComplaint: r.chiefComplaint,
+  presentIllness: r.presentIllness,
+  pastHistory: r.pastHistory,
+  physicalExam: r.physicalExam,
+  doctorAdvice: r.doctorAdvice,
   initialDiagnosis: Array.isArray(r.initialDiagnosis) ? r.initialDiagnosis.join('；') : (r.initialDiagnosis ?? ''),
   status: r.status ?? r.recordStatus
 })
