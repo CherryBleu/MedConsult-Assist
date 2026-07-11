@@ -103,6 +103,11 @@ public class DoctorServiceImpl implements DoctorService {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "医生编号不能为空");
         }
         Doctor d = doctorMapper.selectOne(new QueryWrapper<Doctor>().eq("doctor_no", doctorNo));
+        // 兼容 /auth/me 返回的 BIGINT 主键 id（auth-service 把 sys_user.doctor_id 作为 doctorId 返回）：
+        // doctor_no 查不到时，若入参是纯数字，回退按主键 id 查一次。
+        if (d == null && doctorNo.chars().allMatch(Character::isDigit)) {
+            d = doctorMapper.selectById(Long.parseLong(doctorNo));
+        }
         if (d == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
         }

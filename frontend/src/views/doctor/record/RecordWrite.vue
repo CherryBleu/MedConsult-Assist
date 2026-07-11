@@ -104,9 +104,11 @@ import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { createRecordApi, archiveRecordApi } from '@/api/record'
 import { generateSummaryByTextApi } from '@/api/ai'
+import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const patientName = ref('')
 const saving = ref(false)
@@ -126,6 +128,28 @@ const form = reactive({
   status: 'DRAFT'
 })
 
+// 组装后端 CreateRequest 期望的载荷：patientId/doctorId 必填，initialDiagnosis 是数组
+const buildPayload = () => {
+  // patientId 优先取路由参数（从接诊页带入），否则用测试患者档案
+  const patientId = route.query.patientId || userStore.userInfo?.patientId
+  const doctorId = route.query.doctorId || userStore.userInfo?.doctorId
+  return {
+    patientId: String(patientId || ''),
+    doctorId: String(doctorId || ''),
+    appointmentId: form.appointmentId || undefined,
+    chiefComplaint: form.chiefComplaint,
+    presentIllness: form.presentIllness || undefined,
+    pastHistory: form.pastHistory || undefined,
+    physicalExam: form.physicalExam || undefined,
+    // 后端 initialDiagnosis 是 List<String>；空串不发送避免 Jackson 空串→数组报错
+    initialDiagnosis: form.initialDiagnosis?.trim()
+      ? form.initialDiagnosis.split(/[,，；;\n]/).map(s => s.trim()).filter(Boolean)
+      : undefined,
+    prescriptionsText: form.prescriptionsText || undefined,
+    doctorAdvice: form.doctorAdvice || undefined
+  }
+}
+
 const saveDraft = async () => {
   if (!form.chiefComplaint.trim()) {
     ElMessage.warning('请填写主诉')
@@ -133,7 +157,7 @@ const saveDraft = async () => {
   }
   saving.value = true
   try {
-    await createRecordApi(form)
+    await createRecordApi(buildPayload())
     ElMessage.success('草稿已保存')
   } finally {
     saving.value = false
@@ -156,7 +180,7 @@ const archiveRecord = async () => {
     // 不能用 Date.now() 当 recordId（后端必然 404/参数错误）。
     let recordId = route.query.recordId
     if (!recordId) {
-      const created = await createRecordApi(form)
+      const created = await createRecordApi(buildPayload())
       recordId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
       if (!recordId) {
         ElMessage.error('保存病历失败，无法归档')
