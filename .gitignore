@@ -55,3 +55,10 @@ infra/rabbitmq/
 # ===== 工具产物（不入仓库）=====
 .playwright-mcp/
 .zcode/
+
+# ===== 前端（frontend/）=====
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/npm-debug.log*
+

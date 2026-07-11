@@ -36,8 +36,8 @@
         <module>drug-service</module>
         <module>medical-record-service</module>
         <module>notification-service</module>
+        <module>ai-service</module>
         <module>gateway</module>
-        <!-- 待加：ai-service -->
     </modules>
 
     <properties>

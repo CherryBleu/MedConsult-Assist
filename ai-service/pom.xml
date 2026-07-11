@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- 继承 medconsult-parent（Spring Boot 3.2.0 + Spring Cloud 2023.0.0 + SCA 2022.0.0.0），
+         版本由父 pom 仲裁，不覆盖 Boot 版本（红线 1）。 -->
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ai-service</artifactId>
+
+    <name>ai-service</name>
+    <description>AI 辅助问诊服务：智能分诊 / 症状对话（RAG）/ 病历摘要 / 用药分析 / 影像检测 / 调用日志 + 反馈（架构文档 §1.1 ai-service）</description>
+
+    <properties>
+        <!-- AI 专有依赖版本（不随父 pom，这些是 AI 域独有） -->
+        <langchain4j.version>0.35.0</langchain4j.version>
+        <mongodb-driver.version>5.1.2</mongodb-driver.version>
+        <minio.version>8.5.12</minio.version>
+    </properties>
+
+    <dependencies>
+        <!-- ===== common 地基（复用 backend/dev 的 7 子模块，替代 ai-stack 的扁平 common）===== -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mybatis</artifactId>
+        </dependency>
+        <!-- common-redis：限流（RateLimiter）+ SSE 事件总线（SseEventBus）+ 分布式锁 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-redis</artifactId>
+        </dependency>
+        <!-- common-feign：调用 patient/drug/medical-record 内部接口 + auth-service 换服务 token -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-feign</artifactId>
+        </dependency>
+        <!-- common-mq：影像检测异步任务消费 + AI 调用日志异步落库（复用 MqConstants 常量） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mq</artifactId>
+        </dependency>
+
+        <!-- ===== SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象）===== -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <!-- ===== AMQP（RabbitMQ）：影像检测异步任务 + 调用日志异步落库 ===== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- ===== AI 专有依赖 ===== -->
+        <!-- langchain4j：OpenAI 兼容客户端（LLM 调用） -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <!-- MongoDB：疾病知识库（Milvus 向量检索的文档源） -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>${mongodb-driver.version}</version>
+        </dependency>
+        <!-- MinIO：医学影像文件存储 -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
+        </dependency>
+
+        <!-- ===== 标准依赖 ===== -->
+        <!-- MySQL 驱动：ai_service schema（调用日志 / 摘要 / 影像检测结果等持久化） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Knife4j（OpenAPI3 接口文档，jakarta 适配 Boot 3.2） -->
+        <dependency>
+            <groupId>com.github.xiaoymin</groupId>
+            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- ===== 测试 ===== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 可执行 jar：必须绑定 repackage execution（pluginManagement 只管版本，不触发执行） -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.medconsult.ai.AiServiceApplication</mainClass>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

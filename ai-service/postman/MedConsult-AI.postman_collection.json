@@ -1,0 +1,770 @@
+{
+  "info": {
+    "_postman_id": "1f949ab5-68ad-4df0-a572-b7a423e91701",
+    "name": "MedConsult AI 智能域接口测试",
+    "description": "AI智能域接口测试集合，包含对外接口、影像拆分接口、反馈日志和内部AI接口。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8082",
+      "type": "string"
+    },
+    {
+      "key": "internalApiKey",
+      "value": "dev-ai-internal-key",
+      "type": "string"
+    },
+    {
+      "key": "traceId",
+      "value": "trace-postman-ai",
+      "type": "string"
+    },
+    {
+      "key": "internalServiceToken",
+      "value": "dev-ai-service-token",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+          "const contentType = pm.response.headers.get('Content-Type') || '';",
+          "if (contentType.includes('application/json')) {",
+          "  const json = pm.response.json();",
+          "  pm.test('Unified response', function () {",
+          "    pm.expect(json).to.have.property('code');",
+          "    pm.expect(json).to.have.property('message');",
+          "    pm.expect(json).to.have.property('traceId');",
+          "    pm.expect(json).to.have.property('timestamp');",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 症状自诊",
+      "item": [
+        {
+          "name": "症状自诊问答 POST /api/v1/ai/symptom-chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{sessionId}}\",\n  \"patientId\": \"{{patientId}}\",\n  \"message\": \"我最近三天胸闷、心悸，活动后明显，应该挂什么科？如果出现胸痛和呼吸困难怎么办？\",\n  \"patientContext\": {\n    \"age\": 38,\n    \"gender\": \"MALE\",\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"高血压\"]\n  },\n  \"ragOptions\": {\n    \"knowledgeSource\": \"DISEASE_JSON\",\n    \"topK\": 5,\n    \"returnCitations\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/symptom-chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "symptom-chat"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 智能分诊",
+      "item": [
+        {
+          "name": "智能分诊推荐 POST /api/v1/ai/triage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"symptoms\": [\"胸闷\", \"心悸\", \"活动后加重\"],\n  \"duration\": \"3天\",\n  \"severity\": \"MODERATE\",\n  \"age\": 38,\n  \"gender\": \"MALE\",\n  \"pastMedicalHistory\": [\"高血压\"],\n  \"needAvailableSchedules\": true,\n  \"preferredDate\": \"2026-07-10\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/triage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "triage"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 病历摘要",
+      "item": [
+        {
+          "name": "文本病历摘要 POST /api/v1/ai/medical-record-summary/text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordText\": \"患者胸闷、心悸3天，活动后加重。既往高血压5年。查体血压150/95mmHg，建议完善心电图检查并监测血压。\",\n  \"summaryType\": \"STRUCTURED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medical-record-summary/text",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medical-record-summary",
+                "text"
+              ]
+            }
+          }
+        },
+        {
+          "name": "病历编号摘要 POST /api/v1/ai/medical-record-summary",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recordId\": \"{{recordId}}\",\n  \"summaryType\": \"STRUCTURED\",\n  \"saveDraft\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medical-record-summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medical-record-summary"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.summaryId) {",
+                  "  pm.environment.set('summaryId', json.data.summaryId);",
+                  "  pm.environment.set('aiResultType', 'MEDICAL_RECORD_SUMMARY');",
+                  "  pm.environment.set('aiResultId', json.data.summaryId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "医生确认摘要 POST /api/v1/medical-records/{recordId}/summary/confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"summaryId\": \"{{summaryId}}\",\n  \"confirmedBy\": \"D10001\",\n  \"confirmedSummary\": {\n    \"chiefComplaint\": \"胸闷、心悸3天\",\n    \"diagnosis\": [\"高血压\", \"心律失常待查\"],\n    \"followUpAdvice\": \"建议心内科复诊。\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/medical-records/{{recordId}}/summary/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "medical-records",
+                "{{recordId}}",
+                "summary",
+                "confirm"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 用药分析",
+      "item": [
+        {
+          "name": "用药提醒与禁忌分析 POST /api/v1/ai/medication-analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"prescriptionId\": \"{{prescriptionId}}\",\n  \"prescriptions\": [\n    {\n      \"drugId\": \"DRUG0003\",\n      \"drugName\": \"布洛芬缓释胶囊\",\n      \"dosage\": \"0.3g\",\n      \"frequency\": \"每日两次\",\n      \"route\": \"口服\",\n      \"days\": 3\n    },\n    {\n      \"drugId\": \"DRUG0004\",\n      \"drugName\": \"阿司匹林\",\n      \"dosage\": \"100mg\",\n      \"frequency\": \"每日一次\",\n      \"route\": \"口服\",\n      \"days\": 7\n    }\n  ],\n  \"patientContext\": {\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"慢性胃炎\"],\n    \"currentMedications\": [\"阿司匹林\"]\n  },\n  \"returnFunctionTrace\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/medication-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "medication-analysis"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.analysisId) {",
+                  "  pm.environment.set('analysisId', json.data.analysisId);",
+                  "  pm.environment.set('aiResultType', 'MEDICATION_ANALYSIS');",
+                  "  pm.environment.set('aiResultId', json.data.analysisId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 报告文本分析",
+      "item": [
+        {
+          "name": "报告文本分析 POST /api/v1/ai/report-analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"attachmentId\": \"ATT202607100001\",\n  \"reportType\": \"CHEST_CT_REPORT\",\n  \"reportText\": \"胸部CT示右肺上叶见小结节影，边界尚清，建议随访。\",\n  \"externalModel\": {\n    \"provider\": \"external-ai-provider\",\n    \"model\": \"report-text-abnormal-detector\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/report-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "report-analysis"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.analysisId) {",
+                  "  pm.environment.set('reportAnalysisId', json.data.analysisId);",
+                  "  pm.environment.set('aiResultType', 'REPORT_ANALYSIS');",
+                  "  pm.environment.set('aiResultId', json.data.analysisId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "报告分析复核 POST /api/v1/ai/report-analysis/{analysisId}/review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewedBy\": \"D20001\",\n  \"reviewResult\": \"CONFIRMED\",\n  \"reviewComment\": \"同意AI文本报告初筛提示，建议结合原始影像复核。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/report-analysis/{{reportAnalysisId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "report-analysis",
+                "{{reportAnalysisId}}",
+                "review"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 影像图像检测",
+      "item": [
+        {
+          "name": "影像图像检测提交 POST /api/v1/ai/image-detection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"imageUrls\": [\"https://oss.example.com/imaging/ct-001.dcm\"],\n  \"storageType\": \"OSS\",\n  \"externalModel\": {\n    \"provider\": \"external-ai-provider\",\n    \"model\": \"chest-ct-abnormal-detector\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/image-detection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "image-detection"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.detectionId) {",
+                  "  pm.environment.set('imageDetectionId', json.data.detectionId);",
+                  "  pm.environment.set('aiResultType', 'IMAGING_DETECTION');",
+                  "  pm.environment.set('aiResultId', json.data.detectionId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "查询影像图像检测 GET /api/v1/ai/image-detection/{detectionId}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/image-detection/{{imageDetectionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "image-detection",
+                "{{imageDetectionId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "影像图像检测复核 POST /api/v1/ai/image-detection/{detectionId}/review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewedBy\": \"D20001\",\n  \"reviewResult\": \"CONFIRMED\",\n  \"reviewComment\": \"图像检测任务已记录，待外部视觉模型完成后复核。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/image-detection/{{imageDetectionId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "image-detection",
+                "{{imageDetectionId}}",
+                "review"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 反馈与调用日志",
+      "item": [
+        {
+          "name": "提交AI结果反馈 POST /api/v1/ai/feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aiResultType\": \"{{aiResultType}}\",\n  \"aiResultId\": \"{{aiResultId}}\",\n  \"feedbackBy\": \"D10001\",\n  \"useful\": true,\n  \"adopted\": true,\n  \"comment\": \"风险提示准确，已提醒患者。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/feedback",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "feedback"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.code === 0 && json.data && json.data.feedbackId) {",
+                  "  pm.environment.set('feedbackId', json.data.feedbackId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "查询AI结果反馈 GET /api/v1/ai/feedback",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/feedback?aiResultType={{aiResultType}}&aiResultId={{aiResultId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "feedback"
+              ],
+              "query": [
+                {
+                  "key": "aiResultType",
+                  "value": "{{aiResultType}}"
+                },
+                {
+                  "key": "aiResultId",
+                  "value": "{{aiResultId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "查询AI调用日志 GET /api/v1/ai/call-logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ai/call-logs?patientId={{patientId}}&type=MEDICATION_ANALYSIS&page=1&pageSize=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "ai",
+                "call-logs"
+              ],
+              "query": [
+                {
+                  "key": "patientId",
+                  "value": "{{patientId}}"
+                },
+                {
+                  "key": "type",
+                  "value": "MEDICATION_ANALYSIS"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 内部AI接口",
+      "item": [
+        {
+          "name": "内部用药分析 POST /internal/ai/medication-analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Caller-Service",
+                "value": "medical-record-service"
+              },
+              {
+                "key": "X-Trace-Id",
+                "value": "{{traceId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internalServiceToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"prescriptionId\": \"{{prescriptionId}}\",\n  \"prescriptions\": [\n    {\n      \"drugId\": \"DRUG0003\",\n      \"drugName\": \"布洛芬缓释胶囊\",\n      \"dosage\": \"0.3g\",\n      \"frequency\": \"每日两次\",\n      \"route\": \"口服\",\n      \"days\": 3\n    }\n  ],\n  \"patientContext\": {\n    \"allergies\": [\"青霉素\"],\n    \"pastMedicalHistory\": [\"慢性胃炎\"],\n    \"currentMedications\": [\"阿司匹林\"]\n  },\n  \"returnFunctionTrace\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/ai/medication-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "ai",
+                "medication-analysis"
+              ]
+            }
+          }
+        },
+        {
+          "name": "内部智能分诊 POST /internal/ai/triage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Caller-Service",
+                "value": "outpatient-service"
+              },
+              {
+                "key": "X-Trace-Id",
+                "value": "{{traceId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internalServiceToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"symptoms\": [\"胸闷\", \"心悸\"],\n  \"duration\": \"3天\",\n  \"severity\": \"MODERATE\",\n  \"age\": 38,\n  \"gender\": \"MALE\",\n  \"pastMedicalHistory\": [\"高血压\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/ai/triage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "ai",
+                "triage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "内部报告文本分析 POST /internal/ai/report-analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Caller-Service",
+                "value": "medical-record-service"
+              },
+              {
+                "key": "X-Trace-Id",
+                "value": "{{traceId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internalServiceToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"attachmentId\": \"ATT202607100001\",\n  \"reportType\": \"CHEST_CT_REPORT\",\n  \"reportText\": \"胸部CT示右肺上叶见小结节影，建议随访。\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/ai/report-analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "ai",
+                "report-analysis"
+              ]
+            }
+          }
+        },
+        {
+          "name": "内部影像图像检测 POST /internal/ai/image-detection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Caller-Service",
+                "value": "medical-record-service"
+              },
+              {
+                "key": "X-Trace-Id",
+                "value": "{{traceId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internalServiceToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"imageUrls\": [\"https://oss.example.com/imaging/ct-001.dcm\"],\n  \"storageType\": \"OSS\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/internal/ai/image-detection",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "ai",
+                "image-detection"
+              ]
+            }
+          }
+        },
+        {
+          "name": "内部查询影像图像检测 GET /internal/ai/image-detection/{detectionId}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Caller-Service",
+                "value": "medical-record-service"
+              },
+              {
+                "key": "X-Trace-Id",
+                "value": "{{traceId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{internalServiceToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/ai/image-detection/{{imageDetectionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "ai",
+                "image-detection",
+                "{{imageDetectionId}}"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

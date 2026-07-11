@@ -26,6 +26,31 @@ CREATE TABLE IF NOT EXISTS sys_user (
     KEY idx_sys_user_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户账号表';
 
+-- sys_service_account 服务账号表（架构文档 §4.2，服务间调用的服务身份凭证）
+-- 服务（如 ai-service）用 service_code + api_key 向 auth-service 换发 SERVICE 类型 JWT，
+-- 下游服务通过 SecurityContext.requireService() 校验服务身份（§2.4 内部接口鉴权）。
+CREATE TABLE IF NOT EXISTS sys_service_account (
+    id              BIGINT       NOT NULL                 COMMENT '主键（雪花 ID）',
+    service_code    VARCHAR(64)  NOT NULL                 COMMENT '服务编码（如 ai-service，对应 JwtPayload.serviceCode）',
+    service_name    VARCHAR(128)                          COMMENT '服务显示名',
+    api_key         VARCHAR(128) NOT NULL                 COMMENT 'API Key（服务换 token 的凭证，BCrypt 摘要存储）',
+    api_key_hash    VARCHAR(255) NOT NULL                 COMMENT 'API Key 的 BCrypt 摘要',
+    scope           VARCHAR(1024)                         COMMENT '权限点列表（逗号分隔，如 patient:read,drug:read）',
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE / DISABLED',
+    created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted         TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_service_account_code (service_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='服务账号表';
+
+-- 种子数据：ai-service 服务账号（api_key 明文 = dev-ai-service-api-key，BCrypt cost=10 摘要）
+-- 冒烟用固定凭证；生产环境从 KMS/Nacos 注入并轮换。
+INSERT IGNORE INTO sys_service_account (id, service_code, service_name, api_key, api_key_hash, scope, status)
+VALUES (1001, 'ai-service', 'AI 辅助问诊服务', 'dev-ai-service-api-key',
+        '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
+        'patient:read,drug:read,medical-record:read', 'ACTIVE');
+
 -- login_log 登录日志表（《修改建议》§2.2，flow 表不逻辑删除、不 extends BaseEntity）
 CREATE TABLE IF NOT EXISTS login_log (
     id              BIGINT       NOT NULL                 COMMENT '主键（雪花 ID）',
