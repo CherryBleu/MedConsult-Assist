@@ -183,6 +183,9 @@ import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { PictureFilled, UploadFilled, Close } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, getImagingHistoryListApi } from '@/api/ai'
+import { useUserStore } from '@/store/modules/user'
+
+const userStore = useUserStore()
 
 const activeTab = ref('new')
 const imageUrl = ref('')
@@ -372,7 +375,8 @@ const getHistoryList = async () => {
   historyLoading.value = true
   try {
     // 后端按 patientId 过滤；患者端传当前用户 patientId
-    const res = await getImagingHistoryListApi(null)
+    const patientId = userStore.userInfo?.patientId
+    const res = await getImagingHistoryListApi(patientId || null)
     historyList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   } finally {
     historyLoading.value = false
