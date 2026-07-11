@@ -66,10 +66,16 @@ public class AppointmentDTO {
     @Schema(description = "预约列表项")
     public record ListItem(
             @Schema(description = "预约编号") String appointmentId,     // appointment_no
+            @Schema(description = "患者编号") String patientNo,         // patient_no（冗余，便于识别患者）
             @Schema(description = "科室名称") String departmentName,
             @Schema(description = "医生姓名") String doctorName,
             @Schema(description = "就诊日期") LocalDate appointmentDate,
-            @Schema(description = "预约状态") String appointmentStatus
+            @Schema(description = "时段：MORNING/AFTERNOON/EVENING") String period,
+            @Schema(description = "就诊序号") Integer queueNo,
+            @Schema(description = "挂号费") BigDecimal fee,
+            @Schema(description = "支付状态：UNPAID/PAID/REFUNDING/REFUNDED") String paymentStatus,
+            @Schema(description = "预约状态") String appointmentStatus,
+            @Schema(description = "就诊原因") String visitReason
     ) {}
 
     // ===== §2.5.4 取消 =====

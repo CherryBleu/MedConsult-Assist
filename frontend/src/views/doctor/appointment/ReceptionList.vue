@@ -36,13 +36,21 @@
 
       <el-table v-loading="loading" :data="tableData" border stripe style="width: 100%; margin-top: 16px">
         <el-table-column type="index" label="序号" width="60" align="center" :index="indexMethod" />
-        <el-table-column prop="patientName" label="患者姓名" width="100" align="center" />
-        <el-table-column prop="gender" label="性别" width="70" align="center">
+        <el-table-column label="患者姓名" width="120" align="center">
           <template #default="{ row }">
-            {{ row.gender === 'MALE' ? '男' : '女' }}
+            {{ row.patientName || row.patientNo || '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="age" label="年龄" width="70" align="center" />
+        <el-table-column prop="gender" label="性别" width="70" align="center">
+          <template #default="{ row }">
+            {{ row.gender === 'MALE' ? '男' : (row.gender === 'FEMALE' ? '女' : '-') }}
+          </template>
+        </el-table-column>
+        <el-table-column label="年龄" width="70" align="center">
+          <template #default="{ row }">
+            {{ row.age ?? '-' }}
+          </template>
+        </el-table-column>
         <el-table-column label="预约时段" width="180" align="center">
           <template #default="{ row }">
             {{ row.scheduleDate }} {{ row.period === 'MORNING' ? '上午' : '下午' }}

@@ -12,13 +12,14 @@
       </div>
 
       <el-table :data="filteredList" v-loading="loading" border stripe>
-        <el-table-column prop="drugNo" label="药品编号" width="120" />
+        <el-table-column prop="drugNo" label="药品编号" width="140" />
         <el-table-column prop="name" label="药品名称" min-width="180" />
         <el-table-column prop="specification" label="规格" width="160" />
         <el-table-column prop="manufacturer" label="生产厂家" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="category" label="分类" width="120" />
-        <el-table-column label="单价" width="100">
-          <template #default="{ row }">¥{{ row.price }}</template>
+        <el-table-column label="库存" width="100" align="center">
+          <template #default="{ row }">
+            {{ row.stock ?? row.stockQuantity ?? 0 }}{{ row.unit ? ' ' + row.unit : '' }}
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="120">
           <template #default="{ row }">

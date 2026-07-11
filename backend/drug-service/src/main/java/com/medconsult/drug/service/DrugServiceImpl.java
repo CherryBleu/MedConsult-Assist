@@ -113,8 +113,11 @@ public class DrugServiceImpl implements DrugService {
             items.add(new DrugDTO.DrugListItem(
                     d.getDrugNo(),
                     d.getGenericName(),
+                    d.getSpecification(),
+                    d.getManufacturer(),
                     d.getCurrentStock() == null ? 0 : d.getCurrentStock(),
-                    d.getUnit()));
+                    d.getUnit(),
+                    d.getStatus()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }

@@ -161,10 +161,16 @@ public class AppointmentServiceImpl implements AppointmentService {
             Department dept = deptMap.get(a.getDepartmentId());
             items.add(new AppointmentDTO.ListItem(
                     a.getAppointmentNo(),
+                    a.getPatientNo(),
                     dept != null ? dept.getName() : null,
                     doctor != null ? doctor.getName() : null,
                     a.getAppointmentDate(),
-                    a.getAppointmentStatus()));
+                    a.getPeriod(),
+                    a.getQueueNo(),
+                    a.getFee(),
+                    a.getPaymentStatus(),
+                    a.getAppointmentStatus(),
+                    a.getVisitReason()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }

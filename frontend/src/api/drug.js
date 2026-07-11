@@ -3,16 +3,23 @@ import { mockDrugList, mockStockList, mockAddDrug, mockStockOperate } from '@/mo
 import { mockStockWarningList, mockStockFlowList } from '@/mock/drug'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
-// 后端 Drug 字段 → 前端期望字段映射（后端 drugId/genericName/stockQuantity，前端 id/name/stock）
+// 后端 Drug 字段 → 前端期望字段映射
+// 后端 DrugListItem: drugId/genericName/specification/manufacturer/stockQuantity/unit/status
+// 前端 DrugList.vue 期望: drugNo/name/specification/manufacturer/category/price/status
+// （category/price 在后端 drug 表无对应列，DB 无此字段——前端表格按后端实际字段渲染）
 const mapDrug = (d) => ({
   id: d.drugId ?? d.id,
   drugId: d.drugId ?? d.id,
+  drugNo: d.drugId ?? d.drugNo ?? d.id,
   name: d.genericName ?? d.drugName ?? d.name,
   drugName: d.genericName ?? d.drugName,
   genericName: d.genericName,
+  specification: d.specification,
+  manufacturer: d.manufacturer,
   stock: d.stockQuantity ?? d.stock,
   stockQuantity: d.stockQuantity,
-  unit: d.unit
+  unit: d.unit,
+  status: d.status === 'ACTIVE' ? 'NORMAL' : (d.status ?? 'NORMAL')
 })
 
 // 药品列表（对齐后端 GET /drugs）

@@ -9,12 +9,15 @@ import {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 // 后端 Appointment 字段 → 前端期望字段映射
-// 后端 ListItem: appointmentId/departmentName/doctorName/appointmentDate/appointmentStatus
-// 后端 DetailResponse 额外含: patientName/period/paymentStatus/cancelReason
+// 后端 ListItem: appointmentId/patientNo/departmentName/doctorName/appointmentDate/period
+//                /queueNo/fee/paymentStatus/appointmentStatus/visitReason
+// 后端 DetailResponse 额外含: patientName/cancelReason
 const mapAppointment = (a) => ({
   id: a.appointmentId ?? a.id,
   appointmentId: a.appointmentId ?? a.id,
   appointmentNo: a.appointmentNo ?? a.appointmentId ?? a.id,
+  patientNo: a.patientNo,
+  patientName: a.patientName,
   deptName: a.departmentName ?? a.deptName,
   departmentName: a.departmentName,
   doctorName: a.doctorName,
@@ -28,7 +31,6 @@ const mapAppointment = (a) => ({
   queueNo: a.queueNo,
   visitReason: a.visitReason,
   cancelReason: a.cancelReason,
-  patientName: a.patientName,
   createdAt: a.createdAt
 })
 
@@ -119,9 +121,12 @@ export const markNoShowApi = (id) => {
 }
 
 // 接诊列表（医生视角，对齐后端 GET /appointments，按 status=PAID 过滤待接诊）
-export const getReceptionListApi = (params) => {
+export const getReceptionListApi = async (params) => {
   if (USE_MOCK) return Promise.resolve(mockReceptionList(params))
-  return request({ url: '/appointments', method: 'get', params })
+  const res = await request({ url: '/appointments', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = { ...(res.data || {}), records: list.map(mapAppointment), items: list.map(mapAppointment), total: res.data?.total ?? list.length }
+  return res
 }
 
 // 开始就诊（状态机 PATCH，status=IN_PROGRESS）

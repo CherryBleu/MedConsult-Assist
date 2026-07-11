@@ -93,8 +93,11 @@ public class DrugDTO {
     public record DrugListItem(
             @Schema(description = "药品编号") String drugId,          // drug_no
             @Schema(description = "通用名") String genericName,
+            @Schema(description = "规格") String specification,
+            @Schema(description = "生产厂家") String manufacturer,
             @Schema(description = "库存数量") Integer stockQuantity,  // current_stock
-            @Schema(description = "单位") String unit
+            @Schema(description = "单位") String unit,
+            @Schema(description = "状态：ACTIVE/DISABLED") String status
     ) {}
 
     /** §2.7.2 药品详情响应（含批次/风险信息，供内部或详情接口扩展） */
