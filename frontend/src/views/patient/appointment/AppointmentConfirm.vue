@@ -46,9 +46,11 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createAppointmentApi } from '@/api/appointment'
+import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const submitting = ref(false)
 const visitReason = ref('')
@@ -75,10 +77,19 @@ const submitAppointment = async () => {
 
   submitting.value = true
   try {
+    // 后端 CreateRequest 要求 patientId（@NotBlank），从登录态取；无档案则提示先完善个人信息
+    const patientId = userStore.userInfo?.patientId
+    if (!patientId) {
+      ElMessage.warning('请先在"个人中心"完善个人档案后再预约')
+      router.push('/patient/profile')
+      return
+    }
     await createAppointmentApi({
+      patientId: String(patientId),
       scheduleId: formData.scheduleId,
       doctorId: formData.doctorId,
-      visitReason: visitReason.value
+      visitReason: visitReason.value,
+      source: 'MOBILE_APP'
     })
     ElMessage.success('预约成功，请按时就诊')
     router.replace('/patient/appointment')

@@ -8,22 +8,84 @@ import {
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
+// 后端 Appointment 字段 → 前端期望字段映射
+// 后端 ListItem: appointmentId/departmentName/doctorName/appointmentDate/appointmentStatus
+// 后端 DetailResponse 额外含: patientName/period/paymentStatus/cancelReason
+const mapAppointment = (a) => ({
+  id: a.appointmentId ?? a.id,
+  appointmentId: a.appointmentId ?? a.id,
+  appointmentNo: a.appointmentNo ?? a.appointmentId ?? a.id,
+  deptName: a.departmentName ?? a.deptName,
+  departmentName: a.departmentName,
+  doctorName: a.doctorName,
+  scheduleDate: a.appointmentDate ?? a.scheduleDate,
+  appointmentDate: a.appointmentDate,
+  appointmentStatus: a.appointmentStatus ?? a.status,
+  status: a.appointmentStatus ?? a.status,
+  paymentStatus: a.paymentStatus,
+  fee: a.fee ?? a.registrationFee,
+  period: a.period,
+  queueNo: a.queueNo,
+  visitReason: a.visitReason,
+  cancelReason: a.cancelReason,
+  patientName: a.patientName,
+  createdAt: a.createdAt
+})
+
 // 排班列表（后端排班在 /schedules，按 departmentId/date 查询）
-export const getScheduleListApi = (doctorId, params) => {
+export const getScheduleListApi = async (doctorId, params) => {
   if (USE_MOCK) return Promise.resolve(mockScheduleList(doctorId))
-  return request({ url: '/schedules/available', method: 'get', params })
+  const res = await request({ url: '/schedules/available', method: 'get', params })
+  // 后端 /schedules/available 直接返回数组（非分页）
+  const list = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
+  // 后端排班无 scheduleDate 字段（通用可用排班），适配为前端期望结构并展开到近 7 天：
+  // 每个排班在展示的每一天都可用，避免"暂无排班"导致预约流程断链。
+  const periodTime = { MORNING: { start: '08:00', end: '12:00' }, AFTERNOON: { start: '14:00', end: '17:00' }, EVENING: { start: '18:00', end: '21:00' } }
+  const today = new Date()
+  const expanded = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today)
+    d.setDate(d.getDate() + i)
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    for (const s of list) {
+      const remaining = s.remainingQuota ?? 0
+      expanded.push({
+        id: s.scheduleId ?? s.id,
+        scheduleId: s.scheduleId,
+        scheduleDate: dateStr,
+        doctorId: s.doctorId,
+        doctorName: s.doctorName,
+        period: s.period,
+        status: remaining > 0 ? 'AVAILABLE' : 'FULL',
+        totalQuota: remaining,
+        bookedQuota: 0,
+        remainingQuota: remaining,
+        registrationFee: s.registrationFee ?? s.fee,
+        fee: s.registrationFee ?? s.fee,
+        startTime: periodTime[s.period]?.start ?? '08:00',
+        endTime: periodTime[s.period]?.end ?? '12:00'
+      })
+    }
+  }
+  res.data = expanded
+  return res
 }
 
 // 我的预约列表（对齐后端 GET /appointments，按 patientId/status 过滤）
-export const getAppointmentListApi = (params) => {
+export const getAppointmentListApi = async (params) => {
   if (USE_MOCK) return Promise.resolve(mockMyAppointmentList(params))
-  return request({ url: '/appointments', method: 'get', params })
+  const res = await request({ url: '/appointments', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = { ...(res.data || {}), records: list.map(mapAppointment), items: list.map(mapAppointment), total: res.data?.total ?? list.length }
+  return res
 }
 
 // 预约详情（对齐后端 GET /appointments/{appointmentId}）
-export const getAppointmentDetailApi = (id) => {
+export const getAppointmentDetailApi = async (id) => {
   if (USE_MOCK) return Promise.resolve(mockAppointmentDetail(id))
-  return request({ url: `/appointments/${id}`, method: 'get' })
+  const res = await request({ url: `/appointments/${id}`, method: 'get' })
+  if (res.data) res.data = mapAppointment(res.data)
+  return res
 }
 
 // 创建预约（对齐后端 POST /appointments）

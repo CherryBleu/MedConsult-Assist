@@ -262,7 +262,10 @@ const goToNoticeList = () => {
 }
 
 onMounted(() => {
-  noticeStore.fetchUnreadCount()
+  // 通知功能仅管理员可用（后端 /notifications 对非管理员返回 403），其他角色跳过加载避免报错
+  if (userStore.role === ROLE_ENUM.HOSPITAL_ADMIN.value) {
+    noticeStore.fetchUnreadCount()
+  }
 })
 
 const handleCommand = (command) => {

@@ -3,27 +3,39 @@ import { mockRecordList, mockRecordDetail } from '@/mock/record'
 import { mockCreateRecord, mockUpdateRecord, mockArchiveRecord } from '@/mock/record'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
+// 后端 MedicalRecord 字段 → 前端期望字段映射
+// 后端 ListItem: recordId/doctorName/chiefComplaint/status
+const mapRecord = (r) => ({
+  id: r.recordId ?? r.recordNo ?? r.id,
+  recordId: r.recordId ?? r.recordNo,
+  recordNo: r.recordNo ?? r.recordId,
+  patientName: r.patientName,
+  doctorName: r.doctorName,
+  deptName: r.departmentName ?? r.deptName,
+  chiefComplaint: r.chiefComplaint,
+  initialDiagnosis: Array.isArray(r.initialDiagnosis) ? r.initialDiagnosis.join('；') : (r.initialDiagnosis ?? ''),
+  status: r.status ?? r.recordStatus
+})
+
 // 获取病历列表（分页，对齐后端 GET /medical-records）
-export const getRecordListApi = (params) => {
+export const getRecordListApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockRecordList())
   }
-  return request({
-    url: '/medical-records',
-    method: 'get',
-    params
-  })
+  const res = await request({ url: '/medical-records', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = { ...(res.data || {}), records: list.map(mapRecord), items: list.map(mapRecord), total: res.data?.total ?? list.length }
+  return res
 }
 
 // 获取病历详情（对齐后端 GET /medical-records/{recordId}）
-export const getRecordDetailApi = (id) => {
+export const getRecordDetailApi = async (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockRecordDetail(id))
   }
-  return request({
-    url: `/medical-records/${id}`,
-    method: 'get'
-  })
+  const res = await request({ url: `/medical-records/${id}`, method: 'get' })
+  if (res.data) res.data = mapRecord(res.data)
+  return res
 }
 
 // 创建病历（对齐后端 POST /medical-records）

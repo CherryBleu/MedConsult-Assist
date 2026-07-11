@@ -32,6 +32,11 @@ service.interceptors.response.use(
       ElMessage.error(res.message || '请求失败')
       return Promise.reject(new Error(res.message || '请求失败'))
     }
+    // 分页契约适配：后端 PageResult 返回 {items,total}，前端多处按 {records,total} 取值。
+    // 在此统一补 records 别名，避免逐个组件改写且兼容 mock 旧返回。
+    if (res.data && Array.isArray(res.data.items) && !res.data.records) {
+      res.data.records = res.data.items
+    }
     return res
   },
   (error) => {

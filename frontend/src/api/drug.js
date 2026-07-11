@@ -3,16 +3,27 @@ import { mockDrugList, mockStockList, mockAddDrug, mockStockOperate } from '@/mo
 import { mockStockWarningList, mockStockFlowList } from '@/mock/drug'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
+// 后端 Drug 字段 → 前端期望字段映射（后端 drugId/genericName/stockQuantity，前端 id/name/stock）
+const mapDrug = (d) => ({
+  id: d.drugId ?? d.id,
+  drugId: d.drugId ?? d.id,
+  name: d.genericName ?? d.drugName ?? d.name,
+  drugName: d.genericName ?? d.drugName,
+  genericName: d.genericName,
+  stock: d.stockQuantity ?? d.stock,
+  stockQuantity: d.stockQuantity,
+  unit: d.unit
+})
+
 // 药品列表（对齐后端 GET /drugs）
-export const getDrugListApi = (params) => {
+export const getDrugListApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDrugList())
   }
-  return request({
-    url: '/drugs',
-    method: 'get',
-    params
-  })
+  const res = await request({ url: '/drugs', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = { ...(res.data || {}), records: list.map(mapDrug), items: list.map(mapDrug), total: res.data?.total ?? list.length }
+  return res
 }
 
 // 新增药品（对齐后端 POST /drugs）
