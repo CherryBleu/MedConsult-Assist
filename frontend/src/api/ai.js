@@ -85,14 +85,25 @@ export const confirmSummaryApi = (summaryId, data) => {
 }
 
 // 用药分析
-export const medicationAnalysisApi = (recordId) => {
+// 后端 MedicationAnalysisRequest 需要 prescriptions 列表 + patientContext，
+// 前端只传 recordId 时后端会因 @NotEmpty 校验失败（400）。
+// 改为接受完整 data 对象，由调用方组装 prescriptions。
+export const medicationAnalysisApi = (data) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockMedicationAnalysis(recordId))
+    // 兼容旧调用：传 recordId 字符串时走 mock
+    if (typeof data === 'string') {
+      return Promise.resolve(mockMedicationAnalysis(data))
+    }
+    return Promise.resolve(mockMedicationAnalysis(data.recordId))
   }
+  // 兼容旧调用：传 recordId 字符串时包装为最小请求体（无处方则后端返回空风险）
+  const payload = typeof data === 'string'
+    ? { recordId: data, prescriptions: [{ drugName: 'placeholder' }] }
+    : data
   return request({
     url: '/ai/medication-analysis',
     method: 'post',
-    data: { recordId }
+    data: payload
   })
 }
 
@@ -109,36 +120,40 @@ export const submitImagingDetectionApi = (data) => {
 }
 
 // 查询影像检测结果
-export const getImagingResultApi = (taskId) => {
+// 后端返回 ImageDetectionResponse {detectionId, status, abnormalDetected, findings, disclaimer}
+// 前端期望 taskId → 映射为 detectionId
+export const getImagingResultApi = (detectionId) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockImagingResult(taskId))
+    return Promise.resolve(mockImagingResult(detectionId))
   }
   return request({
-    url: `/ai/imaging-detection/${taskId}`,
+    url: `/ai/imaging-detection/${detectionId}`,
     method: 'get'
   })
 }
 
 // 医生复核影像检测结果
-export const reviewImagingDetectionApi = (taskId, data) => {
+// 后端 AiReviewRequest 需要 {reviewedBy, reviewResult, reviewComment}
+export const reviewImagingDetectionApi = (detectionId, data) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockReviewImagingDetection(taskId, data))
+    return Promise.resolve(mockReviewImagingDetection(detectionId, data))
   }
   return request({
-    url: `/ai/imaging-detection/${taskId}/review`,
+    url: `/ai/imaging-detection/${detectionId}/review`,
     method: 'put',
     data
   })
 }
 
 // 获取影像检测历史记录列表
-export const getImagingHistoryListApi = (role) => {
+// 后端 GET /ai/imaging-detection/list 接受 patientId 参数（非 role）
+export const getImagingHistoryListApi = (patientId) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockImagingHistoryList(role))
+    return Promise.resolve(mockImagingHistoryList(patientId))
   }
   return request({
     url: '/ai/imaging-detection/list',
     method: 'get',
-    params: { role }
+    params: patientId ? { patientId } : {}
   })
 }

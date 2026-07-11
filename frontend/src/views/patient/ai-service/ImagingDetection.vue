@@ -309,7 +309,7 @@ const submitDetection = async () => {
       imageUrl: imageUrl.value,
       fileName: imageFile.value.name
     })
-    currentTaskId.value = res.data.taskId
+    currentTaskId.value = res.data.detectionId || res.data.taskId
     ElMessage.success('检测任务已提交，正在处理中...')
     startPolling()
   } catch (e) {
@@ -371,8 +371,9 @@ const getReviewTagType = (result) => {
 const getHistoryList = async () => {
   historyLoading.value = true
   try {
-    const res = await getImagingHistoryListApi('patient')
-    historyList.value = res.data
+    // 后端按 patientId 过滤；患者端传当前用户 patientId
+    const res = await getImagingHistoryListApi(null)
+    historyList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   } finally {
     historyLoading.value = false
   }
@@ -380,7 +381,7 @@ const getHistoryList = async () => {
 
 const viewHistory = async (row) => {
   activeTab.value = 'new'
-  currentTaskId.value = row.taskId
+  currentTaskId.value = row.detectionId || row.taskId
   imagingForm.imagingType = row.imagingType
   imagingForm.bodyPart = row.bodyPart
   progress.value = 100
@@ -389,7 +390,7 @@ const viewHistory = async (row) => {
   submitting.value = false
 
   try {
-    const res = await getImagingResultApi(row.taskId)
+    const res = await getImagingResultApi(row.detectionId || row.taskId)
     detectionResult.value = res.data
     // 还原历史影像原图：用上传时记录的 URL，不替换为第三方域名
     imageUrl.value = row.imageUrl || row.originalImageUrl || ''

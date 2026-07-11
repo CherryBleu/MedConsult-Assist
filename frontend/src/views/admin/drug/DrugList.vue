@@ -106,10 +106,16 @@ const handleEdit = (row) => {
 const submitForm = async () => {
   submitting.value = true
   try {
-    await addDrugApi(form)
-    ElMessage.success('操作成功')
-    dialogVisible.value = false
-    getDrugList()
+    if (isEdit.value) {
+      // 后端暂无药品更新接口，编辑为占位提示
+      ElMessage.info('药品编辑功能暂未开放（后端无更新接口）')
+      dialogVisible.value = false
+    } else {
+      await addDrugApi(form)
+      ElMessage.success('新增成功')
+      dialogVisible.value = false
+      getDrugList()
+    }
   } finally {
     submitting.value = false
   }

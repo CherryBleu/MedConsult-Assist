@@ -146,7 +146,7 @@ const currentDetail = ref(null)
 const fetchList = async () => {
   loading.value = true
   try {
-    const params = { pageNum: pageNum.value, pageSize: pageSize.value }
+    const params = { page: pageNum.value, pageSize: pageSize.value }
     if (activeTab.value !== 'all') params.status = activeTab.value
     const res = await getAppointmentListApi(params)
     list.value = res.data.records || res.data || []

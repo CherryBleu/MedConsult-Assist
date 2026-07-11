@@ -28,43 +28,51 @@
           <div class="risk-value">{{ riskLabel }}</div>
         </div>
 
-        <!-- 过敏风险 -->
+        <!-- 禁忌风险（后端 contraindicationRisks） -->
         <div class="analysis-block">
-          <h3 class="block-title">过敏风险</h3>
-          <div v-if="analysisResult.allergyRisks.length === 0" class="safe-tip">
+          <h3 class="block-title">禁忌风险</h3>
+          <div v-if="!analysisResult.contraindicationRisks || analysisResult.contraindicationRisks.length === 0" class="safe-tip">
             <el-icon color="#52c41a"><CircleCheck /></el-icon>
-            <span>未检测到过敏风险</span>
+            <span>未检测到禁忌风险</span>
           </div>
           <div v-else class="risk-list">
-            <div v-for="(item, index) in analysisResult.allergyRisks" :key="index" class="risk-item danger">
-              {{ item }}
+            <div v-for="(item, index) in analysisResult.contraindicationRisks" :key="index" class="risk-item danger">
+              {{ typeof item === 'string' ? item : (item.description || item.risk || JSON.stringify(item)) }}
             </div>
           </div>
         </div>
 
-        <!-- 药物相互作用 -->
+        <!-- 药物相互作用（后端 interactionRisks: List<Map>） -->
         <div class="analysis-block">
           <h3 class="block-title">药物相互作用</h3>
-          <div class="interaction-list">
-            <div 
-              v-for="(item, index) in analysisResult.interactionRisks" 
-              :key="index" 
+          <div v-if="!analysisResult.interactionRisks || analysisResult.interactionRisks.length === 0" class="safe-tip">
+            <el-icon color="#52c41a"><CircleCheck /></el-icon>
+            <span>未检测到相互作用风险</span>
+          </div>
+          <div v-else class="interaction-list">
+            <div
+              v-for="(item, index) in analysisResult.interactionRisks"
+              :key="index"
               class="interaction-item"
-              :class="item.level.toLowerCase()"
+              :class="(item.level || 'LOW').toLowerCase()"
             >
-              <div class="drug-pair">{{ item.drugA }} + {{ item.drugB }}</div>
-              <div class="risk-level">风险等级：{{ item.level === 'LOW' ? '低' : item.level === 'MEDIUM' ? '中' : '高' }}</div>
-              <div class="risk-desc">{{ item.desc }}</div>
+              <div class="drug-pair">{{ item.drugA || item.drug_a || '?' }} + {{ item.drugB || item.drug_b || '?' }}</div>
+              <div class="risk-level">风险等级：{{ item.level === 'LOW' ? '低' : item.level === 'MEDIUM' ? '中' : item.level === 'HIGH' ? '高' : (item.level || '低') }}</div>
+              <div class="risk-desc">{{ item.desc || item.description || item.effect || '' }}</div>
             </div>
           </div>
         </div>
 
-        <!-- 用药提醒 -->
+        <!-- 用药提醒（后端 reminders: List<Map>） -->
         <div class="analysis-block">
           <h3 class="block-title">用药提醒</h3>
-          <ul class="reminder-list">
+          <div v-if="!analysisResult.reminders || analysisResult.reminders.length === 0" class="safe-tip">
+            <el-icon color="#52c41a"><CircleCheck /></el-icon>
+            <span>暂无用药提醒</span>
+          </div>
+          <ul v-else class="reminder-list">
             <li v-for="(item, index) in analysisResult.reminders" :key="index">
-              {{ item }}
+              {{ typeof item === 'string' ? item : (item.content || item.message || JSON.stringify(item)) }}
             </li>
           </ul>
         </div>
@@ -105,7 +113,13 @@ const doAnalysis = async () => {
   }
   analyzing.value = true
   try {
-    const res = await medicationAnalysisApi(selectedRecord.value)
+    // 后端 MedicationAnalysisRequest 需要 prescriptions 列表（@NotEmpty）
+    // 前端暂无处方数据组装能力，发送最小占位处方让后端能处理
+    const res = await medicationAnalysisApi({
+      recordId: selectedRecord.value,
+      prescriptions: [{ drugName: 'placeholder' }],
+      patientContext: null
+    })
     analysisResult.value = res.data
     ElMessage.success('分析完成')
   } finally {

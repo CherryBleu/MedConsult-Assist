@@ -43,14 +43,14 @@ service.interceptors.response.use(
     return res
   },
   (error) => {
-    if (error.response?.status === 401) {
+    // 登录/注册接口的 401 是凭证错误，不是 token 过期，直接展示后端错误消息
+    const url = error.config?.url || ''
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register')
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       return handleTokenRefresh(error.config)
     }
     const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
-    // 未登录状态下的网络错误不弹全局提示（调用方自行处理，如注册页科室加载失败静默）
-    if (getToken()) {
-      ElMessage.error(message)
-    }
+    ElMessage.error(message)
     return Promise.reject(error)
   }
 )

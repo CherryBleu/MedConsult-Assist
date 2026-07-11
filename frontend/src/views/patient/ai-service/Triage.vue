@@ -55,15 +55,15 @@
           <el-button link type="primary" @click="reset">重新分诊</el-button>
         </div>
 
-        <div class="risk-bar" :class="result.riskLevel">
+        <div class="risk-bar" :class="riskLevel">
           <span>风险等级：{{ riskLabel }}</span>
           <el-tag v-if="result.emergencyRecommended" type="danger">建议急诊</el-tag>
         </div>
 
         <div class="dept-recommend">
           <h4>推荐就诊科室</h4>
-          <div 
-            v-for="(item, index) in result.recommendations" 
+          <div
+            v-for="(item, index) in result.recommendations"
             :key="index"
             class="dept-item"
           >
@@ -73,20 +73,16 @@
               <div class="dept-reason">{{ item.reason }}</div>
             </div>
             <div class="confidence">
-              <div class="confidence-text">置信度 {{ item.confidence }}%</div>
-              <el-progress :percentage="item.confidence" :show-text="false" />
+              <div class="confidence-text">置信度 {{ Math.round((item.confidence || 0) * 100) }}%</div>
+              <el-progress :percentage="Math.round((item.confidence || 0) * 100)" :show-text="false" />
             </div>
             <el-button type="primary" size="small" @click="goToDept(item.departmentId)">
               去挂号
             </el-button>
           </div>
-        </div>
-
-        <div class="citation-box">
-          <div class="citation-title">参考疾病知识</div>
-          <el-tag v-for="(item, index) in result.citations" :key="index" effect="plain">
-            {{ item }}
-          </el-tag>
+          <div v-if="!result.recommendations || result.recommendations.length === 0" class="empty-tip">
+            暂无推荐科室，建议前往全科门诊
+          </div>
         </div>
       </div>
     </div>
@@ -107,9 +103,19 @@ const duration = ref('1-3天')
 const submitting = ref(false)
 const result = ref(null)
 
+// 后端 TriageResponse 无 riskLevel 字段，根据 emergencyRecommended + 最高置信度推导
+const riskLevel = computed(() => {
+  if (!result.value) return 'LOW'
+  if (result.value.emergencyRecommended) return 'HIGH'
+  const maxConf = Math.max(...(result.value.recommendations || []).map(r => r.confidence || 0))
+  if (maxConf >= 0.8) return 'LOW'
+  if (maxConf >= 0.5) return 'MEDIUM'
+  return 'MEDIUM'
+})
+
 const riskLabel = computed(() => {
   const map = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险', CRITICAL: '危重' }
-  return map[result.value?.riskLevel] || '低风险'
+  return map[riskLevel.value] || '低风险'
 })
 
 const handleTriage = async () => {
@@ -262,15 +268,10 @@ const goToDept = (deptId) => {
   margin-bottom: 4px;
 }
 
-.citation-box {
-  margin-top: 20px;
-  padding: 16px;
-  background: var(--bg-page);
-  border-radius: var(--radius-base);
-}
-.citation-title {
-  font-size: 13px;
+.empty-tip {
+  padding: 20px;
+  text-align: center;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  font-size: 14px;
 }
 </style>

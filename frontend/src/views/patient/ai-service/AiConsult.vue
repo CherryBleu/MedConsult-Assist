@@ -134,10 +134,13 @@ const sendMessage = async () => {
   try {
     const res = await sendChatMessageApi(sessionId.value, text)
     messageList.value.push({
-      id: res.data.id,
+      id: res.data.sessionId || Date.now(),
       role: 'ai',
-      content: res.data.aiAnswer
+      content: res.data.answer || res.data.aiAnswer || '暂无回复'
     })
+  } catch (e) {
+    // 发送失败时移除用户消息，避免悬挂
+    messageList.value.pop()
   } finally {
     loading.value = false
     scrollToBottom()

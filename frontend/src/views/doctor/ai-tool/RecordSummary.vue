@@ -24,21 +24,21 @@
       <div v-if="summaryResult" class="result-section">
         <div class="result-header">
           <h3>生成结果</h3>
-          <el-tag type="info">{{ summaryResult.modelName }}</el-tag>
+          <el-tag type="info">{{ summaryResult.status || '已完成' }}</el-tag>
         </div>
 
         <el-descriptions :column="2" border class="summary-desc">
           <el-descriptions-item label="主诉">
-            {{ summaryResult.summaryContent.chiefComplaint }}
+            {{ summaryResult.summary?.chiefComplaint || summaryResult.summaryContent?.chiefComplaint || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="诊断">
-            <span class="diagnosis-text">{{ summaryResult.summaryContent.diagnosis }}</span>
+            <span class="diagnosis-text">{{ summaryResult.summary?.diagnosis || summaryResult.summaryContent?.diagnosis || '-' }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="用药方案" :span="2">
-            {{ summaryResult.summaryContent.medication }}
+            {{ summaryResult.summary?.medication || summaryResult.summaryContent?.medication || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="医嘱建议" :span="2">
-            {{ summaryResult.summaryContent.advice }}
+            {{ summaryResult.summary?.advice || summaryResult.summaryContent?.advice || '-' }}
           </el-descriptions-item>
         </el-descriptions>
 

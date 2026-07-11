@@ -102,7 +102,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
-import { createRecordApi, archiveRecordApi } from '@/api/record'
+import { createRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
 import { generateSummaryByTextApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 
@@ -207,18 +207,37 @@ const generateSummary = async () => {
   try {
     const text = `主诉：${form.chiefComplaint}\n现病史：${form.presentIllness}\n既往史：${form.pastHistory}\n体格检查：${form.physicalExam}`
     const res = await generateSummaryByTextApi(text)
-    const content = res.data.summaryContent
-    form.initialDiagnosis = content.diagnosis
-    form.doctorAdvice = content.advice
+    // 后端返回 {summary: Map, status}，非 summaryContent
+    const content = res.data.summary || res.data.summaryContent || {}
+    form.initialDiagnosis = content.diagnosis || ''
+    form.doctorAdvice = content.advice || ''
     ElMessage.success('AI摘要已填充，可继续编辑')
   } finally {
     aiLoading.value = false
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   patientName.value = route.query.patientName || '患者'
   form.appointmentId = route.query.appointmentId || ''
+  // 编辑已有草稿：加载病历详情填充表单
+  const recordId = route.query.recordId
+  if (recordId) {
+    try {
+      const res = await getRecordDetailApi(recordId)
+      const d = res.data
+      if (d) {
+        form.chiefComplaint = d.chiefComplaint || ''
+        form.presentIllness = d.presentIllness || ''
+        form.pastHistory = d.pastHistory || ''
+        form.physicalExam = d.physicalExam || ''
+        form.initialDiagnosis = Array.isArray(d.initialDiagnosis) ? d.initialDiagnosis.join('；') : (d.initialDiagnosis || '')
+        form.doctorAdvice = d.doctorAdvice || ''
+      }
+    } catch (e) {
+      // 加载失败不阻塞新建流程
+    }
+  }
 })
 </script>
 

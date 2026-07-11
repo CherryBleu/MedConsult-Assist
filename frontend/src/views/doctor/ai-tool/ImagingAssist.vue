@@ -300,8 +300,9 @@ const filteredList = computed(() => {
 const getTaskList = async () => {
   listLoading.value = true
   try {
-    const res = await getImagingHistoryListApi('doctor')
-    taskList.value = res.data
+    // 后端 GET /ai/imaging-detection/list?patientId=xxx（不传 patientId 返回全部）
+    const res = await getImagingHistoryListApi(null)
+    taskList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   } finally {
     listLoading.value = false
   }
@@ -406,7 +407,7 @@ const submitDetection = async () => {
       imageUrl: imageUrl.value,
       fileName: imageFile.value.name
     })
-    currentTaskId.value = res.data.taskId
+    currentTaskId.value = res.data.detectionId || res.data.taskId
     ElMessage.success('检测任务已提交，正在处理中...')
     startPolling()
   } catch (e) {
@@ -459,10 +460,10 @@ const startPolling = () => {
 }
 
 const viewTask = async (row) => {
-  currentTaskId.value = row.taskId
+  currentTaskId.value = row.detectionId || row.taskId
   listLoading.value = true
   try {
-    const res = await getImagingResultApi(row.taskId)
+    const res = await getImagingResultApi(row.detectionId || row.taskId)
     currentTask.value = { ...res.data, patientName: row.patientName }
     // 还原任务影像原图：用上传时记录的 URL，不替换为第三方域名
     imageUrl.value = row.imageUrl || row.originalImageUrl || ''
@@ -505,10 +506,11 @@ const submitReview = async () => {
 
   reviewing.value = true
   try {
+    // 后端 AiReviewRequest: {reviewedBy, reviewResult, reviewComment}
     await reviewImagingDetectionApi(currentTaskId.value, {
+      reviewedBy: userStore.userInfo?.name || userStore.userInfo?.username || '当前医生',
       reviewResult: reviewForm.reviewResult,
-      correctedDiagnosis: reviewForm.reviewResult === 'CORRECT' ? reviewForm.correctedDiagnosis : '',
-      doctorOpinion: reviewForm.doctorOpinion
+      reviewComment: reviewForm.doctorOpinion + (reviewForm.reviewResult === 'CORRECT' ? ' 修正诊断: ' + reviewForm.correctedDiagnosis : '')
     })
     ElMessage.success('审核提交成功')
     currentTask.value.reviewStatus = 'REVIEWED'

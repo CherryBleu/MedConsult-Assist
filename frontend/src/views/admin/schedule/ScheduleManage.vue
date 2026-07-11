@@ -243,7 +243,8 @@ const handleDeptChange = async (val) => {
 const handleDoctorChange = (val) => {
   const doctor = allDoctors.value.find(d => d.id === val)
   if (doctor) {
-    form.registrationFee = doctor.registrationFee
+    // 映射后的医生对象用 fee 字段（mapDoctor 中 registrationFee → fee）
+    form.registrationFee = doctor.registrationFee ?? doctor.fee ?? 50
   }
 }
 
