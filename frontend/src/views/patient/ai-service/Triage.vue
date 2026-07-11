@@ -120,8 +120,10 @@ const handleTriage = async () => {
 
   submitting.value = true
   try {
+    // 后端 TriageRequest.symptoms 是 List<String>（@NotEmpty），前端按逗号/顿号拆成数组
+    const symptomList = symptoms.value.split(/[,，、\n]/).map(s => s.trim()).filter(Boolean)
     const res = await triageApi({
-      symptoms: symptoms.value,
+      symptoms: symptomList,
       duration: duration.value
     })
     result.value = res.data

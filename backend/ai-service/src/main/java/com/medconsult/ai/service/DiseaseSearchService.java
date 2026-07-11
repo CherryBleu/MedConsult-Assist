@@ -117,20 +117,21 @@ public class DiseaseSearchService {
                             () -> standardizeCandidate(userText, intent.metadataQuery(), candidate))
                     .toList();
             for (Future<DiseaseKnowledge> future : executor.invokeAll(tasks)) {
-                DiseaseKnowledge knowledge = future.get();
-                if (knowledge != null) {
-                    results.add(knowledge);
+                try {
+                    DiseaseKnowledge knowledge = future.get();
+                    if (knowledge != null) {
+                        results.add(knowledge);
+                    }
+                } catch (ExecutionException ex) {
+                    // 单个候选疾病检索失败（Mongo/Milvus 不可用或无数据）不应中断整个分诊：
+                    // 降级为跳过该候选，后续 LLM 仍可基于症状给出建议（RAG 退化为纯 LLM）。
+                    log.warn("disease candidate search failed, skip and degrade to LLM-only: {}",
+                            ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage());
                 }
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Disease search interrupted", ex);
-        } catch (ExecutionException ex) {
-            Throwable cause = ex.getCause();
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            throw new IllegalStateException("Disease search failed", cause);
         }
         List<DiseaseKnowledge> deduped = dedupe(results).stream().limit(Math.max(1, Math.min(3, topK))).toList();
         log.info("[AI-TIMER] disease.search={}ms candidates={} rawResults={} results={} sources={}",

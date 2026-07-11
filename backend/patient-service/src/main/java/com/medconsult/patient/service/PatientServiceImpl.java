@@ -274,6 +274,11 @@ public class PatientServiceImpl implements PatientService {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
         }
         Patient p = patientMapper.selectOne(new QueryWrapper<Patient>().eq("patient_no", patientNo));
+        // 兼容 /auth/me 返回的 BIGINT 主键 id（auth-service 把 sys_user.patient_id 作为 patientId 返回）：
+        // patient_no 查不到时，若入参是纯数字，回退按主键 id 查一次。
+        if (p == null && patientNo.chars().allMatch(Character::isDigit)) {
+            p = patientMapper.selectById(Long.parseLong(patientNo));
+        }
         if (p == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "患者档案不存在: " + patientNo);
         }
