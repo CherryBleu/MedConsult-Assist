@@ -36,7 +36,7 @@
           <template v-else>
             <div class="message-bubble user-bubble">{{ msg.content }}</div>
             <el-avatar :size="36" class="user-avatar">
-              {{ userStore.userInfo.name?.charAt(0) }}
+              {{ (userStore.userInfo.name || '?').charAt(0) }}
             </el-avatar>
           </template>
         </div>

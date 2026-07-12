@@ -8,7 +8,7 @@
 
       <!-- 医生信息 -->
       <div class="doctor-info-bar">
-        <el-avatar :size="48" class="doctor-avatar">{{ doctorInfo.name?.charAt(0) }}</el-avatar>
+        <el-avatar :size="48" class="doctor-avatar">{{ (doctorInfo.name || '?').charAt(0) }}</el-avatar>
         <div>
           <div class="doctor-name">
             {{ doctorInfo.name }}
