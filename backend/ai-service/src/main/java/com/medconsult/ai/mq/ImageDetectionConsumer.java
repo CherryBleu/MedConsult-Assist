@@ -38,13 +38,18 @@ public class ImageDetectionConsumer {
         // traceId：消息带则用消息的，否则本地生成（替代 ai-stack RequestContext.traceId()）
         MDC.put("traceId", message.traceId() == null ? "trace-" + UUID.randomUUID().toString().replace("-", "") : message.traceId());
         try {
-            // 幂等：同一 detectionId 只处理一次。action 抛异常时 IdempotentConsumer 会回滚标记，允许 MQ 重投重试。
+            // 幂等：同一 detectionId 只处理一次（Redis SETNX）。
+            // 注意：action 抛异常时 IdempotentConsumer 会删除标记"允许重投"，但下方 catch
+            // 会吞掉异常让 broker ack——即单次消费失败后不自动重试（避免对外部 vision 模型重复计费）。
+            // 检测记录已在 processImageDetection 内部标记为 FAILED，用户可在前端重新提交。
             idempotentConsumer.executeOnce("imaging-detect:" + message.detectionId(), () -> {
                 imagingDetectionService.processImageDetection(message.detectionId());
                 return null;
             });
         } catch (RuntimeException ex) {
-            log.warn("image detection task failed and will not be requeued, detectionId={}", message.detectionId(), ex);
+            // 不重投（detection 已标 FAILED，用户可重新提交；自动重试会对外部模型重复计费）
+            log.warn("image detection task failed (marked FAILED, not requeued), detectionId={}",
+                    message.detectionId(), ex);
         } finally {
             MDC.remove("traceId");
         }
