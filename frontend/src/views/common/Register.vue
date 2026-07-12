@@ -26,7 +26,7 @@
           <el-input v-model="form.idCard" placeholder="请输入身份证号" maxlength="18" />
         </el-form-item>
         <el-form-item label="注册身份" prop="role">
-          <el-radio-group v-model="form.role">
+          <el-radio-group v-model="form.role" @change="onRoleChange">
             <el-radio value="PATIENT">患者</el-radio>
             <el-radio value="DOCTOR">医生</el-radio>
           </el-radio-group>
@@ -97,6 +97,11 @@ const validateConfirmPassword = (rule, value, callback) => {
 }
 
 const validateIdCard = (rule, value, callback) => {
+  // PATIENT 角色注册即建档，身份证号必填；DOCTOR 选填
+  if (form.role === 'PATIENT' && (!value || !value.trim())) {
+    callback(new Error('患者注册请填写身份证号（用于自动建档）'))
+    return
+  }
   if (!value || /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/.test(value)) {
     callback()
   } else {
@@ -136,6 +141,11 @@ const getDeptList = async () => {
   } catch (e) {}
 }
 
+// 切换角色时重新校验 idCard（PATIENT 必填，DOCTOR 选填）
+const onRoleChange = () => {
+  formRef.value?.validateField('idCard')
+}
+
 const handleRegister = async () => {
   try {
     await formRef.value.validate()
@@ -145,14 +155,19 @@ const handleRegister = async () => {
   }
   submitting.value = true
   try {
-    // 后端 RegisterRequest 只接受 account/password/phone/name/role；
-    // confirmPassword/idCard/departmentId/title/specialty 为前端辅助字段，不提交。
+    // 后端 RegisterRequest 现接受 account/password/phone/name/role/idCard；
+    // PATIENT 角色注册时 idCard 必填（后端注册即建档用）。
+    // confirmPassword/departmentId/title/specialty 仍为前端辅助字段，不提交。
     const payload = {
       account: form.account,
       password: form.password,
       name: form.name,
       phone: form.phone,
       role: form.role
+    }
+    // PATIENT 角色补传 idCard（建档必需）；DOCTOR 不需要
+    if (form.role === 'PATIENT') {
+      payload.idCard = form.idCard
     }
     await registerApi(payload)
     ElMessage.success('注册成功，请登录')
