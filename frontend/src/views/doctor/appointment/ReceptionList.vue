@@ -27,11 +27,11 @@
       </el-row>
 
       <el-radio-group v-model="activeStatus" class="status-filter" @change="handleStatusChange">
-        <el-radio-button label="ALL">全部</el-radio-button>
-        <el-radio-button label="PENDING">待就诊</el-radio-button>
-        <el-radio-button label="IN_PROGRESS">就诊中</el-radio-button>
-        <el-radio-button label="COMPLETED">已完成</el-radio-button>
-        <el-radio-button label="NO_SHOW">爽约</el-radio-button>
+        <el-radio-button value="ALL">全部</el-radio-button>
+        <el-radio-button value="PENDING">待就诊</el-radio-button>
+        <el-radio-button value="IN_PROGRESS">就诊中</el-radio-button>
+        <el-radio-button value="COMPLETED">已完成</el-radio-button>
+        <el-radio-button value="NO_SHOW">爽约</el-radio-button>
       </el-radio-group>
 
       <el-table v-loading="loading" :data="tableData" border stripe style="width: 100%; margin-top: 16px">

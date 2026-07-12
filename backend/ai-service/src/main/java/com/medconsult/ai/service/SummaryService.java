@@ -200,11 +200,16 @@ public class SummaryService {
     }
 
     private static String recordText(MedicalRecordFullDTO record) {
+        // 诊断合并初步诊断 + 最终诊断：草稿病历可能只有 initialDiagnosis（finalDiagnosis 在
+        // updateDraft 时才写），只取 finalDiagnosis 会导致 LLM 看不到诊断 → 返回空 diagnosis。
+        List<String> allDiagnoses = new java.util.ArrayList<>();
+        if (record.initialDiagnosis() != null) allDiagnoses.addAll(record.initialDiagnosis());
+        if (record.finalDiagnosis() != null) allDiagnoses.addAll(record.finalDiagnosis());
         return "chiefComplaint: " + safe(record.chiefComplaint())
                 + "\npresentIllness: " + safe(record.presentIllness())
                 + "\npastHistory: " + safe(record.pastHistory())
                 + "\nphysicalExam: " + safe(record.physicalExam())
-                + "\ndiagnosis: " + JsonUtils.toJson(safeList(record.finalDiagnosis()))
+                + "\ndiagnosis: " + JsonUtils.toJson(allDiagnoses)
                 + "\ndoctorAdvice: " + safe(record.doctorAdvice());
     }
 

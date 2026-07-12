@@ -32,13 +32,13 @@
             {{ summaryResult.summary?.chiefComplaint || summaryResult.summaryContent?.chiefComplaint || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="诊断">
-            <span class="diagnosis-text">{{ summaryResult.summary?.diagnosis || summaryResult.summaryContent?.diagnosis || '-' }}</span>
+            <span class="diagnosis-text">{{ formatList(summaryResult.summary?.diagnosis || summaryResult.summaryContent?.diagnosis) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="用药方案" :span="2">
-            {{ summaryResult.summary?.medication || summaryResult.summaryContent?.medication || '-' }}
+            {{ formatList(summaryResult.summary?.medications || summaryResult.summaryContent?.medications) || formatList(summaryResult.summary?.treatmentPlan || summaryResult.summaryContent?.treatmentPlan) }}
           </el-descriptions-item>
           <el-descriptions-item label="医嘱建议" :span="2">
-            {{ summaryResult.summary?.advice || summaryResult.summaryContent?.advice || '-' }}
+            {{ summaryResult.summary?.followUpAdvice || summaryResult.summaryContent?.followUpAdvice || '-' }}
           </el-descriptions-item>
         </el-descriptions>
 
@@ -63,6 +63,14 @@ const selectedRecord = ref('')
 const generating = ref(false)
 const recordList = ref([])
 const summaryResult = ref(null)
+
+// 格式化摘要字段：数组 join 成字符串，空数组/空串/undefined 返回空（由模板兜底显示 -）
+const formatList = (val) => {
+  if (val == null) return ''
+  if (Array.isArray(val)) return val.length > 0 ? val.join('、') : ''
+  const s = String(val).trim()
+  return s === '[]' ? '' : s
+}
 
 const getRecordList = async () => {
   const res = await getRecordListApi()
