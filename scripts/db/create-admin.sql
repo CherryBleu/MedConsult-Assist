@@ -45,6 +45,10 @@ USE medconsult_auth;
 -- ===== 第一部分：创建 admin 账号 =====
 -- INSERT IGNORE：account/phone/user_no 均有唯一约束，重复执行不报错（幂等）。
 -- password_hash 是 "123456" 的 BCrypt cost=10 摘要（Python bcrypt 生成）。
+-- 注意：id=1 仅在 sys_user 为全新空库时可用（与 DataSeeder 对齐）。
+--       若库已有数据（如冒烟测试库 sys_user 已有 19 条，admin 实际 id 是雪花 id），
+--       INSERT IGNORE 会因 account='admin' 唯一约束冲突而跳过（不会报错），
+--       此时改用下方【第一部分 B】的 UPDATE 重置密码。
 INSERT IGNORE INTO sys_user (
     id,
     user_no,
@@ -72,6 +76,22 @@ INSERT IGNORE INTO sys_user (
     CURRENT_TIMESTAMP(3),
     0                                   -- 逻辑删除：未删除
 );
+
+
+-- ===== 第一部分 B：admin 已存在但密码未知时，重置密码为 123456 =====
+-- 适用场景（运行时验证发现的真实情况）：冒烟测试库 sys_user 非空导致 DataSeeder 跳过，
+-- 但库里已有一个 account='admin' 的账号（雪花 id，密码非 123456 无法登录）。
+-- 此时【第一部分】的 INSERT IGNORE 因 account 唯一约束跳过，无法新建，
+-- 需要用 UPDATE 把现有 admin 的密码重置为 123456（BCrypt 哈希同上）。
+-- 执行前请先 SELECT 确认 admin 存在（见第二部分），确认后取消下面注释执行。
+-- -- UPDATE sys_user SET password_hash = '$2b$10$7XrOCY7jI0rCX48qTHBjNu0HEDLELRXc9/GxVXolSLJNh2wkTPDxy',
+-- --                       updated_at = CURRENT_TIMESTAMP(3)
+-- -- WHERE account = 'admin' AND deleted = 0;
+-- --
+-- -- 重置密码后，admin 的角色 key 在 Redis 里应已存在（medconsult:auth:role:<admin的id> = HOSPITAL_ADMIN）。
+-- -- 若登录后角色变成 PATIENT，说明 Redis 角色缺失，按【第三部分】补写（用 admin 的真实 id）。
+
+
 
 
 -- ===== 第二部分：验证 sys_user 写入 =====
