@@ -160,7 +160,13 @@ const submitStockOperate = async () => {
   submitting.value = true
   try {
     if (operateType.value === 'IN') {
-      await stockInApi(currentDrug.value.id, stockForm.quantity, stockForm.remark)
+      // 后端 InboundRequest 要求 batchNo + expireDate + quantity（缺则 400）
+      await stockInApi(currentDrug.value.id, {
+        quantity: stockForm.quantity,
+        batchNo: stockForm.batchNo,
+        expireDate: stockForm.expireDate,
+        remark: stockForm.remark
+      })
       ElMessage.success('入库成功')
     } else {
       await stockOutApi(currentDrug.value.id, stockForm.quantity, stockForm.remark)

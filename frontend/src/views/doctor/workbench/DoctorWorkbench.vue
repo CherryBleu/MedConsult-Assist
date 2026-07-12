@@ -102,9 +102,14 @@ const getReceptionList = async () => {
 }
 
 const goWriteRecord = (item) => {
+  // 传 patientNo 供病历创建用（后端 CreateRequest.patientId 标 @NotBlank，缺则 400）
   router.push({
     path: '/doctor/record/write',
-    query: { appointmentId: item.id, patientName: item.patientName }
+    query: {
+      appointmentId: item.id,
+      patientId: item.patientNo || item.patientId,
+      patientName: item.patientName
+    }
   })
 }
 

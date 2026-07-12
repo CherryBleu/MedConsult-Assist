@@ -58,14 +58,22 @@ export const getStockListApi = async (params) => {
 }
 
 // 库存入库（对齐后端 POST /drugs/{drugId}/stock/inbound）
-export const stockInApi = (id, quantity, remark) => {
+// 后端 InboundRequest 要求 batchNo(@NotBlank) + expireDate(@NotNull @Future) + quantity，
+// 缺失会直接 400。供应商 supplier 选填。
+export const stockInApi = (id, { quantity, batchNo, expireDate, supplier, remark }) => {
   if (USE_MOCK) {
     return Promise.resolve(mockStockOperate(id, 'IN', quantity, remark))
   }
   return request({
     url: `/drugs/${id}/stock/inbound`,
     method: 'post',
-    data: { quantity, remark }
+    data: {
+      quantity,
+      batchNo,
+      expireDate,
+      supplier: supplier || undefined,
+      remark: remark || undefined
+    }
   })
 }
 

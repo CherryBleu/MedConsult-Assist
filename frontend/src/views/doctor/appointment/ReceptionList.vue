@@ -101,7 +101,7 @@
               <el-button type="primary" size="small" @click="handleEndVisit(row.id)">
                 完成接诊
               </el-button>
-              <el-button size="small" @click="goWriteRecord(row.id)">
+              <el-button size="small" @click="goWriteRecord(row)">
                 写病历
               </el-button>
             </template>
@@ -254,8 +254,17 @@ const handleMarkNoShow = async (id) => {
   } catch (e) {}
 }
 
-const goWriteRecord = (id) => {
-  router.push({ path: '/doctor/record/write', query: { appointmentId: id } })
+const goWriteRecord = (row) => {
+  // 传 patientNo 供病历创建用（后端 CreateRequest.patientId 标 @NotBlank，缺则 400）。
+  // row.patientNo 来自后端预约列表（appointment.patient_no 冗余字段）。
+  router.push({
+    path: '/doctor/record/write',
+    query: {
+      appointmentId: row.id || row.appointmentId,
+      patientId: row.patientNo || row.patientId,
+      patientName: row.patientName || row.patientNo
+    }
+  })
 }
 
 onMounted(() => {

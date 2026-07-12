@@ -187,7 +187,11 @@ const archiveRecord = async () => {
         return
       }
     }
-    await archiveRecordApi(recordId)
+    await archiveRecordApi(recordId, {
+      // 后端 ArchiveRequest.confirmBy 标了 @NotBlank（医生编号 doctor_no）
+      confirmBy: String(userStore.userInfo?.doctorId || route.query.doctorId || ''),
+      confirmNote: '医生确认归档'
+    })
     form.status = 'ARCHIVED'
     ElMessage.success('病历已归档')
     router.back()
@@ -207,10 +211,15 @@ const generateSummary = async () => {
   try {
     const text = `主诉：${form.chiefComplaint}\n现病史：${form.presentIllness}\n既往史：${form.pastHistory}\n体格检查：${form.physicalExam}`
     const res = await generateSummaryByTextApi(text)
-    // 后端返回 {summary: Map, status}，非 summaryContent
-    const content = res.data.summary || res.data.summaryContent || {}
-    form.initialDiagnosis = content.diagnosis || ''
-    form.doctorAdvice = content.advice || ''
+    // 后端 MedicalRecordSummaryTextResponse.summary 是 Map，key 对齐 SummaryService：
+    // chiefComplaint / diagnosis(List) / treatmentPlan / medications(List) / followUpAdvice
+    const content = res.data?.summary || {}
+    // diagnosis 是数组，前端 initialDiagnosis 是逗号分隔串，需 join
+    const diagnosis = Array.isArray(content.diagnosis) ? content.diagnosis.join('，') : (content.diagnosis || '')
+    if (diagnosis) form.initialDiagnosis = diagnosis
+    // 后端 key 是 followUpAdvice（非 advice）+ treatmentPlan，合并到医嘱
+    const adviceParts = [content.treatmentPlan, content.followUpAdvice].filter(Boolean)
+    if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
     ElMessage.success('AI摘要已填充，可继续编辑')
   } finally {
     aiLoading.value = false

@@ -61,6 +61,7 @@ export const generateSummaryByRecordApi = (recordNo) => {
 }
 
 // 生成病历摘要（按文本）
+// 后端 MedicalRecordSummaryTextRequest 字段为 recordText（@NotBlank），不是 text
 export const generateSummaryByTextApi = (text) => {
   if (USE_MOCK) {
     return Promise.resolve(mockRecordSummaryByText(text))
@@ -68,7 +69,7 @@ export const generateSummaryByTextApi = (text) => {
   return request({
     url: '/ai/summary/by-text',
     method: 'post',
-    data: { text }
+    data: { recordText: text }
   })
 }
 
