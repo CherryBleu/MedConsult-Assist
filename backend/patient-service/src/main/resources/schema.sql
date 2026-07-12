@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS patient (
     KEY idx_patient_phone (phone),
     KEY idx_patient_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='患者档案表';
+
+-- ============================================================
+-- 种子数据（冒烟/演示用；固定主键 3001，与 auth-service DataSeeder 的 patient 用户 patient_id 对齐）
+-- ============================================================
+INSERT IGNORE INTO patient (id, patient_no, name, gender, birth_date, id_type, id_no, phone, address, status)
+VALUES (3001, 'P30001', '赵演示', 'MALE', '1990-05-20', 'ID_CARD', '110101199005201234', '13800000001', '北京市朝阳区演示路 1 号', 'ACTIVE');

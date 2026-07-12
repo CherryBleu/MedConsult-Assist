@@ -97,3 +97,37 @@ CREATE TABLE IF NOT EXISTS appointment (
     -- 热门专家号同患者多次抢号时，复合索引避免回表扫描。
     KEY idx_appointment_patient_schedule (patient_no, schedule_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预约挂号表';
+
+-- ============================================================
+-- 种子数据（冒烟/演示用；固定主键保证跨服务引用一致）
+-- 科室 department_no 严格对齐 ai-service TriageService.departmentIdOf 的硬编码常量，
+-- 否则智能分诊"去挂号"链路因查不到科室返回业务异常。
+-- ============================================================
+
+-- 科室（主键 1001-1005）
+INSERT IGNORE INTO department (id, department_no, name, description, location, enabled) VALUES
+    (1001, 'DEP_CARDIOLOGY',   '心内科',     '心血管疾病诊疗，含高血压、冠心病、心律失常', '门诊楼 3 楼 A 区', 1),
+    (1002, 'DEP_RESPIRATORY',  '呼吸科',     '呼吸系统疾病诊疗，含哮喘、肺炎、慢阻肺',     '门诊楼 3 楼 B 区', 1),
+    (1003, 'DEP_PEDIATRICS',   '儿科',       '0-14 岁儿童常见病、多发病诊疗',              '门诊楼 2 楼 C 区', 1),
+    (1004, 'DEP_EMERGENCY',    '急诊科',     '24 小时急危重症救治',                        '急诊楼 1 楼',      1),
+    (1005, 'DEP_GENERAL',      '全科医学科', '常见病、多发病及未明确专科疾病的初诊',       '门诊楼 1 楼 D 区', 1);
+
+-- 医生（主键 2001-2003；department_id 指向上面科室主键）
+INSERT IGNORE INTO doctor (id, doctor_no, name, department_id, title, specialties, introduction, enabled) VALUES
+    (2001, 'D20001', '张心明', 1001, '主任医师', '["高血压","冠心病","心律失常"]',
+     '从医 20 年，擅长心血管疑难重症诊治，完成各类心脏介入手术逾千例。', 1),
+    (2002, 'D20002', '李呼吸', 1002, '副主任医师', '["哮喘","慢阻肺","肺部感染"]',
+     '呼吸与危重症医学科副主任医师，擅长慢性气道疾病规范化管理。', 1),
+    (2003, 'D20003', '王小儿', 1003, '主治医师', '["儿童呼吸道感染","小儿贫血"]',
+     '儿科主治医师，擅长儿童常见病诊治与儿童保健。', 1);
+
+-- 排班（主键 4001-4003；未来 7 天各一位医生上午出诊）
+-- schedule_no 用固定常量；日期用 CURDATE() + INTERVAL 保证始终未来日期
+INSERT IGNORE INTO doctor_schedule (id, schedule_no, doctor_id, department_id, schedule_date, period, start_time, end_time, total_quota, booked_quota, registration_fee, status)
+SELECT id, schedule_no, doctor_id, department_id, DATE_ADD(CURDATE(), INTERVAL day_offset DAY), period, start_time, end_time, total_quota, booked_quota, registration_fee, status
+FROM (
+    SELECT 4001 AS id, 'S40001' AS schedule_no, 2001 AS doctor_id, 1001 AS department_id, 1 AS day_offset, 'MORNING' AS period, '08:00:00' AS start_time, '12:00:00' AS end_time, 20 AS total_quota, 0 AS booked_quota, 50.00 AS registration_fee, 'AVAILABLE' AS status
+    UNION ALL SELECT 4002, 'S40002', 2002, 1002, 2, 'MORNING', '08:00:00', '12:00:00', 20, 0, 40.00, 'AVAILABLE'
+    UNION ALL SELECT 4003, 'S40003', 2003, 1003, 3, 'AFTERNOON', '14:00:00', '17:00:00', 15, 0, 30.00, 'AVAILABLE'
+) seed
+WHERE NOT EXISTS (SELECT 1 FROM doctor_schedule WHERE schedule_no IN ('S40001','S40002','S40003'));

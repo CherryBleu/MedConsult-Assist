@@ -81,3 +81,25 @@ CREATE TABLE IF NOT EXISTS drug_stock_flow (
     -- 回滚是 dispense 失败路径，单药品流水量大时无此索引会 filesort 全扫。
     KEY idx_flow_drug_item (drug_id, prescription_item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='药品库存流水表（只追加）';
+
+-- ============================================================
+-- 种子数据（冒烟/演示用；固定主键 5001-5003，供库存流水页面演示）
+-- ============================================================
+
+-- 药品（主键 5001-5003；drug_no 为业务编号，D + 主键）
+INSERT IGNORE INTO drug (id, drug_no, generic_name, trade_name, specification, dosage_form, manufacturer, unit, min_stock_threshold, current_stock, status) VALUES
+    (5001, 'D50001', '阿莫西林胶囊', '阿莫仙',  '0.25g*24粒', '胶囊剂', '华北制药股份有限公司', '盒', 50, 200, 'ACTIVE'),
+    (5002, 'D50002', '布洛芬缓释胶囊', '芬必得', '0.3g*20粒',  '缓释胶囊', '中美天津史克制药有限公司', '盒', 30, 120, 'ACTIVE'),
+    (5003, 'D50003', '氨氯地平片',     '络活喜', '5mg*7片',    '片剂',   '辉瑞制药有限公司', '盒', 40, 80, 'ACTIVE');
+
+-- 批次库存（主键 6001-6003；drug_id 指向上面药品主键）
+INSERT IGNORE INTO drug_stock_batch (id, drug_id, batch_no, quantity, unit_price, production_date, expire_date, supplier, status) VALUES
+    (6001, 5001, 'BH20260101-001', 200, 12.50, '2025-06-01', '2027-06-01', '国药控股股份有限公司', 'AVAILABLE'),
+    (6002, 5002, 'BH20260101-002', 120, 18.00, '2025-08-15', '2027-08-15', '上海医药集团股份有限公司', 'AVAILABLE'),
+    (6003, 5003, 'BH20260101-003',  80, 35.00, '2025-10-10', '2027-10-10', '九州通医药集团股份有限公司', 'AVAILABLE');
+
+-- 库存流水（主键 7001-7003；drug_id/batch_id 指向上面主键，记录初始入库）
+INSERT IGNORE INTO drug_stock_flow (id, flow_no, drug_id, batch_id, type, quantity, before_quantity, after_quantity, remark, created_at) VALUES
+    (7001, 'SF70001', 5001, 6001, 'INBOUND', 200, 0, 200, '初始入库', NOW()),
+    (7002, 'SF70002', 5002, 6002, 'INBOUND', 120, 0, 120, '初始入库', NOW()),
+    (7003, 'SF70003', 5003, 6003, 'INBOUND',  80, 0,  80, '初始入库', NOW());
