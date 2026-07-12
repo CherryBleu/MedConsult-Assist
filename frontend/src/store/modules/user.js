@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { setToken, getToken, removeToken, setRefreshToken, getRefreshToken, removeRefreshToken } from '@/utils/auth'
 import { loginApi, getUserInfoApi, logoutApi, refreshTokenApi } from '@/api/user'
+import { useAiChatStore } from '@/store/modules/aiChat'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -50,6 +51,8 @@ export const useUserStore = defineStore('user', {
       this.role = ''
       removeToken()
       removeRefreshToken()
+      // 清空 AI 问诊会话缓存，避免换账号登录后看到上一个用户的聊天记录（越权信息泄露）
+      useAiChatStore().clear()
     }
   }
 })

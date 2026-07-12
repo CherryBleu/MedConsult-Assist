@@ -85,16 +85,23 @@
 
 <script setup>
 import { ref, nextTick, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { Cpu, Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
+import { useAiChatStore } from '@/store/modules/aiChat'
 import { createSessionApi, sendChatMessageApi } from '@/api/ai'
 
 const userStore = useUserStore()
+const aiChatStore = useAiChatStore()
+
+// 会话/消息状态上提到 Pinia store：组件卸载（路由切走）后状态不丢，
+// 切回来时 onMounted 直接复用已有会话，避免消息清空。
+// storeToRefs 保证模板响应式；模板里仍用 messageList / sessionId 名字。
+const { sessionId, messages: messageList } = storeToRefs(aiChatStore)
+
 const messagesRef = ref(null)
 const inputText = ref('')
 const loading = ref(false)
-const sessionId = ref('')
-const messageList = ref([])
 
 const quickQuestions = ['咳嗽有痰怎么办', '胸闷是什么原因', '头痛该挂什么科']
 
@@ -106,11 +113,11 @@ const scrollToBottom = async () => {
   }
 }
 
-// 初始化会话
+// 初始化新会话（调后端拿 sessionId 并写入 store）
 const initSession = async () => {
   try {
     const res = await createSessionApi()
-    sessionId.value = res.data.sessionId
+    aiChatStore.setSession(res.data.sessionId)
   } catch (err) {
     console.error('创建会话失败', err)
   }
@@ -121,8 +128,14 @@ const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || loading.value) return
 
-  // 添加用户消息
-  messageList.value.push({
+  // 确保有会话（防御：极端情况下 store 被清空又点发送）
+  if (!sessionId.value) {
+    await initSession()
+    if (!sessionId.value) return
+  }
+
+  // 添加用户消息（写 store，模板响应式自动更新）
+  aiChatStore.addMessage({
     id: Date.now(),
     role: 'user',
     content: text
@@ -133,14 +146,14 @@ const sendMessage = async () => {
   loading.value = true
   try {
     const res = await sendChatMessageApi(sessionId.value, text)
-    messageList.value.push({
+    aiChatStore.addMessage({
       id: res.data.sessionId || Date.now(),
       role: 'ai',
       content: res.data.answer || res.data.aiAnswer || '暂无回复'
     })
   } catch (e) {
     // 发送失败时保留用户消息并追加错误提示，避免用户等待后消息消失无反馈
-    messageList.value.push({
+    aiChatStore.addMessage({
       id: Date.now(),
       role: 'ai',
       content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。'
@@ -156,8 +169,14 @@ const quickSend = (text) => {
   sendMessage()
 }
 
-onMounted(() => {
-  initSession()
+onMounted(async () => {
+  // 路由切回时：store 已有会话且有消息 → 直接复用，仅恢复滚动到底部
+  if (aiChatStore.initialized && sessionId.value && messageList.value.length > 0) {
+    await scrollToBottom()
+    return
+  }
+  // 首次进入或会话已失效：创建新会话
+  await initSession()
 })
 </script>
 

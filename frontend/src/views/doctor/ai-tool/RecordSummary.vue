@@ -11,7 +11,7 @@
                 v-for="item in recordList"
                 :key="item.id"
                 :label="`${item.recordNo} - ${item.patientName} - ${item.chiefComplaint}`"
-                :value="item.id"
+                :value="item.recordNo"
               />
             </el-select>
             <el-button type="primary" :loading="generating" @click="generateSummary" style="margin-left: 12px">
@@ -88,6 +88,13 @@ const generateSummary = async () => {
     const res = await generateSummaryByRecordApi(selectedRecord.value)
     summaryResult.value = res.data
     ElMessage.success('摘要生成完成')
+  } catch (e) {
+    // 原逻辑只有 finally，接口失败（403/404/500/网络异常）时静默吞异常，
+    // summaryResult 保持 null → 页面停留在 el-empty，看起来像"返回空表"。
+    // 这里显式置空让页面回到 el-empty 状态（错误 toast 由 request 拦截器统一弹，
+    // 这里不再重复弹，避免双弹窗）。
+    console.error('生成病历摘要失败', e)
+    summaryResult.value = null
   } finally {
     generating.value = false
   }
