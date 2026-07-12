@@ -281,6 +281,46 @@ public class PatientServiceImpl implements PatientService {
         return EntityIdDTO.of(p.getId());
     }
 
+    @Override
+    @Transactional
+    public EntityIdDTO internalCreate(String name, String idNo, String phone, String idType) {
+        // 复用 create 的校验逻辑：证件/手机至少一项 + 唯一性
+        // 注册即建档场景：PATIENT 角色身份证必填（auth-service 侧已强制），phone 来自注册表单
+        String resolvedIdType = (idType != null && !idType.isBlank()) ? idType : "ID_CARD";
+
+        // 证件号唯一性校验
+        if (idNo != null && !idNo.isBlank()) {
+            Long count = patientMapper.selectCount(new QueryWrapper<Patient>()
+                    .eq("id_type", resolvedIdType)
+                    .eq("id_no", idNo));
+            if (count != null && count > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "该证件号已存在患者档案: " + resolvedIdType + "/" + idNo);
+            }
+        }
+        // 手机号唯一性校验
+        if (phone != null && !phone.isBlank()) {
+            Long phoneCount = patientMapper.selectCount(new QueryWrapper<Patient>()
+                    .eq("phone", phone));
+            if (phoneCount != null && phoneCount > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "手机号已存在患者档案: " + phone);
+            }
+        }
+
+        Patient p = new Patient();
+        p.setPatientNo(generatePatientNo());
+        p.setName(name);
+        p.setGender("UNKNOWN");
+        p.setIdType(resolvedIdType);
+        p.setIdNo(idNo);
+        p.setPhone(phone);
+        p.setStatus("ACTIVE");
+        patientMapper.insert(p);
+
+        return EntityIdDTO.of(p.getId());
+    }
+
     // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围）=====
     //
     // PATIENT 身份只能访问自己的档案；DOCTOR / 管理员不限制（架构 §4.3 ALL/ASSIGNED）。

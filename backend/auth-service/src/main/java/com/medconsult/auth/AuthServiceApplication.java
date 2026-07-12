@@ -4,16 +4,16 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
  * 认证服务启动入口（架构文档 §1.1 auth-service）。
  *
  * <p>{@link EnableDiscoveryClient} 注册到 Nacos（架构文档 §1.3）。
  * <p>{@link MapperScan} 扫描 auth 包下的 Mapper。
- * <p>{@code scanBasePackageClasses = {CommonWebAutoConfiguration...}} 让 common-web 的
- * GlobalExceptionHandler / TraceIdFilter / ResultBodyAdvice 等 @Component 被扫描
- * （@SpringBootApplication 默认只扫本类所在包 com.medconsult.auth，common-* 模块的
- * @Component 不会自动发现；AutoConfig 走 SPI 会装配，但 @RestControllerAdvice 需要 scan）。
+ * <p>{@link EnableFeignClients} 启用 Feign，注册 PATIENT 角色时调 patient-service 建档案。
+ * <p>{@code scanBasePackages} 让 common-web / common-feign 的 @Component 被扫描
+ * （GlobalExceptionHandler / AuthRelayInterceptor / RequestContextRelayFilter 等）。
  *
  * <p>本服务的核心职责（架构文档 §4 / 《修改建议》§2.2 §2.3）：
  * <ul>
@@ -21,10 +21,12 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  *   <li>RBAC 五表管理（sys_role / sys_permission / sys_role_permission / sys_user_role / sys_service_account）</li>
  *   <li>登录日志落库（login_log）</li>
  *   <li>内部接口 /internal/auth/verify / /internal/auth/service-verify 供其他服务校验 Token</li>
+ *   <li>注册即建档：PATIENT 角色注册时调 patient-service 自动建档案（§4.2 服务链路）</li>
  * </ul>
  */
-@SpringBootApplication(scanBasePackages = {"com.medconsult.auth", "com.medconsult.common.web"})
+@SpringBootApplication(scanBasePackages = {"com.medconsult.auth", "com.medconsult.common.web", "com.medconsult.common.feign"})
 @EnableDiscoveryClient
+@EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
 @MapperScan("com.medconsult.auth.**.mapper")
 public class AuthServiceApplication {
     public static void main(String[] args) {

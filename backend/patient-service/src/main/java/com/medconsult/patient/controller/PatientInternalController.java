@@ -3,11 +3,14 @@ package com.medconsult.patient.controller;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
+import com.medconsult.common.feign.dto.PatientRegisterRequest;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.patient.service.PatientService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -58,5 +61,18 @@ public class PatientInternalController {
     public Result<EntityIdDTO> resolveId(@PathVariable String patientNo) {
         SecurityContext.requireService();
         return Result.ok(patientService.internalResolveId(patientNo));
+    }
+
+    /**
+     * 注册即建档（供 auth-service 注册 PATIENT 角色时调用）。
+     *
+     * <p>auth-service 在 sys_user insert 前，先调本端点为患者建档案，拿到主键 id 后回写
+     * sys_user.patient_id，使新注册用户 JWT 即携带 patientId，挂号链路打通。
+     * 证件/手机冲突时返回 409 CONFLICT，auth-service 据此提示注册失败。
+     */
+    @PostMapping("/register")
+    public Result<EntityIdDTO> createForRegister(@RequestBody PatientRegisterRequest req) {
+        SecurityContext.requireService();
+        return Result.ok(patientService.internalCreate(req.name(), req.idNo(), req.phone(), req.idType()));
     }
 }

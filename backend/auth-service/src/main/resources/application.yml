@@ -31,6 +31,9 @@ medconsult:
   security:
     jwt:
       secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+  # auth-service 自身的服务身份编码（注册即建档调 patient-service 时，本地签发 SERVICE JWT 用）
+  auth:
+    service-code: ${AUTH_SERVICE_CODE:auth-service}
 
 mybatis-plus:
   global-config:

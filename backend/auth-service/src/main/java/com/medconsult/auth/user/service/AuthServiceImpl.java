@@ -8,16 +8,24 @@ import com.medconsult.auth.user.entity.SysUser;
 import com.medconsult.auth.user.mapper.SysUserMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.feign.dto.PatientRegisterRequest;
 import com.medconsult.common.security.JwtCodec;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.web.MaskType;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -41,10 +49,16 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
+
     private final SysUserMapper userMapper;
     private final LoginLogMapper loginLogMapper;
     private final JwtCodec jwtCodec;
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
+    /** 注册即建档：PATIENT 角色注册时调 patient-service 自动建档案 */
+    private final PatientFeignClient patientClient;
+    /** 划定 sys_user 写入事务边界（Feign 建档在事务外，参照 medical-record 模式 A） */
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     /** access token 有效期：2 小时 */
     @Value("${medconsult.security.jwt.access-ttl:7200}")
@@ -59,7 +73,6 @@ public class AuthServiceImpl implements AuthService {
     // ===== 注册 =====
 
     @Override
-    @Transactional
     public AuthDTO.UserInfo register(AuthDTO.RegisterRequest req) {
         // 角色白名单校验：自助注册仅允许 PATIENT / DOCTOR（防越权——管理类角色
         // PHARMACY_ADMIN / HOSPITAL_ADMIN 不可自助注册，必须由管理员后台授予）。
@@ -72,9 +85,18 @@ public class AuthServiceImpl implements AuthService {
                             + "，管理类角色需由管理员授予）");
         }
 
-        // 唯一性校验：account 必填（DTO @NotBlank 保证），phone 选填但若有则需唯一。
-        // 注：需求 §4.1.0 规则 1 原文"账号/手机号至少填一项"，但 login 也按 account 查，
-        //     所以 account 为必填——这条更严格，不冲突。
+        // PATIENT 角色建档必填项校验：手机号 + 身份证号（建档最小字段集）
+        // DOCTOR 角色不建档，保持原逻辑（doctorId 由管理员后续关联）
+        if ("PATIENT".equals(role)) {
+            if (req.getPhone() == null || req.getPhone().isBlank()) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "患者注册需填写手机号");
+            }
+            if (req.getIdCard() == null || req.getIdCard().isBlank()) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "患者注册需填写身份证号");
+            }
+        }
+
+        // 唯一性校验（事务外）：account 必填，phone 选填但若有则需唯一。
         if (userMapper.selectCount(
                 new QueryWrapper<SysUser>().eq("account", req.getAccount())) > 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "账号已存在: " + req.getAccount());
@@ -84,26 +106,71 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.CONFLICT, "手机号已注册");
         }
 
-        SysUser u = new SysUser();
-        u.setUserNo(generateUserNo());
-        u.setAccount(req.getAccount());
-        u.setPhone(req.getPhone());
-        u.setPasswordHash(passwordEncoder.encode(req.getPassword()));
-        u.setName(req.getName());
-        u.setPatientId(parseLong(req.getPatientId()));
-        u.setDoctorId(parseLong(req.getDoctorId()));
-        u.setStatus("ACTIVE");
-        userMapper.insert(u);
+        // 注册即建档（PATIENT 角色）：事务外调 patient-service 建档案，拿到主键 patientId。
+        // 建档失败（证件/手机冲突）直接抛出，不 insert sys_user（参照 medical-record 模式 A：
+        // Feign 远程调用在事务之外，避免占用 DB 事务/连接）。
+        Long patientId = null;
+        if ("PATIENT".equals(role)) {
+            patientId = createPatientArchive(req);
+        }
 
-        // 冒烟期：将自助注册角色暂存 Redis（sys_user_role 表未落地，架构文档 RBAC 五表阶段
-        // 将改为查 sys_role）。login 时读回，使注册 DOCTOR 的用户登录后拿到 DOCTOR token，
-        // @Permission 切面才能按医生数据范围放行。Redis 读失败兜底为 PATIENT。
-        // 设 365 天 TTL：角色为长期数据，但须有上限，避免禁用/删除用户后 key 永驻 Redis。
-        redis.opsForValue().set(roleKey(u.getId()), role, Duration.ofDays(365));
+        // DB 写入用 TransactionTemplate 包短事务（Feign 建档已在事务外完成）。
+        // 用 final[] 捕获事务内构造的 SysUser（lambda 需事实上 final）。
+        final Long finalPatientId = patientId;
+        final String finalRole = role;
+        SysUser u = transactionTemplate.execute(status -> {
+            SysUser user = new SysUser();
+            user.setUserNo(generateUserNo());
+            user.setAccount(req.getAccount());
+            user.setPhone(req.getPhone());
+            user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
+            user.setName(req.getName());
+            user.setPatientId(finalPatientId);
+            user.setDoctorId(parseLong(req.getDoctorId()));
+            user.setStatus("ACTIVE");
+            userMapper.insert(user);
+
+            // 冒烟期：角色暂存 Redis（RBAC 五表阶段改为查 sys_user_role）。
+            // 设 365 天 TTL：角色为长期数据，但须有上限，避免禁用/删除用户后 key 永驻。
+            redis.opsForValue().set(roleKey(user.getId()), finalRole, Duration.ofDays(365));
+            return user;
+        });
+
+        // 极端情况：sys_user insert 失败时 patient 档案已成孤儿（建档在事务外无法回滚）。
+        // 可接受——记 WARN 留后续清理；不阻断（u 为 null 时事务模板已抛异常，不会走到这里）。
+        if (patientId != null) {
+            log.info("[register] PATIENT 建档成功，sys_user.patient_id={}", patientId);
+        }
 
         return new AuthDTO.UserInfo(
                 u.getUserNo(), u.getName(), role,
-                req.getPatientId(), req.getDoctorId(), u.getStatus());
+                patientId != null ? String.valueOf(patientId) : req.getPatientId(),
+                req.getDoctorId(), u.getStatus());
+    }
+
+    /**
+     * 调 patient-service 为 PATIENT 角色用户自动建档案。
+     * <p>建档成功返回 BIGINT 主键；证件/手机冲突由下游返回 CONFLICT，经 FeignErrorDecoder 转为
+     * BusinessException 抛出，register 调用方据此前终止（不 insert sys_user）。
+     */
+    private Long createPatientArchive(AuthDTO.RegisterRequest req) {
+        PatientRegisterRequest archiveReq = new PatientRegisterRequest(
+                req.getName(), req.getIdCard(), req.getPhone(), "ID_CARD");
+        Result<EntityIdDTO> result;
+        try {
+            result = patientClient.createForRegister(archiveReq);
+        } catch (BusinessException ex) {
+            // 下游冲突（409）等业务异常直接透传，附更友好提示
+            throw new BusinessException(ex.getErrorCode(),
+                    "建档失败（" + ex.getMessage() + "），请检查手机号/身份证是否已注册");
+        } catch (RuntimeException ex) {
+            log.warn("[register] 调 patient-service 建档异常", ex);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "建档服务暂时不可用，请稍后重试");
+        }
+        if (result == null || result.data() == null || result.data().id() == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "建档失败：未返回档案 ID");
+        }
+        return result.data().id();
     }
 
     // ===== 登录 =====

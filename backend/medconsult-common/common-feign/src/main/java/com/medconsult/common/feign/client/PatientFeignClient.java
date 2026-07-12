@@ -3,9 +3,12 @@ package com.medconsult.common.feign.client;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
+import com.medconsult.common.feign.dto.PatientRegisterRequest;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 
@@ -35,4 +38,16 @@ public interface PatientFeignClient {
      */
     @GetMapping("/internal/patients/no/{patientNo}/id")
     Result<EntityIdDTO> resolveId(@PathVariable("patientNo") String patientNo);
+
+    /**
+     * 内部：注册即建档（供 auth-service 注册 PATIENT 角色时调用）。
+     *
+     * <p>建档成功返回 BIGINT 主键，auth-service 据此回写 sys_user.patient_id；
+     * 证件/手机冲突时下游返回 409 CONFLICT，由 FeignErrorDecoder 转为 BusinessException。
+     *
+     * @param req 建档最小字段集（name/idNo/phone/idType）
+     * @return 新建档案的主键 id
+     */
+    @PostMapping("/internal/patients/register")
+    Result<EntityIdDTO> createForRegister(@RequestBody PatientRegisterRequest req);
 }

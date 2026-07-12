@@ -1,15 +1,22 @@
 package com.medconsult.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.feign.dto.PatientRegisterRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -51,18 +58,28 @@ class AuthFlowTest {
     @Autowired
     ObjectMapper om;
 
+    /** mock 掉 patient-service：测试环境不连真实 patient-service，注册即建档走 mock */
+    @MockBean
+    PatientFeignClient patientClient;
+
     private static final String JWT_SECRET = "test-secret";
 
     @Test
     void fullAuthFlow_registerLoginMeRefreshLogout() throws Exception {
-        // 1. 注册
+        // mock 建档：返回固定 patientId（注册即建档链路）
+        when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
+                .thenReturn(Result.ok(EntityIdDTO.of(9001L)));
+
+        // 1. 注册（PATIENT 需带 idCard + phone，建档由 mock 返回 patientId=9001）
+        // 手机号用 13900000999 避开 DataSeeder 种子（patient 用户用 13800000001）
         String regBody = """
-                {"account":"alice","password":"P@ssw0rd","phone":"13800000001","name":"爱丽丝","role":"PATIENT"}""";
+                {"account":"alice","password":"P@ssw0rd","phone":"13900000999","name":"爱丽丝","role":"PATIENT","idCard":"110101199003071234"}""";
         mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(regBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.name").value("爱丽丝"))
-                .andExpect(jsonPath("$.data.userId").exists());
+                .andExpect(jsonPath("$.data.userId").exists())
+                .andExpect(jsonPath("$.data.patientId").value("9001"));
 
         // 2. 重复账号注册 → 冲突
         mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(regBody))
@@ -98,7 +115,7 @@ class AuthFlowTest {
         mvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.name").value("爱丽丝"))
-                .andExpect(jsonPath("$.data.phoneMasked").value("138****0001"))
+                .andExpect(jsonPath("$.data.phoneMasked").value("139****0999"))
                 .andExpect(jsonPath("$.data.userId").exists());
 
         // 7. 刷新 token

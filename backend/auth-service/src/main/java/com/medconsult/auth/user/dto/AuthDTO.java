@@ -60,6 +60,16 @@ public class AuthDTO {
         /** PATIENT / DOCTOR / PHARMACY_ADMIN / HOSPITAL_ADMIN */
         @Schema(description = "角色：PATIENT / DOCTOR / PHARMACY_ADMIN / HOSPITAL_ADMIN")
         private String role;
+
+        /**
+         * 身份证号：PATIENT 角色注册时必填（service 层强制校验），用于自动建档。
+         * 18 位标准身份证或 15 位旧版身份证。DOCTOR 角色不校验。
+         */
+        @Schema(description = "身份证号（PATIENT 角色必填，用于自动建档）")
+        @Pattern(regexp = "^$|^[1-9]\\d{16}[0-9Xx]$|^[1-9]\\d{14}$",
+                message = "身份证号格式非法（须 15 或 18 位）")
+        private String idCard;
+
         @Schema(description = "患者编号（注册 DOCTOR 时可关联已有患者档案）")
         private String patientId;
         @Schema(description = "医生编号（注册 PATIENT 时可关联已有医生档案）")

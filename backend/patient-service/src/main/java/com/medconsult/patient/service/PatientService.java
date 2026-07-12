@@ -52,4 +52,17 @@ public interface PatientService {
      * <p>供 medical-record-service 落库存真实主键，替代正哈希占位。未找到抛 NOT_FOUND。
      */
     EntityIdDTO internalResolveId(String patientNo);
+
+    /**
+     * 内部接口：注册时自动建档（供 auth-service 注册 PATIENT 角色时调用）。
+     * <p>复用 create 的校验逻辑（证件/手机唯一性），但返回 BIGINT 主键而非 patient_no，
+     * 供 auth-service 回写 sys_user.patient_id。建档失败（证件/手机冲突）抛 CONFLICT。
+     *
+     * @param name    患者姓名（必填）
+     * @param idNo    身份证号（PATIENT 注册必填）
+     * @param phone   手机号
+     * @param idType  证件类型（可空，默认 ID_CARD）
+     * @return 新建档案的主键 id
+     */
+    EntityIdDTO internalCreate(String name, String idNo, String phone, String idType);
 }
