@@ -90,18 +90,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Cpu, InfoFilled } from '@element-plus/icons-vue'
-import { triageApi } from '@/api/ai'
+import { useTriageStore } from '@/store/modules/triage'
 
 const router = useRouter()
+const triageStore = useTriageStore()
 
-const symptoms = ref('')
-const duration = ref('1-3天')
-const submitting = ref(false)
-const result = ref(null)
+// 症状/持续时长/请求态/结果全部上提到 Pinia store：组件卸载（路由切走）后状态不丢，
+// 切回来时直接读 store 即可恢复"正在加载"或"已有分诊结果"。请求的 Promise
+// 也由 store action 持有，组件销毁不影响请求继续。
+// storeToRefs 返回可写 ref，v-model 双向绑定直接落到 store 状态上。
+const { symptoms, duration, submitting, result } = storeToRefs(triageStore)
 
 // 后端 TriageResponse 无 riskLevel 字段，根据 emergencyRecommended + 最高置信度推导
 const riskLevel = computed(() => {
@@ -118,29 +121,17 @@ const riskLabel = computed(() => {
   return map[riskLevel.value] || '低风险'
 })
 
+// 触发分诊：仅做输入校验 + 调 store action，真正的请求/结果写入全在 store.triage 内完成。
 const handleTriage = async () => {
   if (!symptoms.value.trim()) {
     ElMessage.warning('请描述您的症状')
     return
   }
-
-  submitting.value = true
-  try {
-    // 后端 TriageRequest.symptoms 是 List<String>（@NotEmpty），前端按逗号/顿号拆成数组
-    const symptomList = symptoms.value.split(/[,，、\n]/).map(s => s.trim()).filter(Boolean)
-    const res = await triageApi({
-      symptoms: symptomList,
-      duration: duration.value
-    })
-    result.value = res.data
-  } finally {
-    submitting.value = false
-  }
+  await triageStore.triage()
 }
 
 const reset = () => {
-  result.value = null
-  symptoms.value = ''
+  triageStore.reset()
 }
 
 const goToDept = (deptId) => {

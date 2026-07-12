@@ -84,24 +84,23 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Cpu, Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
-import { createSessionApi, sendChatMessageApi } from '@/api/ai'
 
 const userStore = useUserStore()
 const aiChatStore = useAiChatStore()
 
-// 会话/消息状态上提到 Pinia store：组件卸载（路由切走）后状态不丢，
-// 切回来时 onMounted 直接复用已有会话，避免消息清空。
-// storeToRefs 保证模板响应式；模板里仍用 messageList / sessionId 名字。
-const { sessionId, messages: messageList } = storeToRefs(aiChatStore)
+// 会话/消息/loading 全部上提到 Pinia store：组件卸载（路由切走）后状态不丢，
+// 切回来时直接读 store 即可恢复"正在加载"或"已有消息"。发送请求的 Promise
+// 也由 store action 持有，组件销毁不影响请求继续。
+// storeToRefs 保证模板响应式；模板里仍用 messageList / loading 名字。
+const { messages: messageList, loading } = storeToRefs(aiChatStore)
 
 const messagesRef = ref(null)
 const inputText = ref('')
-const loading = ref(false)
 
 const quickQuestions = ['咳嗽有痰怎么办', '胸闷是什么原因', '头痛该挂什么科']
 
@@ -113,55 +112,25 @@ const scrollToBottom = async () => {
   }
 }
 
-// 初始化新会话（调后端拿 sessionId 并写入 store）
-const initSession = async () => {
-  try {
-    const res = await createSessionApi()
-    aiChatStore.setSession(res.data.sessionId)
-  } catch (err) {
-    console.error('创建会话失败', err)
+// 监听 store 状态变化自动滚动：覆盖三条路径——
+//   1) 新消息入 store（用户发/AI 回）
+//   2) loading 显隐（加载气泡出现/消失）
+//   3) 路由切回时 onMounted 主动触发一次
+// 这样即便 AI 回复是在组件切走期间到达、切回后才渲染，也能滚到底部。
+watch(
+  () => [messageList.value.length, loading.value],
+  () => {
+    scrollToBottom()
   }
-}
+)
 
-// 发送消息
+// 发送消息：仅做输入读取 + 调 store action，真正的"入消息→等回复→写回复"
+// 全在 store.sendMessage 内完成，组件不持有请求 Promise。
 const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || loading.value) return
-
-  // 确保有会话（防御：极端情况下 store 被清空又点发送）
-  if (!sessionId.value) {
-    await initSession()
-    if (!sessionId.value) return
-  }
-
-  // 添加用户消息（写 store，模板响应式自动更新）
-  aiChatStore.addMessage({
-    id: Date.now(),
-    role: 'user',
-    content: text
-  })
   inputText.value = ''
-  scrollToBottom()
-
-  loading.value = true
-  try {
-    const res = await sendChatMessageApi(sessionId.value, text)
-    aiChatStore.addMessage({
-      id: res.data.sessionId || Date.now(),
-      role: 'ai',
-      content: res.data.answer || res.data.aiAnswer || '暂无回复'
-    })
-  } catch (e) {
-    // 发送失败时保留用户消息并追加错误提示，避免用户等待后消息消失无反馈
-    aiChatStore.addMessage({
-      id: Date.now(),
-      role: 'ai',
-      content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。'
-    })
-  } finally {
-    loading.value = false
-    scrollToBottom()
-  }
+  await aiChatStore.sendMessage(text)
 }
 
 const quickSend = (text) => {
@@ -170,13 +139,14 @@ const quickSend = (text) => {
 }
 
 onMounted(async () => {
-  // 路由切回时：store 已有会话且有消息 → 直接复用，仅恢复滚动到底部
-  if (aiChatStore.initialized && sessionId.value && messageList.value.length > 0) {
+  // 路由切回时：store 已初始化且 sessionId 还在 → 直接复用现有会话/loading，
+  // 不重置 loading（若 store.loading=true 说明有请求在飞，继续显示加载）。
+  if (aiChatStore.initialized && aiChatStore.sessionId) {
     await scrollToBottom()
     return
   }
   // 首次进入或会话已失效：创建新会话
-  await initSession()
+  await aiChatStore.initSession()
 })
 </script>
 

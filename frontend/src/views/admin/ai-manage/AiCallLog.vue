@@ -52,7 +52,11 @@ const getLogList = async () => {
   loading.value = true
   try {
     const res = await getAiCallLogApi()
-    logList.value = res.data
+    // 后端 GET /ai/call-log 返回 PageResult（{records,total,...}），不是数组。
+    // 直接赋 res.data 会导致 logList.value.filter 报 "not a function"（render 崩溃）。
+    // request 拦截器已补 records 别名（items→records），这里统一取 records 数组。
+    const data = res.data
+    logList.value = Array.isArray(data) ? data : (data?.records ?? data?.items ?? [])
   } finally {
     loading.value = false
   }

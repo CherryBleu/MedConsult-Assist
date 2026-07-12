@@ -93,7 +93,10 @@ const getUserList = async () => {
   loading.value = true
   try {
     const res = await getUserListApi()
-    userList.value = res.data
+    // 后端 GET /auth/users 返回 PageResult {page,pageSize,total,items}，不是数组。
+    // 直接赋 res.data 会让 el-table :data 拿到对象而非数组。
+    // request 拦截器统一补了 records 别名（items↔records），这里两者都兼容。
+    userList.value = res.data?.items ?? res.data?.records ?? []
   } finally {
     loading.value = false
   }

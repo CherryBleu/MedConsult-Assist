@@ -8,16 +8,16 @@ import {
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 // ===== 用户管理 =====
-// 后端无独立 system/user 管理接口；用户创建走 /auth/register，列表/删除暂占位
+// 用户列表走后端 GET /auth/users（仅 HOSPITAL_ADMIN 可访问），用户创建走 /auth/register，
+// 更新/删除暂占位。
 
-// 用户列表（后端暂无用户管理列表接口，占位）
-// 返回数组形式（与 el-table :data 兼容），非 PageResult 对象
+// 用户列表（对齐后端 GET /auth/users，仅 HOSPITAL_ADMIN 可访问）
+// 后端返回 PageResult {page,pageSize,total,items}；UserManage.vue 侧从 items 取数组
 export const getUserListApi = (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockUserList())
   }
-  // 后端暂无用户列表接口；返回空数组占位，避免阻塞页面
-  return Promise.resolve({ code: 0, message: 'success', data: [] })
+  return request({ url: '/auth/users', method: 'get', params })
 }
 
 // 新增用户（对齐后端 POST /auth/register）
