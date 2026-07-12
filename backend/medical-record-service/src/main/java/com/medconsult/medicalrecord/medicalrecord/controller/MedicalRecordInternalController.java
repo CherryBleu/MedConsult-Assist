@@ -1,8 +1,10 @@
 package com.medconsult.medicalrecord.medicalrecord.controller;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
+import com.medconsult.medicalrecord.medicalrecord.entity.MedicalRecord;
 import com.medconsult.medicalrecord.medicalrecord.service.MedicalRecordService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -32,5 +34,19 @@ public class MedicalRecordInternalController {
     public Result<MedicalRecordDTO.FullRecordResponse> getByIdFull(@PathVariable Long id) {
         SecurityContext.requireService();
         return Result.ok(medicalRecordService.getByIdFull(id));
+    }
+
+    /**
+     * 按 record_no 反查 BIGINT 主键（与 patient-service /no/{patientNo}/id 模式一致）。
+     *
+     * <p>存在原因：record_no 是 {@code "MR" + base36} 格式（{@link MedicalRecord#generateRecordNo()}），
+     * 含字母 A-Z，无法用十进制正则解析回主键。ai-service 的 SummaryService 据此端点拿真实 id
+     * 再调 /{id}/full，避免对 base36 做 hack 解析。
+     */
+    @GetMapping("/no/{recordNo}/id")
+    public Result<EntityIdDTO> resolveId(@PathVariable("recordNo") String recordNo) {
+        SecurityContext.requireService();
+        MedicalRecord r = medicalRecordService.requireByNo(recordNo);
+        return Result.ok(EntityIdDTO.of(r.getId()));
     }
 }

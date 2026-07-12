@@ -52,7 +52,7 @@ public class SummaryService {
     }
 
     public MedicalRecordSummaryResponse summarizeRecord(MedicalRecordSummaryRequest request) {
-        MedicalRecordFullDTO record = fetchRecord(BusinessIds.numericId(request.recordId()));
+        MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));
         SummarySaveResult saved = summarizeAndSave(request, record, null);
         return new MedicalRecordSummaryResponse(
                 saved.entity().getSummaryNo(),
@@ -67,7 +67,7 @@ public class SummaryService {
      * 内部先把 recordNo 转主键，再走通用摘要逻辑。
      */
     public MedicalRecordSummaryResponse summarizeByRecordNo(String recordNo) {
-        Long recordId = BusinessIds.numericId(recordNo);
+        Long recordId = resolveRecordId(recordNo);
         MedicalRecordFullDTO record = fetchRecord(recordId);
         MedicalRecordSummaryRequest wrapper = new MedicalRecordSummaryRequest(
                 recordNo, null, Boolean.FALSE);
@@ -81,7 +81,7 @@ public class SummaryService {
     }
 
     public MedicalRecordSummaryResponse summarizeRecordStream(MedicalRecordSummaryRequest request, Consumer<String> tokenConsumer) {
-        MedicalRecordFullDTO record = fetchRecord(BusinessIds.numericId(request.recordId()));
+        MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));
         SummarySaveResult saved = summarizeAndSave(request, record, tokenConsumer);
         return new MedicalRecordSummaryResponse(
                 saved.entity().getSummaryNo(),
@@ -121,6 +121,42 @@ public class SummaryService {
             throw ex;
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "medical record not found");
+        }
+    }
+
+    /**
+     * 把病历业务编号（recordNo，形如 MR1K2J3M4N）解析为 BIGINT 主键。
+     *
+     * <p>record_no 是 {@code "MR" + base36}（{@link com.medconsult.common.feign.client.MedicalRecordFeignClient#resolveId}
+     * 服务端 {@code generateRecordNo()} 生成），含字母 A-Z，不能用十进制正则反解。
+     * 改为调 medical-record-service 的 /internal/medical-records/no/{recordNo}/id 端点拿真实主键，
+     * 下游查不到时抛 NOT_FOUND（经 FeignErrorDecoder 回传）。
+     *
+     * <p>同时兼容入参已是纯数字主键的场景（内部直调）：纯数字直接 parseLong，省一次 RPC。
+     */
+    private Long resolveRecordId(String recordNoOrId) {
+        if (recordNoOrId == null || recordNoOrId.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "病历编号不能为空");
+        }
+        // 纯数字视为主键直传（兼容内部调用方传 id 的场景）
+        Long parsed = BusinessIds.numericId(recordNoOrId);
+        // 注意：numericId 用 (\d+)$ 末尾匹配，MR1K2J3M4N 末尾若含字母会返回 null；
+        // 即便末尾恰好是数字（如 MR123），parse 出来也不等于真实雪花主键，故只接受"整串纯数字"。
+        if (parsed != null && recordNoOrId.equals(String.valueOf(parsed))) {
+            return parsed;
+        }
+        // recordNo（base36）→ 调下游反查主键
+        try {
+            Result<com.medconsult.common.feign.dto.EntityIdDTO> res =
+                    medicalRecordClient.resolveId(recordNoOrId);
+            if (res == null || res.data() == null || res.data().id() == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "病历不存在: " + recordNoOrId);
+            }
+            return res.data().id();
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "病历不存在: " + recordNoOrId);
         }
     }
 

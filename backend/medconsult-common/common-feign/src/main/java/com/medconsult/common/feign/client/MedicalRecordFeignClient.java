@@ -1,6 +1,7 @@
 package com.medconsult.common.feign.client;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.MedicalRecordFullDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,4 +27,16 @@ public interface MedicalRecordFeignClient {
      */
     @GetMapping("/internal/medical-records/{recordId}/full")
     Result<MedicalRecordFullDTO> getFullRecord(@PathVariable("recordId") Long recordId);
+
+    /**
+     * 内部：按 record_no 反查 BIGINT 主键（与 {@link PatientFeignClient#resolveId} 模式一致）。
+     *
+     * <p>存在原因：record_no 是 {@code "MR" + base36}（含字母），不能用十进制正则反解。
+     * 调用方先据本端点把 record_no 换成主键，再调 {@link #getFullRecord}。
+     *
+     * @param recordNo 病历业务编号（如 MR1K2J3M4N）
+     * @return 主键 id；病历不存在时下游抛 NOT_FOUND，经 FeignErrorDecoder 回传
+     */
+    @GetMapping("/internal/medical-records/no/{recordNo}/id")
+    Result<EntityIdDTO> resolveId(@PathVariable("recordNo") String recordNo);
 }
