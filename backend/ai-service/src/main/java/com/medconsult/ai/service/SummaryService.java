@@ -69,8 +69,12 @@ public class SummaryService {
     public MedicalRecordSummaryResponse summarizeByRecordNo(String recordNo) {
         Long recordId = resolveRecordId(recordNo);
         MedicalRecordFullDTO record = fetchRecord(recordId);
+        // wrapper.recordId 必须传解析后的真实主键（纯数字字符串），不能用 recordNo：
+        // summarizeAndSave 第 181 行用 BusinessIds.numericId(request.recordId()) 提取数字，
+        // recordNo 是 base36（含字母 MR...），numericId 返回 null → setRecordId(null)
+        // → INSERT ai_medical_summary 时 record_id NOT NULL 列报 500。
         MedicalRecordSummaryRequest wrapper = new MedicalRecordSummaryRequest(
-                recordNo, null, Boolean.FALSE);
+                String.valueOf(recordId), null, Boolean.FALSE);
         SummarySaveResult saved = summarizeAndSave(wrapper, record, null);
         return new MedicalRecordSummaryResponse(
                 saved.entity().getSummaryNo(),
