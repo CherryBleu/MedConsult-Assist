@@ -70,7 +70,7 @@
       <div v-loading="doctorLoading" class="doctor-list">
         <div v-for="doctor in recommendDoctors" :key="doctor.id" class="doctor-card">
           <el-avatar :size="56" class="doctor-avatar">
-            {{ doctor.name.charAt(0) }}
+            {{ (doctor.name || '?').charAt(0) }}
           </el-avatar>
           <div class="doctor-info">
             <div class="doctor-name">

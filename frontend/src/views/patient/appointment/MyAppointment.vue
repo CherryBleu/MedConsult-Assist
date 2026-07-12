@@ -33,7 +33,7 @@
           </div>
           <div class="item-body">
             <div class="doctor-info">
-              <el-avatar :size="44">{{ item.doctorName.charAt(0) }}</el-avatar>
+              <el-avatar :size="44">{{ (item.doctorName || '?').charAt(0) }}</el-avatar>
               <div>
                 <div class="doctor-name">
                   {{ item.doctorName }}
