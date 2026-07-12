@@ -58,6 +58,8 @@ class AuthRelayInterceptorTest {
         assertEquals("Bearer user-jwt-token", header(tpl, "Authorization"));
         assertEquals("1001", header(tpl, "X-User-Id"));
         assertEquals("DOCTOR", header(tpl, "X-User-Roles"));
+        // scope 必须透传，否则下游 @Permission 校验会 403（与网关 JwtAuthFilter 同源 bug）
+        assertEquals("prescription:write", header(tpl, "X-User-Scope"));
         assertEquals("medical-record-service", header(tpl, "X-Caller-Service"));
         assertEquals("trace-abc", header(tpl, "X-Trace-Id"));
     }
@@ -75,6 +77,7 @@ class AuthRelayInterceptorTest {
         assertEquals("Bearer svc-jwt-token", header(tpl, "Authorization"));
         assertNull(header(tpl, "X-User-Id"), "无用户时不写 X-User-Id");
         assertNull(header(tpl, "X-User-Roles"), "无用户时不写 X-User-Roles");
+        assertNull(header(tpl, "X-User-Scope"), "无用户时不写 X-User-Scope");
         assertEquals("notification-service", header(tpl, "X-Caller-Service"));
         assertEquals("trace-xyz", header(tpl, "X-Trace-Id"));
     }

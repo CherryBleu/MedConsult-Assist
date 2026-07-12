@@ -48,6 +48,7 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
     private static final String HDR_USER_PATIENT_ID = "X-User-Patient-Id";
     private static final String HDR_USER_DOCTOR_ID = "X-User-Doctor-Id";
     private static final String HDR_USER_NO = "X-User-No";
+    private static final String HDR_USER_SCOPE = "X-User-Scope";
     /**
      * 服务身份头。AuthRelayInterceptor 发的是 X-Caller-Service（架构文档 §2.4），
      * 早期文档用 X-Service-Code——此处同时兼容两个头名，取先非空者。
@@ -144,6 +145,7 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
             Long doctorId = parseLongHeader(request.getHeader(HDR_USER_DOCTOR_ID));
             // 透传用户业务编号（userNo），供通知等按业务编号关联的服务匹配 receiver_id 等
             String userNo = request.getHeader(HDR_USER_NO);
+            List<String> scope = parseCsvHeader(request.getHeader(HDR_USER_SCOPE));
             return new JwtPayload(
                     JwtPayload.SubjectType.USER,
                     userId,
@@ -154,7 +156,7 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
                     patientId,
                     doctorId,
                     userNo,
-                    Collections.emptyList(),
+                    scope,
                     null,
                     null
             );

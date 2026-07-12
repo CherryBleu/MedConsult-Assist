@@ -27,6 +27,7 @@ public class AuthRelayInterceptor implements RequestInterceptor {
     public static final String HEADER_BEARER_PREFIX = "Bearer ";
     public static final String HEADER_USER_ID = "X-User-Id";
     public static final String HEADER_USER_ROLES = "X-User-Roles";
+    public static final String HEADER_USER_SCOPE = "X-User-Scope";
     public static final String HEADER_CALLER_SERVICE = "X-Caller-Service";
     public static final String HEADER_TRACE_ID = "X-Trace-Id";
 
@@ -63,6 +64,12 @@ public class AuthRelayInterceptor implements RequestInterceptor {
             }
             if (user.roles() != null && !user.roles().isEmpty()) {
                 tpl.header(HEADER_USER_ROLES, String.join(",", user.roles()));
+            }
+            // 透传权限点列表（scope）：与网关 JwtAuthFilter 一致，避免下游业务服务
+            // 重建 JwtPayload 时 scope 为空导致 @Permission 校验 403（服务间调用同样命中
+            // JwtAuthServletFilter 的"网关头优先"策略）。
+            if (user.scope() != null && !user.scope().isEmpty()) {
+                tpl.header(HEADER_USER_SCOPE, String.join(",", user.scope()));
             }
         } else {
             // 服务/自动链路：注入服务自身 JWT

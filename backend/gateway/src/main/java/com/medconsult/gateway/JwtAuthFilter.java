@@ -71,6 +71,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             "/swagger-ui",
             "/swagger-resources");
 
+    /** 注入下游业务服务的用户权限点（scope）头名 */
+    private static final String HDR_USER_SCOPE = "X-User-Scope";
+
     @Autowired
     private JwtCodec jwtCodec;
 
@@ -126,6 +129,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 h.remove("X-User-No");
                 h.remove("X-Caller-Service");
                 h.remove("X-Service-Code");
+                h.remove("X-User-Scope");
             });
             reqBuilder.header("X-User-Id", String.valueOf(payload.userId()));
             if (payload.name() != null && !payload.name().isBlank()) {
@@ -148,6 +152,10 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             // 透传用户业务编号（userNo），供通知等按业务编号关联的服务匹配 receiver_id。
             if (payload.userNo() != null) {
                 reqBuilder.header("X-User-No", payload.userNo());
+            }
+            // 透传权限点列表（scope），供业务侧 @Permission 校验。scope 为空表示无权限点。
+            if (payload.scope() != null && !payload.scope().isEmpty()) {
+                reqBuilder.header(HDR_USER_SCOPE, String.join(",", payload.scope()));
             }
         }
         // 移除原 Authorization（业务服务按 X-User-* 头信任）
