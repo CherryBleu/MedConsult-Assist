@@ -2,9 +2,11 @@ package com.medconsult.auth.user.controller;
 
 import com.medconsult.auth.user.dto.AuthDTO;
 import com.medconsult.auth.user.service.AuthService;
+import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.security.SecurityContext;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -65,6 +67,27 @@ public class AuthController {
     public Result<AuthDTO.MeResponse> me() {
         Long userId = SecurityContext.requireUser().userId();
         return Result.ok(authService.me(userId));
+    }
+
+    /**
+     * 管理员查询用户列表（用户管理页）。
+     *
+     * <p>权限：仅 HOSPITAL_ADMIN 可访问（service 层手动校验角色，非管理员抛 FORBIDDEN）。
+     * <p>返回分页用户列表（{@link PageResult}），不含密码摘要字段。
+     *
+     * @param page     页码（从 1 开始，默认 1）
+     * @param pageSize 每页条数（默认 20，上限 100）
+     * @param keyword  可选：按账号/姓名/手机号模糊搜索
+     * @param role     可选：角色过滤（PATIENT / DOCTOR / PHARMACY_ADMIN / HOSPITAL_ADMIN）
+     */
+    @GetMapping("/users")
+    @Operation(summary = "管理员查询用户列表（用户管理页）")
+    public Result<PageResult<AuthDTO.UserListItem>> users(
+            @Parameter(description = "页码，从 1 开始") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页条数，上限 100") @RequestParam(defaultValue = "20") int pageSize,
+            @Parameter(description = "账号/姓名/手机号模糊搜索（可选）") @RequestParam(required = false) String keyword,
+            @Parameter(description = "角色过滤（可选）") @RequestParam(required = false) String role) {
+        return Result.ok(authService.listUsers(page, pageSize, keyword, role));
     }
 
     private static String clientIp(HttpServletRequest req) {

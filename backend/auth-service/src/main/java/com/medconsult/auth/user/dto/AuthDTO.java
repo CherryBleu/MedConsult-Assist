@@ -147,4 +147,27 @@ public class AuthDTO {
             @Schema(description = "医生编号") String doctorId,
             @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status
     ) {}
+
+    /**
+     * 用户列表项（管理员后台「用户管理」页 GET /api/v1/auth/users）。
+     *
+     * <p><b>安全约束</b>：绝不包含 passwordHash 字段——SysUser 虽有密码摘要，
+     * 列表 DTO 显式不暴露，避免任何渠道泄露密码摘要。
+     *
+     * <p>角色字段 role 来自 Redis（medconsult:auth:role:{userId}，冒烟期 sys_user_role 未落地的临时方案），
+     * 读不到时兜底 PATIENT（与登录流程一致）。
+     */
+    @Schema(description = "用户列表项（不含密码摘要）")
+    public record UserListItem(
+            @Schema(description = "用户主键 ID") Long id,
+            @Schema(description = "用户编号") String userNo,
+            @Schema(description = "登录账号") String account,
+            @Schema(description = "手机号") String phone,
+            @Schema(description = "姓名") String name,
+            @Schema(description = "角色（来自 Redis，兜底 PATIENT）") String role,
+            @Schema(description = "关联患者档案 ID") Long patientId,
+            @Schema(description = "关联医生 ID") Long doctorId,
+            @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status,
+            @Schema(description = "创建时间") java.time.LocalDateTime createdAt
+    ) {}
 }

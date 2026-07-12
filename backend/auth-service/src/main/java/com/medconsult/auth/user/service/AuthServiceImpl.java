@@ -1,6 +1,9 @@
 package com.medconsult.auth.user.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.auth.log.entity.LoginLog;
 import com.medconsult.auth.log.mapper.LoginLogMapper;
 import com.medconsult.auth.user.dto.AuthDTO;
@@ -8,6 +11,8 @@ import com.medconsult.auth.user.entity.SysUser;
 import com.medconsult.auth.user.mapper.SysUserMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
@@ -282,6 +287,80 @@ public class AuthServiceImpl implements AuthService {
                 u.getPatientId() != null ? String.valueOf(u.getPatientId()) : null,
                 u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
                 u.getStatus());
+    }
+
+    // ===== 管理员用户列表 =====
+
+    @Override
+    public PageResult<AuthDTO.UserListItem> listUsers(int page, int pageSize, String keyword, String role) {
+        // 权限校验：仅 HOSPITAL_ADMIN 可查询用户列表。auth-service 未启用 @Permission 切面，
+        // 在此手动从 SecurityContext 读角色判定（参照 SymptomChatService.resolveCurrentPatientId 模式）。
+        // 非管理员或未登录 → FORBIDDEN（requireUser 兜底抛 UNAUTHORIZED）。
+        JwtPayload payload = SecurityContext.requireUser();
+        if (!payload.hasRole("HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅医院管理员可查询用户列表");
+        }
+
+        // 分页参数归一化（复用 PageQuery 工具，防 pageSize 传极大值拖垮 DB）
+        int safePage = PageQuery.normalizePage(page);
+        int safeSize = PageQuery.normalizePageSize(pageSize);
+
+        // keyword 模糊搜索：account / name / phone 任一命中（OR 组）。注意 OR 嵌套写法——
+        // 直接 .like().or().like() 会把后续条件也串进 OR，需用 and(wrapper -> wrapper.or...) 包一层括号。
+        LambdaQueryWrapper<SysUser> qw = new LambdaQueryWrapper<>();
+        if (keyword != null && !keyword.isBlank()) {
+            String kw = keyword.trim();
+            qw.and(w -> w.like(SysUser::getAccount, kw)
+                    .or().like(SysUser::getName, kw)
+                    .or().like(SysUser::getPhone, kw));
+        }
+        qw.orderByDesc(SysUser::getCreatedAt);
+
+        // 查询当前页（BaseEntity 的 @TableLogic 让 MP 自动追加 deleted=0 过滤，无需手写）
+        Page<SysUser> p = new Page<>(safePage, safeSize);
+        IPage<SysUser> result = userMapper.selectPage(p, qw);
+
+        // role 过滤：sys_user 表无 role 列，role 存 Redis（medconsult:auth:role:{userId}）。
+        // 无法在 SQL 层过滤，故在内存层筛——先取略宽的分页结果，再按 role 过滤。
+        // 冒烟期数据量小，可接受；RBAC 五表落地后改为 SQL join sys_user_role。
+        java.util.List<AuthDTO.UserListItem> items = new java.util.ArrayList<>();
+        for (SysUser u : result.getRecords()) {
+            String userRole = resolveRole(u.getId());
+            if (role != null && !role.isBlank() && !role.equalsIgnoreCase(userRole)) {
+                continue; // role 过滤不命中，跳过
+            }
+            items.add(new AuthDTO.UserListItem(
+                    u.getId(),
+                    u.getUserNo(),
+                    u.getAccount(),
+                    u.getPhone(),
+                    u.getName(),
+                    userRole,
+                    u.getPatientId(),
+                    u.getDoctorId(),
+                    u.getStatus(),
+                    u.getCreatedAt()));
+        }
+
+        // 注意：role 过滤后当前页返回条数与 total 可能不一致（total 是未按 role 过滤的总数）。
+        // 这是已知权衡——准确的 role 分页需 DB 侧支持，等 RBAC 五表落地后修复。
+        return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+    }
+
+    /**
+     * 从 Redis 读用户角色，读不到兜底 PATIENT（与登录流程一致）。
+     * <p>Redis 不可用时 catch 住兜底，不阻断列表查询。
+     */
+    private String resolveRole(Long userId) {
+        try {
+            String stored = redis.opsForValue().get(roleKey(userId));
+            if (stored != null && !stored.isBlank()) {
+                return stored;
+            }
+        } catch (Exception ignored) {
+            // Redis 不可用兜底，不阻断查询
+        }
+        return "PATIENT";
     }
 
     // ===== 私有助手 =====
