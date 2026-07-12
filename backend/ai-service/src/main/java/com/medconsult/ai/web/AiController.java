@@ -110,6 +110,7 @@ public class AiController {
     }
 
     @Operation(summary = "获取会话历史")
+    @Permission(code = "ai:symptom-chat", dataScope = DataScope.SELF, roles = {"PATIENT"})
     @GetMapping("/api/v1/ai/symptom-chat/history/{sessionId}")
     public Result<List<SymptomChatService.ChatHistoryItem>> sessionHistory(@PathVariable("sessionId") String sessionId) {
         return Result.ok(symptomChatService.getHistory(sessionId));

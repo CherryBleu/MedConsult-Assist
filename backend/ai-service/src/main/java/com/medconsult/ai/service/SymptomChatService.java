@@ -120,14 +120,22 @@ public class SymptomChatService {
 
     /**
      * 获取会话历史消息（对齐前端 GET /ai/symptom-chat/history/{sessionId}）。
+     *
+     * <p>归属校验：只能查本人的会话历史。session.patient_id 必须与当前登录患者的 JWT
+     * patient_id 一致，否则抛 FORBIDDEN（防止 IDOR 越权读取他人问诊记录）。
      */
     public List<ChatHistoryItem> getHistory(String sessionId) {
+        Long patientId = resolveCurrentPatientId();
         // sessionId 入参是业务编号 sessionNo，先查 sessions 表拿主键 id
         AiChatSessionEntity session = chatSessionMapper.selectOne(new LambdaQueryWrapper<AiChatSessionEntity>()
                 .eq(AiChatSessionEntity::getSessionNo, sessionId)
                 .last("limit 1"));
         if (session == null) {
             return List.of();
+        }
+        // 会话归属校验：只能查自己的会话历史
+        if (session.getPatientId() != null && !session.getPatientId().equals(patientId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看他人问诊历史");
         }
         return chatMessageMapper.selectList(new LambdaQueryWrapper<AiChatMessageEntity>()
                         .eq(AiChatMessageEntity::getSessionId, session.getId())
