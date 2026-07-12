@@ -2,8 +2,6 @@ package com.medconsult.auth.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.auth.log.entity.LoginLog;
 import com.medconsult.auth.log.mapper.LoginLogMapper;
 import com.medconsult.auth.user.dto.AuthDTO;
@@ -316,20 +314,20 @@ public class AuthServiceImpl implements AuthService {
         }
         qw.orderByDesc(SysUser::getCreatedAt);
 
-        // 查询当前页（BaseEntity 的 @TableLogic 让 MP 自动追加 deleted=0 过滤，无需手写）
-        Page<SysUser> p = new Page<>(safePage, safeSize);
-        IPage<SysUser> result = userMapper.selectPage(p, qw);
+        // 用 selectList + 内存分页，而非 selectPage：auth-service 当前环境下 MyBatis-Plus
+        // PaginationInnerInterceptor 未生效（autoconfig 未加载），selectPage 只返回 count
+        // 不返回 records。冒烟期用户量小（几十条），全量查后内存分页 + role 内存过滤可接受。
+        // RBAC 五表落地后恢复 selectPage（届时 DB 侧支持 role 过滤）。
+        java.util.List<SysUser> all = userMapper.selectList(qw);
 
         // role 过滤：sys_user 表无 role 列，role 存 Redis（medconsult:auth:role:{userId}）。
-        // 无法在 SQL 层过滤，故在内存层筛——先取略宽的分页结果，再按 role 过滤。
-        // 冒烟期数据量小，可接受；RBAC 五表落地后改为 SQL join sys_user_role。
-        java.util.List<AuthDTO.UserListItem> items = new java.util.ArrayList<>();
-        for (SysUser u : result.getRecords()) {
+        java.util.List<AuthDTO.UserListItem> filtered = new java.util.ArrayList<>();
+        for (SysUser u : all) {
             String userRole = resolveRole(u.getId());
             if (role != null && !role.isBlank() && !role.equalsIgnoreCase(userRole)) {
                 continue; // role 过滤不命中，跳过
             }
-            items.add(new AuthDTO.UserListItem(
+            filtered.add(new AuthDTO.UserListItem(
                     u.getId(),
                     u.getUserNo(),
                     u.getAccount(),
@@ -342,9 +340,13 @@ public class AuthServiceImpl implements AuthService {
                     u.getCreatedAt()));
         }
 
-        // 注意：role 过滤后当前页返回条数与 total 可能不一致（total 是未按 role 过滤的总数）。
-        // 这是已知权衡——准确的 role 分页需 DB 侧支持，等 RBAC 五表落地后修复。
-        return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+        // 内存分页（subList）—— role 过滤后再切页，total 是过滤后的真实总数。
+        int total = filtered.size();
+        int from = Math.min((safePage - 1) * safeSize, total);
+        int to = Math.min(from + safeSize, total);
+        java.util.List<AuthDTO.UserListItem> pageItems = filtered.subList(from, to);
+
+        return PageResult.of(safePage, safeSize, total, pageItems);
     }
 
     /**
