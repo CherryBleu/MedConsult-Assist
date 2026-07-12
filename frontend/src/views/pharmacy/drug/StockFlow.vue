@@ -4,122 +4,173 @@
       <div class="page-header">
         <h2 class="page-title">库存流水</h2>
         <div class="header-actions">
-          <el-input v-model="searchKey" placeholder="搜索药品名称/流水号" clearable style="width: 220px" @keyup.enter="getFlowList" />
-          <el-select v-model="typeFilter" placeholder="操作类型" clearable style="width: 130px">
-            <el-option label="入库" value="IN" />
-            <el-option label="出库" value="OUT" />
+          <el-select
+            v-model="selectedDrugId"
+            filterable
+            remote
+            reserve-keyword
+            clearable
+            placeholder="请先选择药品"
+            :remote-method="searchDrugs"
+            :loading="drugLoading"
+            style="width: 280px"
+            @change="onDrugChange"
+          >
+            <el-option
+              v-for="d in drugOptions"
+              :key="d.drugId"
+              :label="`${d.name}（${d.specification || '-'}）`"
+              :value="d.drugId"
+            />
           </el-select>
-          <el-date-picker
-            v-model="dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD"
-            style="width: 260px"
-          />
-          <el-button type="primary" @click="getFlowList">查询</el-button>
+          <el-select v-model="typeFilter" placeholder="操作类型" clearable style="width: 130px">
+            <el-option label="入库" value="INBOUND" />
+            <el-option label="出库" value="OUTBOUND" />
+          </el-select>
+          <el-button type="primary" :disabled="!selectedDrugId" @click="getFlowList">查询</el-button>
           <el-button @click="resetFilter">重置</el-button>
         </div>
       </div>
 
-      <el-table :data="filteredList" v-loading="loading" border stripe>
-        <el-table-column prop="flowNo" label="流水号" width="160" />
-        <el-table-column label="操作类型" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.flowType === 'IN' ? 'success' : 'warning'" size="small">
-              {{ row.flowType === 'IN' ? '入库' : '出库' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="drugName" label="药品名称" min-width="160" />
-        <el-table-column prop="specification" label="规格" width="140" />
-        <el-table-column prop="batchNo" label="批号" width="110" />
-        <el-table-column label="操作数量" width="120" align="center">
-          <template #default="{ row }">
-            <span :class="row.flowType === 'IN' ? 'text-success' : 'text-warning'">
-              {{ row.flowType === 'IN' ? '+' : '-' }}{{ row.quantity }} {{ row.unit }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="库存变动" width="150" align="center">
-          <template #default="{ row }">
-            {{ row.beforeStock }} → <span class="fw-600">{{ row.afterStock }}</span> {{ row.unit }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="operatorName" label="操作人" width="90" align="center" />
-        <el-table-column prop="createdAt" label="操作时间" width="160" align="center" />
-      </el-table>
+      <el-empty v-if="!selectedDrugId" description="请先选择药品后查看库存流水" />
+      <template v-else>
+        <el-table :data="filteredList" v-loading="loading" border stripe>
+          <el-table-column prop="stockFlowId" label="流水号" width="160">
+            <template #default="{ row }">{{ row.stockFlowId ?? row.flowId ?? row.id ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作类型" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="flowTagType(row)" size="small">{{ flowLabel(row) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="药品名称" min-width="160">
+            <template #default>{{ selectedDrugLabel }}</template>
+          </el-table-column>
+          <el-table-column prop="quantity" label="操作数量" width="120" align="center">
+            <template #default="{ row }">
+              <span :class="isInbound(row) ? 'text-success' : 'text-warning'">
+                {{ isInbound(row) ? '+' : '-' }}{{ row.quantity ?? 0 }} {{ row.unit || '' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="batchNo" label="批号" width="130">
+            <template #default="{ row }">{{ row.batchNo ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark ?? '-' }}</template>
+          </el-table-column>
+          <el-table-column prop="createdAt" label="操作时间" width="170" align="center">
+            <template #default="{ row }">{{ row.createdAt ?? '-' }}</template>
+          </el-table-column>
+        </el-table>
 
-      <div class="pagination-wrap" v-if="filteredList.length > 0">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[10, 20, 50]"
-          :total="total"
-          layout="total, sizes, prev, pager, next, jumper"
-          background
-        />
-      </div>
+        <div class="pagination-wrap" v-if="total > 0">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="total"
+            layout="total, sizes, prev, pager, next, jumper"
+            background
+            @current-change="getFlowList"
+            @size-change="getFlowList"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getStockFlowApi } from '@/api/drug'
+import { ElMessage } from 'element-plus'
+import { getDrugListApi, getStockFlowApi } from '@/api/drug'
 
 const loading = ref(false)
 const flowList = ref([])
-const searchKey = ref('')
 const typeFilter = ref('')
-const dateRange = ref([])
+
+// 药品选择
+const drugLoading = ref(false)
+const drugOptions = ref([])
+const selectedDrugId = ref('')
+
+const selectedDrugLabel = computed(() => {
+  const d = drugOptions.value.find(i => i.drugId === selectedDrugId.value)
+  return d ? `${d.name}（${d.specification || '-'}）` : '-'
+})
+
+// 分页
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
+// 后端流水类型 INBOUND/OUTBOUND，兼容旧值 IN/OUT
+const isInbound = (row) => {
+  const t = row.type ?? row.flowType
+  return t === 'INBOUND' || t === 'IN'
+}
+const flowTagType = (row) => (isInbound(row) ? 'success' : 'warning')
+const flowLabel = (row) => (isInbound(row) ? '入库' : '出库')
+
 const filteredList = computed(() => {
-  let list = flowList.value
-  if (searchKey.value) {
-    const key = searchKey.value.toLowerCase()
-    list = list.filter(i =>
-      i.drugName.toLowerCase().includes(key) ||
-      i.flowNo.toLowerCase().includes(key)
-    )
-  }
-  if (typeFilter.value) {
-    list = list.filter(i => i.flowType === typeFilter.value)
-  }
-  return list
+  if (!typeFilter.value) return flowList.value
+  return flowList.value.filter(row => {
+    const t = row.type ?? row.flowType
+    return t === typeFilter.value
+  })
 })
 
+// 远程搜索药品（对齐后端 GET /drugs?keyword=）
+const searchDrugs = async (keyword) => {
+  drugLoading.value = true
+  try {
+    const res = await getDrugListApi({ keyword: keyword || undefined, page: 1, pageSize: 50 })
+    drugOptions.value = res.data || []
+  } catch (e) {
+    drugOptions.value = []
+  } finally {
+    drugLoading.value = false
+  }
+}
+
+const onDrugChange = () => {
+  currentPage.value = 1
+  if (selectedDrugId.value) {
+    getFlowList()
+  } else {
+    flowList.value = []
+    total.value = 0
+  }
+}
+
+// 查询某药品的库存流水（对齐后端 GET /drugs/{drugId}/stock/flows?page=&pageSize=）
 const getFlowList = async () => {
+  if (!selectedDrugId.value) {
+    ElMessage.warning('请先选择药品')
+    return
+  }
   loading.value = true
   try {
-    const res = await getStockFlowApi({
-      pageNum: currentPage.value,
-      pageSize: pageSize.value,
-      startDate: dateRange.value?.[0],
-      endDate: dateRange.value?.[1]
+    const res = await getStockFlowApi(selectedDrugId.value, {
+      page: currentPage.value,
+      pageSize: pageSize.value
     })
-    flowList.value = res.data
-    total.value = res.total || res.data.length
+    flowList.value = res.data || []
+    total.value = res.total || (res.data?.length ?? 0)
   } finally {
     loading.value = false
   }
 }
 
 const resetFilter = () => {
-  searchKey.value = ''
   typeFilter.value = ''
-  dateRange.value = []
   currentPage.value = 1
-  getFlowList()
+  if (selectedDrugId.value) getFlowList()
 }
 
 onMounted(() => {
-  getFlowList()
+  searchDrugs('')
 })
 </script>
 
@@ -151,10 +202,6 @@ onMounted(() => {
 .text-warning {
   color: #e6a23c;
   font-weight: 600;
-}
-.fw-600 {
-  font-weight: 600;
-  color: var(--primary-color);
 }
 .pagination-wrap {
   display: flex;
