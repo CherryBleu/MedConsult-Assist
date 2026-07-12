@@ -197,7 +197,8 @@ public class MedicationFunctionService {
      * 英文大小写不敏感由 {@link Pattern#CASE_INSENSITIVE} 保证；term 中的正则
      * 元字符通过 {@link Pattern#quote(String)} 转义，避免 "h2o" 之类被当成正则。
      */
-    private static boolean containsAny(String text, String... terms) {
+    // package-private 以便单元测试直接覆盖词边界行为（无需 Spring 容器）
+    static boolean containsAny(String text, String... terms) {
         if (text == null) {
             return false;
         }
@@ -218,7 +219,7 @@ public class MedicationFunctionService {
         return false;
     }
 
-    private static boolean containsLatin(String value) {
+    static boolean containsLatin(String value) {
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
             if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
