@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 用药分析 Function Calling 服务（架构文档 §6.2）。
@@ -182,9 +183,45 @@ public class MedicationFunctionService {
         return values == null || values.isEmpty() ? "empty" : String.join(",", values);
     }
 
+    /**
+     * 词边界感知的多关键词匹配。
+     *
+     * <p>避免子串误报：英文药名用 {@code \b} 词边界正则，"ibuprofen" 不再匹配
+     * "ibuprofenspecial" 这类把药名直接拼进另一个单词的字符串（前后均为
+     * 单词字符 [a-zA-Z0-9_] 时无边界，不匹配）。仍会匹配 "ibuprofen-er"、
+     * "non-ibuprofen-fake" 这类以空格/连字符分隔的文本（这属于合理行为：
+     * 缓释片与原药同效，分隔符本就是词边界）。中文无空格分词、药名多为
+     * 完整词组（如"阿司匹林"），子串匹配误报概率低，仍走 {@code contains}。
+     *
+     * <p>判断逻辑：term 含拉丁字母（a-z/A-Z）走词边界正则；纯非拉丁走 contains。
+     * 英文大小写不敏感由 {@link Pattern#CASE_INSENSITIVE} 保证；term 中的正则
+     * 元字符通过 {@link Pattern#quote(String)} 转义，避免 "h2o" 之类被当成正则。
+     */
     private static boolean containsAny(String text, String... terms) {
+        if (text == null) {
+            return false;
+        }
         for (String term : terms) {
-            if (text != null && text.contains(lower(term))) {
+            if (term == null || term.isEmpty()) {
+                continue;
+            }
+            if (containsLatin(term)) {
+                // \b\Q<term>\E\b：\b 词边界 + 引用字面量，CASE_INSENSITIVE 兼容已转小写的 text
+                Pattern p = Pattern.compile("\\b" + Pattern.quote(term) + "\\b", Pattern.CASE_INSENSITIVE);
+                if (p.matcher(text).find()) {
+                    return true;
+                }
+            } else if (text.contains(lower(term))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsLatin(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
                 return true;
             }
         }
