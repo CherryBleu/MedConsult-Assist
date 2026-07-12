@@ -37,6 +37,7 @@ import com.medconsult.ai.service.SymptomChatService;
 import com.medconsult.ai.service.TriageService;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.DataScope;
 import com.medconsult.common.security.Permission;
 import com.medconsult.common.security.SecurityContext;
 import io.swagger.v3.oas.annotations.Operation;
@@ -86,17 +87,26 @@ public class AiController {
 
     // ===== 症状对话 =====
 
+    /**
+     * 症状自诊问答（架构文档 §5.1 / 修改建议 §2.3）。
+     * <p>仅 PATIENT 角色可用，患者身份从 JWT patient_id 取，不信任请求体（SELF 数据范围）。
+     * 不依赖预约、挂号或病历；账号未关联患者档案时返回建档提示。
+     */
     @Operation(summary = "症状对话（单轮）")
+    @Permission(code = "ai:symptom-chat", dataScope = DataScope.SELF, roles = {"PATIENT"})
     @PostMapping("/api/v1/ai/symptom-chat")
     public Result<SymptomChatResponse> symptomChat(@Valid @RequestBody SymptomChatRequest request) {
         return Result.ok(symptomChatService.chat(request));
     }
 
+    /**
+     * 创建问诊会话（患者身份从 JWT 取，不接受请求参数传入 patientId）。
+     */
     @Operation(summary = "创建问诊会话")
+    @Permission(code = "ai:symptom-chat", dataScope = DataScope.SELF, roles = {"PATIENT"})
     @PostMapping("/api/v1/ai/symptom-chat/session")
-    public Result<SymptomChatService.SessionCreated> createSession(
-            @RequestParam(name = "patientId", required = false) String patientId) {
-        return Result.ok(symptomChatService.createSession(patientId));
+    public Result<SymptomChatService.SessionCreated> createSession() {
+        return Result.ok(symptomChatService.createSession());
     }
 
     @Operation(summary = "获取会话历史")

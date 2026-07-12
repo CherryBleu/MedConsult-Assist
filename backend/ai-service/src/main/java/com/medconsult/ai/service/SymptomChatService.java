@@ -19,6 +19,10 @@ import com.medconsult.ai.persistence.mapper.AiChatSessionMapper;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.ai.util.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -76,13 +80,18 @@ public class SymptomChatService {
     /**
      * 创建问诊会话（对齐前端 POST /ai/symptom-chat/session）。
      * 返回新会话编号，前端拿到后用于后续 sendChatMessage。
+     *
+     * <p>患者身份从 JWT 取（架构 §4.3/§5.1：以登录账号绑定的 patient_id 为准，
+     * 不信任请求体或查询参数传入的 patientId，禁止代他人发起自诊）。
+     * 账号未关联患者档案时返回业务错误并提示先建档。
      */
     @Transactional
-    public SessionCreated createSession(String patientId) {
+    public SessionCreated createSession() {
+        Long patientId = resolveCurrentPatientId();
         String sessionNo = BusinessIds.next("CHAT");
         AiChatSessionEntity session = new AiChatSessionEntity();
         session.setSessionNo(sessionNo);
-        session.setPatientId(BusinessIds.numericId(patientId));
+        session.setPatientId(patientId);
         session.setTitle("智能问诊会话");
         session.setStatus("ACTIVE");
         session.setContextSymptoms(JsonUtils.toJson(List.of()));
@@ -90,6 +99,23 @@ public class SymptomChatService {
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionMapper.insert(session);
         return new SessionCreated(sessionNo, session.getTitle(), session.getStatus());
+    }
+
+    /**
+     * 从 JWT 解析当前登录患者的主键 patient_id（架构 §4.3 SELF 数据范围）。
+     *
+     * <p>不信任请求体传入的 patientId——即便请求体带了，也仅作一致性校验：与 JWT 不符则
+     * 抛 FORBIDDEN（禁止代他人发起自诊）。账号未关联患者档案（patientId 为 null）时抛
+     * 业务错误并提示先完善个人档案（§5.1 L454）。
+     */
+    private Long resolveCurrentPatientId() {
+        JwtPayload payload = SecurityContext.requireUser();
+        Long jwtPatientId = payload.patientId();
+        if (jwtPatientId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "当前账号未关联患者档案，请先完善个人档案后再使用智能问诊");
+        }
+        return jwtPatientId;
     }
 
     /**
@@ -122,6 +148,15 @@ public class SymptomChatService {
 
     @Transactional
     public SymptomChatResponse chat(SymptomChatRequest request) {
+        // 患者身份从 JWT 取，不信任请求体（架构 §4.3 SELF）。
+        // 请求体带了 patientId 时仅作一致性校验，与 JWT 不符则拒绝（禁止代他人自诊）。
+        Long patientId = resolveCurrentPatientId();
+        if (request.patientId() != null && !request.patientId().isBlank()) {
+            Long requested = BusinessIds.numericId(request.patientId());
+            if (requested != null && !requested.equals(patientId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "禁止代他人发起智能问诊");
+            }
+        }
         long started = System.currentTimeMillis();
         try {
             long stepStarted = System.currentTimeMillis();
@@ -146,10 +181,10 @@ public class SymptomChatService {
             log.info("[AI-TIMER] symptomChat.finalAnswer={}ms", elapsed(stepStarted));
 
             stepStarted = System.currentTimeMillis();
-            AiChatSessionEntity session = ensureSession(request);
+            AiChatSessionEntity session = ensureSession(request, patientId);
             AiChatMessageEntity message = new AiChatMessageEntity();
             message.setSessionId(session.getId());
-            message.setPatientId(BusinessIds.numericId(request.patientId()));
+            message.setPatientId(patientId);
             message.setUserMessage(request.message());
             message.setAiAnswer(answer);
             message.setCitations(JsonUtils.toJson(citations));
@@ -175,13 +210,13 @@ public class SymptomChatService {
                     knowledge.stream().map(this::toVectorMatch).toList(),
                     citations
             );
-            callLogService.success("SYMPTOM_CHAT", request.patientId(), request.sessionId(), properties.llm().model(),
+            callLogService.success("SYMPTOM_CHAT", String.valueOf(patientId), request.sessionId(), properties.llm().model(),
                     request.message(), answer, risk.riskLevel(), System.currentTimeMillis() - started);
             log.info("[AI-TIMER] symptomChat.callLog={}ms", elapsed(stepStarted));
             log.info("[AI-TIMER] symptomChat.total={}ms", elapsed(started));
             return response;
         } catch (RuntimeException ex) {
-            callLogService.failed("SYMPTOM_CHAT", request.patientId(), request.sessionId(), properties.llm().model(),
+            callLogService.failed("SYMPTOM_CHAT", String.valueOf(patientId), request.sessionId(), properties.llm().model(),
                     request.message(), System.currentTimeMillis() - started, ex);
             log.info("[AI-TIMER] symptomChat.total={}ms success=false error={}",
                     elapsed(started), ex.getClass().getSimpleName());
@@ -240,11 +275,15 @@ public class SymptomChatService {
         return "下一步建议：若症状轻微且未加重，可短期观察；如持续不缓解、反复出现或影响日常活动，建议门诊评估。";
     }
 
-    private AiChatSessionEntity ensureSession(SymptomChatRequest request) {
+    private AiChatSessionEntity ensureSession(SymptomChatRequest request, Long patientId) {
         AiChatSessionEntity existing = chatSessionMapper.selectOne(new LambdaQueryWrapper<AiChatSessionEntity>()
                 .eq(AiChatSessionEntity::getSessionNo, request.sessionId())
                 .last("limit 1"));
         if (existing != null) {
+            // 会话归属校验：已有会话的 patient_id 必须与当前登录患者一致，防止串用他人会话。
+            if (existing.getPatientId() != null && !existing.getPatientId().equals(patientId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作他人问诊会话");
+            }
             // 追加而非覆盖：累积多轮对话的症状，保留完整会话上下文汇总。
             // 之前每次覆盖导致 contextSymptoms 只保留最后一条消息，丢失多轮症状演变。
             List<String> accumulated = mergeContextSymptoms(existing.getContextSymptoms(), request.message());
@@ -255,7 +294,7 @@ public class SymptomChatService {
         }
         AiChatSessionEntity session = new AiChatSessionEntity();
         session.setSessionNo(request.sessionId());
-        session.setPatientId(BusinessIds.numericId(request.patientId()));
+        session.setPatientId(patientId);
         session.setTitle(truncate(request.message(), 60));
         session.setStatus("ACTIVE");
         session.setContextSymptoms(JsonUtils.toJson(List.of(request.message())));
