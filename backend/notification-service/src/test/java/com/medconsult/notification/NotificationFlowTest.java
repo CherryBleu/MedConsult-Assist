@@ -162,7 +162,8 @@ class NotificationFlowTest {
 
     @Test
     void notificationList_nonAdminForbidden() throws Exception {
-        // 非管理员查询通知列表：JWT 无 userNo claim 无法与 receiver_id 匹配 → FORBIDDEN（R1-2 修复）
+        // 非管理员查询通知列表：无 X-User-No 头（userNo 为空）无法与 receiver_id 匹配 → FORBIDDEN。
+        // 正常前端会带 userNo（网关注入），此处模拟异常/直连场景拒绝。
         mvc.perform(get("/api/v1/notifications").param("receiverId", RECEIVER)
                         .header("X-User-Id", "100")
                         .header("X-User-Roles", "PATIENT")

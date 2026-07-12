@@ -32,6 +32,7 @@ import java.util.Map;
  *   roles      = 角色码列表（claim 数组）
  *   primary    = 主角色
  *   pid / did  = patientId / doctorId
+ *   uno        = userNo（用户业务编号）
  *   scope      = 权限点列表
  * </pre>
  */
@@ -44,6 +45,7 @@ public class JwtCodec {
     static final String CLAIM_PRIMARY = "primary";
     static final String CLAIM_PATIENT_ID = "pid";
     static final String CLAIM_DOCTOR_ID = "did";
+    static final String CLAIM_USER_NO = "uno";
     static final String CLAIM_SCOPE = "scope";
     static final String CLAIM_SERVICE = "svc";
 
@@ -70,11 +72,12 @@ public class JwtCodec {
     /**
      * 签发用户 Token。
      *
+     * @param userNo     用户业务编号（U+雪花base36），供通知等按业务编号关联的服务用；可空
      * @param ttlSeconds 有效期（秒）
      * @param jti        唯一 ID（登出黑名单键；null 则自动生成）
      */
     public String signUser(Long userId, String name, List<String> roles, String primaryRole,
-                           Long patientId, Long doctorId, List<String> scope,
+                           Long patientId, Long doctorId, String userNo, List<String> scope,
                            long ttlSeconds, String jti) {
         Instant now = Instant.now();
         return Jwts.builder()
@@ -85,6 +88,7 @@ public class JwtCodec {
                 .claim(CLAIM_PRIMARY, primaryRole)
                 .claim(CLAIM_PATIENT_ID, patientId)
                 .claim(CLAIM_DOCTOR_ID, doctorId)
+                .claim(CLAIM_USER_NO, userNo)
                 .claim(CLAIM_SCOPE, scope)
                 .id(jti != null ? jti : java.util.UUID.randomUUID().toString().replace("-", ""))
                 .issuedAt(Date.from(now))
@@ -136,7 +140,7 @@ public class JwtCodec {
                         null,
                         c.get(CLAIM_SERVICE, String.class),
                         c.get(CLAIM_NAME, String.class),
-                        null, null, null, null,
+                        null, null, null, null, null,
                         asStringList(c.get(CLAIM_SCOPE)),
                         c.getId(),
                         exp
@@ -152,6 +156,7 @@ public class JwtCodec {
                     c.get(CLAIM_PRIMARY, String.class),
                     parseLong(c.get(CLAIM_PATIENT_ID)),
                     parseLong(c.get(CLAIM_DOCTOR_ID)),
+                    c.get(CLAIM_USER_NO, String.class),
                     asStringList(c.get(CLAIM_SCOPE)),
                     c.getId(),
                     exp
