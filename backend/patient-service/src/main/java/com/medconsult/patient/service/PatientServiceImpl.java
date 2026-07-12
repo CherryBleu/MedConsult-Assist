@@ -13,6 +13,8 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.web.MaskType;
 import com.medconsult.patient.dto.PatientDTO;
 import com.medconsult.patient.entity.Patient;
@@ -115,6 +117,10 @@ public class PatientServiceImpl implements PatientService {
     @Override
     public PatientDTO.DetailResponse detail(String patientNo) {
         Patient p = requireByPatientNo(patientNo);
+        // 越权防护（IDOR，架构 §4.3 SELF）：PATIENT 只能查自己的档案（含脱敏证件号/手机号）。
+        // patient.id 是主键，与 JWT patientId（sys_user.patient_id）同类型比较。
+        // DOCTOR/管理员不限制（可查接诊范围内患者）。
+        enforcePatientOwnership(p);
         return new PatientDTO.DetailResponse(
                 p.getPatientNo(),
                 p.getName(),
@@ -131,9 +137,16 @@ public class PatientServiceImpl implements PatientService {
 
     @Override
     public PageResult<PatientDTO.ListItem> list(int page, int pageSize, String keyword) {
+        // 越权防护（IDOR，架构 §4.3 SELF）：PATIENT 只能查自己的档案。
+        // PATIENT 身份时强制限定为本人 patientId，忽略入参 keyword（防用搜索越权遍历他人档案）。
+        // DOCTOR/管理员可按 keyword 全局搜索。
+        Long scopePatientId = resolvePatientScope();
         Page<Patient> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Patient> qw = new QueryWrapper<>();
-        if (keyword != null && !keyword.isBlank()) {
+        if (scopePatientId != null) {
+            // PATIENT 身份：只查自己
+            qw.eq("id", scopePatientId);
+        } else if (keyword != null && !keyword.isBlank()) {
             // 按 姓名/手机号/证件号/患者编号 模糊检索（需求 §4.1.1 核心功能 3）
             qw.and(w -> w.like("name", keyword)
                     .or().like("phone", keyword)
@@ -160,6 +173,8 @@ public class PatientServiceImpl implements PatientService {
     @Transactional
     public PatientDTO.UpdateResponse update(String patientNo, PatientDTO.UpdateRequest req) {
         Patient p = requireByPatientNo(patientNo);
+        // 越权防护（IDOR）：PATIENT 只能改自己的档案
+        enforcePatientOwnership(p);
 
         // 部分字段更新（仅更新非 null 字段，避免覆盖未传字段）
         if (req.getPhone() != null) {
@@ -206,6 +221,9 @@ public class PatientServiceImpl implements PatientService {
     @Transactional
     public PatientDTO.StatusResponse updateStatus(String patientNo, PatientDTO.StatusUpdateRequest req) {
         Patient p = requireByPatientNo(patientNo);
+        // 越权防护（IDOR）：PATIENT 不能改档案状态（DISABLED/MERGED 是管理员操作），
+        // 即便是自己的档案也不允许自助禁用/合并。PATIENT 身份直接拒绝。
+        enforceNotPatient("修改患者档案状态");
 
         String oldStatus = p.getStatus();
         String newStatus = req.getStatus();
@@ -261,6 +279,77 @@ public class PatientServiceImpl implements PatientService {
         // 复用 requireByPatientNo：不存在直接抛 NOT_FOUND（由 FeignErrorDecoder 传给调用方）
         Patient p = requireByPatientNo(patientNo);
         return EntityIdDTO.of(p.getId());
+    }
+
+    // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围）=====
+    //
+    // PATIENT 身份只能访问自己的档案；DOCTOR / 管理员不限制（架构 §4.3 ALL/ASSIGNED）。
+    // 身份取自 SecurityContext（网关已解析 X-User-* 头重建 JwtPayload，§4.4）。
+    // 直连（无网关头、无 token）时 SecurityContext.getPayload() 返回 null，按"匿名拒绝"处理。
+
+    /**
+     * 单条档案归属校验（detail/update 等带具体 Patient 的场景）。
+     * <p>PATIENT 身份：档案主键 id 必须等于本人 patientId，否则 FORBIDDEN。
+     * DOCTOR/管理员：不校验。
+     */
+    private void enforcePatientOwnership(Patient p) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null || !selfPatientId.equals(p.getId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该患者档案");
+            }
+        }
+    }
+
+    /**
+     * 列表的 patient 作用域解析：
+     * <ul>
+     *   <li>PATIENT 身份：返回本人 patientId（列表强制只查自己）</li>
+     *   <li>DOCTOR/管理员：返回 null（不按 patient 过滤，可全局搜索）</li>
+     *   <li>匿名：拒绝（401）</li>
+     * </ul>
+     *
+     * @return 用于查询的 patient 主键 id；null 表示不按 patient 过滤（DOCTOR/管理员）
+     */
+    private Long resolvePatientScope() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询");
+            }
+            return selfPatientId;
+        }
+        return null;
+    }
+
+    /**
+     * 拒绝 PATIENT 身份执行管理类操作（如状态流转）。
+     * <p>PATIENT 不得自助禁用/合并档案，这些是管理员操作。
+     */
+    private void enforceNotPatient(String operation) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "患者账号无权" + operation + "，请联系管理员");
+        }
+    }
+
+    /** 是否 PATIENT 主角色（primaryRole 或 roles 含 PATIENT） */
+    private static boolean isPatient(JwtPayload p) {
+        if (p == null) return false;
+        if ("PATIENT".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("PATIENT");
     }
 
     // ===== 私有助手 =====

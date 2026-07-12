@@ -183,17 +183,52 @@ public class ImagingDetectionService {
     /**
      * 按患者查询影像检测列表（对齐前端 /api/v1/ai/imaging-detection/list）。
      * 限制最多返回 200 条（按 createdAt 倒序），避免历史记录多时全量返回大集合。
+     *
+     * <p>越权防护（IDOR，架构 §4.3 SELF）：PATIENT 身份时强制限定为本人 patientId，
+     * 忽略入参 patientId——防用篡改的 patientId 越权拉取他人影像记录。
+     * DOCTOR/管理员尊重入参（可查接诊范围内患者）。
      */
     public List<ImageDetectionResponse> listByPatient(String patientId) {
+        Long effectivePatientId = resolvePatientScope(patientId);
         LambdaQueryWrapper<AiImageDetectionEntity> wrapper = new LambdaQueryWrapper<AiImageDetectionEntity>()
                 .orderByDesc(AiImageDetectionEntity::getCreatedAt)
                 .last("limit 200");
-        if (StringUtils.hasText(patientId)) {
-            wrapper.eq(AiImageDetectionEntity::getPatientId, BusinessIds.numericId(patientId));
+        if (effectivePatientId != null) {
+            wrapper.eq(AiImageDetectionEntity::getPatientId, effectivePatientId);
         }
         return imageDetectionMapper.selectList(wrapper).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    /**
+     * 影像列表的 patient 作用域解析（IDOR 防护）：
+     * <ul>
+     *   <li>PATIENT 身份：返回本人 patientId（强制只查自己的影像记录，忽略入参）</li>
+     *   <li>DOCTOR/管理员：入参非空则转数值 id 返回，入参空则返回 null（查全部）</li>
+     *   <li>匿名：拒绝（401）</li>
+     * </ul>
+     */
+    private Long resolvePatientScope(String patientId) {
+        com.medconsult.common.security.JwtPayload payload = com.medconsult.common.security.SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询影像记录");
+            }
+            return selfPatientId;
+        }
+        return StringUtils.hasText(patientId) ? BusinessIds.numericId(patientId) : null;
+    }
+
+    /** 是否 PATIENT 主角色 */
+    private static boolean isPatient(com.medconsult.common.security.JwtPayload p) {
+        if (p == null) return false;
+        if ("PATIENT".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("PATIENT");
     }
 
     public ImagingReviewResponse reviewImageDetection(String detectionId, AiReviewRequest request) {
