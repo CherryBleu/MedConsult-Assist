@@ -10,7 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 /**
  * common-feign 自动装配（架构文档 §2.4 / §3.2）。
@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  *   <li>默认 {@link Request.Options}（connect 5s / read 10s / followRedirects），
  *       替代 Spring Cloud OpenFeign 默认的 10s/60s，避免下游不可用时长时间挂起；
  *       可用 {@code medconsult.feign.connect-timeout/read-timeout} 调整，
- *       业务服务声明自己的 {@code Request.Options} bean 即可覆盖</li>
+ *       优先级低于 OpenFeign 的 properties 与命名 client 配置（详见方法 Javadoc）</li>
  * </ul>
  *
  * <p>前提：业务服务须 {@code @EnableFeignClients} 启用 Feign（本模块不强制开启）。
@@ -62,24 +62,32 @@ public class MedConsultFeignAutoConfiguration {
      * <p>替代 Spring Cloud OpenFeign 默认值（connect 10s / read 60s）——内部服务调用读超时
      * 由 60s 降到 10s，下游不可用或慢响应时调用方快速失败，避免线程长时间挂起。
      *
-     * <p>覆盖方式（优先级从高到低）：
+     * <p>本 bean 是「兜底默认值」——Spring Cloud OpenFeign 默认 {@code defaultToProperties=true}，
+     * 因此 properties 配置会作用于 Feign builder 并覆盖 Request.Options bean。覆盖方式
+     * （优先级从高到低）：
      * <ol>
-     *   <li>业务服务声明自己的 {@link Request.Options} bean（本 bean 带
-     *       {@code @ConditionalOnMissingBean} 会自动让位）</li>
+     *   <li>{@code spring.cloud.openfeign.client.config.<contextId>.connect-timeout/read-timeout}
+     *       （命名级 properties，针对单个 named client，最高）</li>
      *   <li>{@code spring.cloud.openfeign.client.config.default.connect-timeout/read-timeout}
-     *       （Spring Cloud OpenFeign 的 properties 配置，作用于 Feign builder，优先级高于本 bean）</li>
-     *   <li>{@code medconsult.feign.connect-timeout/read-timeout}（本 bean 的兜底默认值，单位 ms）</li>
+     *       （默认级 properties，作用于 Feign builder，覆盖 Request.Options bean）</li>
+     *   <li>业务服务声明自己的 {@link Request.Options} bean（本 bean 带
+     *       {@code @ConditionalOnMissingBean} 会自动让位；正常 defaultToProperties=true 下，
+     *       业务 bean 仍会被 default properties 覆盖，需设
+     *       {@code spring.cloud.openfeign.default-to-properties: false} 才让 bean 真正生效）</li>
+     *   <li>{@code medconsult.feign.connect-timeout/read-timeout}（本 bean 的 @Value 兜底默认值，
+     *       Duration 格式如 {@code 5s} / {@code 500ms}，最低）</li>
      * </ol>
+     *
+     * <p>结论：要让本模块的默认值「真正」生效，运维什么都不用配；要让单个服务加严，
+     * 改 {@code spring.cloud.openfeign.client.config.default.*} properties 即可，
+     * 无需改代码、无需声明 bean。
      */
     @Bean
     @ConditionalOnMissingBean
     public Request.Options feignRequestOptions(
-            @Value("${medconsult.feign.connect-timeout:5000}") long connectTimeoutMs,
-            @Value("${medconsult.feign.read-timeout:10000}") long readTimeoutMs) {
-        return new Request.Options(
-                (int) connectTimeoutMs, TimeUnit.MILLISECONDS,
-                (int) readTimeoutMs, TimeUnit.MILLISECONDS,
-                true);  // followRedirects=true
+            @Value("${medconsult.feign.connect-timeout:5s}") Duration connectTimeout,
+            @Value("${medconsult.feign.read-timeout:10s}") Duration readTimeout) {
+        return new Request.Options(connectTimeout, readTimeout, true);  // followRedirects=true
     }
 
     /**
