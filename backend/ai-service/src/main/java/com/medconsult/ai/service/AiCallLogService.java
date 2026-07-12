@@ -77,7 +77,17 @@ public class AiCallLogService {
                                 item.getRelatedId(),
                                 item.getModelName(),
                                 item.getLatencyMs(),
-                                item.getRiskLevel()
+                                item.getRiskLevel(),
+                                // 管理后台调用日志页字段（对齐 AiCallLog.vue 列定义）
+                                item.getLogNo(),
+                                item.getCallType(),
+                                item.getModelName(),
+                                item.getTriggerUserId() == null ? "" : BusinessIds.businessOrEmpty(String.valueOf(item.getTriggerUserId())),
+                                item.getRequestSummary() == null ? 0 : item.getRequestSummary().length(),
+                                item.getResponseSummary() == null ? 0 : item.getResponseSummary().length(),
+                                item.getLatencyMs(),
+                                item.getStatus(),
+                                item.getCreatedAt()
                         ))
                         .toList()
         );

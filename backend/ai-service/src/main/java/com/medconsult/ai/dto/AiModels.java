@@ -305,7 +305,18 @@ public final class AiModels {
             String relatedId,
             String model,
             Integer latencyMs,
-            String riskLevel
+            String riskLevel,
+            // 以下为管理后台调用日志页（AiCallLog.vue）所需字段，对齐前端列定义。
+            // logNo/serviceType/modelName/costTime 是前端 el-table-column 的 prop 名。
+            String logNo,
+            String serviceType,
+            String modelName,
+            String userName,
+            Integer inputLength,
+            Integer outputLength,
+            Integer costTime,
+            String status,
+            java.time.LocalDateTime createdAt
     ) {
     }
 
