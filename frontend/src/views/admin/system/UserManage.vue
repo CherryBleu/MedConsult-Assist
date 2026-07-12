@@ -109,7 +109,15 @@ const openAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   currentId.value = row.id
-  Object.assign(form, row)
+  // 只赋值表单字段，避免 Object.assign(form, row) 把 row 的 id/userNo/createdAt 等
+  // 残留进 form——否则先编辑再新增时，脏字段会随 addUserApi 提交到 /auth/register 造成数据污染。
+  Object.assign(form, {
+    account: row.account ?? '',
+    name: row.name ?? '',
+    phone: row.phone ?? '',
+    role: row.role ?? 'PATIENT',
+    status: row.status ?? 'ACTIVE'
+  })
   dialogVisible.value = true
 }
 

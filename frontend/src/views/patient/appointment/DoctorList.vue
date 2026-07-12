@@ -9,7 +9,7 @@
       <div v-loading="loading" class="doctor-list">
         <div v-for="doctor in doctorList" :key="doctor.id" class="doctor-item">
           <el-avatar :size="64" class="doctor-avatar">
-            {{ doctor.name.charAt(0) }}
+            {{ (doctor.name || '?').charAt(0) }}
           </el-avatar>
           <div class="doctor-content">
             <div class="doctor-top">

@@ -18,6 +18,7 @@ import com.medconsult.ai.persistence.mapper.AiChatMessageMapper;
 import com.medconsult.ai.persistence.mapper.AiChatSessionMapper;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.ai.util.JsonUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -244,7 +245,10 @@ public class SymptomChatService {
                 .eq(AiChatSessionEntity::getSessionNo, request.sessionId())
                 .last("limit 1"));
         if (existing != null) {
-            existing.setContextSymptoms(JsonUtils.toJson(List.of(request.message())));
+            // 追加而非覆盖：累积多轮对话的症状，保留完整会话上下文汇总。
+            // 之前每次覆盖导致 contextSymptoms 只保留最后一条消息，丢失多轮症状演变。
+            List<String> accumulated = mergeContextSymptoms(existing.getContextSymptoms(), request.message());
+            existing.setContextSymptoms(JsonUtils.toJson(accumulated));
             existing.setUpdatedAt(LocalDateTime.now());
             chatSessionMapper.updateById(existing);
             return existing;
@@ -259,6 +263,33 @@ public class SymptomChatService {
         session.setUpdatedAt(LocalDateTime.now());
         chatSessionMapper.insert(session);
         return session;
+    }
+
+    /**
+     * 把新消息追加到已有 contextSymptoms JSON 串，去重 + 限长（最多保留 20 条，防 JSON 膨胀）。
+     * 解析失败时退化为只保留当前消息（不阻断主流程）。
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> mergeContextSymptoms(String existingJson, String newMessage) {
+        if (existingJson == null || existingJson.isBlank()) {
+            return List.of(newMessage);
+        }
+        try {
+            List<String> existing = JsonUtils.MAPPER.readValue(existingJson,
+                    new TypeReference<List<String>>() {});
+            List<String> merged = new ArrayList<>(existing);
+            if (newMessage != null && !newMessage.isBlank() && !merged.contains(newMessage)) {
+                merged.add(newMessage);
+            }
+            // 保留最近 20 条，超出则丢弃最早的
+            if (merged.size() > 20) {
+                merged = new ArrayList<>(merged.subList(merged.size() - 20, merged.size()));
+            }
+            return merged;
+        } catch (Exception e) {
+            log.warn("解析 contextSymptoms 失败，退化为只保留当前消息: {}", existingJson, e);
+            return List.of(newMessage);
+        }
     }
 
     private VectorMatchDto toVectorMatch(DiseaseKnowledge knowledge) {

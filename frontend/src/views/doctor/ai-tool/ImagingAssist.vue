@@ -252,6 +252,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, UploadFilled, Close, Plus } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, reviewImagingDetectionApi, getImagingHistoryListApi, uploadImageFileApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
+import { getToken } from '@/utils/auth'
 
 const userStore = useUserStore()
 
@@ -408,11 +409,13 @@ const submitDetection = async () => {
     }
 
     // 2. 提交检测任务（后端 DTO: imageType + imageUrls List）
+    // 注意：imagingForm.patientName 是医生手输的患者姓名（非患者主键 ID），
+    // 不能作为 patientId 提交（后端 numericId 会把它解析成脏数据落库）。
+    // 医生端影像辅助不强绑定患者档案，patientId 留空。
     progressText.value = '正在提交检测任务...'
     const res = await submitImagingDetectionApi({
       imageType: imagingForm.imagingType,
-      imageUrls: [fileUrl],
-      patientId: imagingForm.patientName || undefined
+      imageUrls: [fileUrl]
     })
     currentTaskId.value = res.data.detectionId || res.data.taskId
     ElMessage.success('检测任务已提交，正在处理中...')
@@ -430,8 +433,28 @@ const startPolling = () => {
   progressText.value = '任务排队中...'
 
   let pollCount = 0
+  // 最大轮询次数：约 60 次 × 1.5s = 90s（与 request.js 超时对齐），超时自动停止避免页面假死 + 持续打接口
+  const MAX_POLL_COUNT = 60
   pollTimer.value = setInterval(async () => {
+    // 退出登录后立即停止轮询
+    if (!getToken()) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+      detecting.value = false
+      return
+    }
     pollCount++
+    // 超过最大次数仍未完成，停止轮询并提示
+    if (pollCount > MAX_POLL_COUNT) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+      detecting.value = false
+      progressStatus.value = 'exception'
+      progressText.value = '检测超时，请稍后在历史记录中查看结果'
+      ElMessage.warning('检测超时，请稍后在历史记录中查看结果')
+      getTaskList()
+      return
+    }
     try {
       const res = await getImagingResultApi(currentTaskId.value)
       const data = res.data
@@ -455,6 +478,15 @@ const startPolling = () => {
         nextTick(() => {
           setTimeout(() => drawDetailAnnotations(), 300)
         })
+        getTaskList()
+      } else if (data.status === 'FAILED') {
+        // 检测失败：停止轮询，提示用户（之前缺失此分支导致页面假死 + 永久轮询）
+        clearInterval(pollTimer.value)
+        pollTimer.value = null
+        detecting.value = false
+        progressStatus.value = 'exception'
+        progressText.value = '检测失败：' + (data.failReason || 'AI 服务异常，请重试')
+        ElMessage.error('检测失败，请重试或联系管理员')
         getTaskList()
       }
     } catch (e) {
