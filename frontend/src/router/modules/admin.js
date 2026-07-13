@@ -70,6 +70,13 @@ const adminRoutes = [
         name: 'AiFeedback',
         component: () => import('@/views/admin/ai-manage/AiFeedback.vue'),
         meta: { title: '反馈管理' }
+      },
+      // 审计日志
+      {
+        path: 'audit-log',
+        name: 'AuditLog',
+        component: () => import('@/views/admin/audit/AuditLog.vue'),
+        meta: { title: '审计日志' }
       }
     ]
   }

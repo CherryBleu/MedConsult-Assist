@@ -221,6 +221,11 @@ const allMenuList = {
         { path: '/admin/ai-call-log', title: '调用日志' },
         { path: '/admin/ai-feedback', title: '反馈管理' }
       ]
+    },
+    {
+      path: '/admin/audit-log',
+      title: '审计日志',
+      icon: 'List'
     }
   ],
   [ROLE_ENUM.PHARMACY_ADMIN.value]: [
