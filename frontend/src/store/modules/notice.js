@@ -36,7 +36,9 @@ export const useNoticeStore = defineStore('notice', {
     },
 
     async markAllRead() {
-      const res = await markAllReadApi()
+      // 后端无批量已读端点：对当前列表里的未读项逐条 PATCH 兜底
+      const unreadIds = this.noticeList.filter(n => !n.isRead).map(n => n.id)
+      const res = await markAllReadApi(unreadIds)
       this.noticeList.forEach(n => { n.isRead = true })
       this.unreadCount = 0
       return res

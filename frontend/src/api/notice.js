@@ -31,11 +31,14 @@ export const markReadApi = (id) => {
   return request({ url: `/notifications/${id}/read`, method: 'patch' })
 }
 
-// 全部已读（后端无批量已读端点，前端逐条调用 markRead 兜底）
-export const markAllReadApi = () => {
+// 全部已读（后端无批量已读端点，前端逐条 markRead 兜底）
+// 传入未读通知 id 列表；后端补批量端点后可直接替换实现
+export const markAllReadApi = (unreadIds = []) => {
   if (USE_MOCK) return Promise.resolve(mockMarkAllRead())
-  // 后端暂无批量已读接口；返回成功占位，前端可逐条 PATCH 兜底
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  if (!unreadIds.length) return Promise.resolve({ code: 0, message: 'success', data: null })
+  // 逐条 PATCH（后端 PATCH /notifications/{id}/read 已实现）
+  return Promise.all(unreadIds.map(id => request({ url: `/notifications/${id}/read`, method: 'patch' })))
+    .then(() => ({ code: 0, message: 'success', data: null }))
 }
 
 // 删除通知（后端无删除端点，占位）
