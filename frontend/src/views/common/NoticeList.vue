@@ -66,7 +66,7 @@
 
       <div class="pagination-wrapper" v-if="total > 0">
         <el-pagination
-          v-model:current-page="pagination.pageNum"
+          v-model:current-page="pagination.page"
           v-model:page-size="pagination.pageSize"
           :total="total"
           :page-sizes="[10, 20, 50]"
@@ -118,7 +118,7 @@ const detailVisible = ref(false)
 const currentNotice = ref(null)
 
 const pagination = reactive({
-  pageNum: 1,
+  page: 1,
   pageSize: 10
 })
 
@@ -138,7 +138,7 @@ const fetchList = async () => {
   loading.value = true
   try {
     const params = {
-      pageNum: pagination.pageNum,
+      page: pagination.page,
       pageSize: pagination.pageSize
     }
     if (activeTab.value === 'UNREAD') {
@@ -159,7 +159,7 @@ const fetchUnreadCount = async () => {
 }
 
 const handleTabChange = () => {
-  pagination.pageNum = 1
+  pagination.page = 1
   fetchList()
 }
 

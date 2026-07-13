@@ -169,7 +169,8 @@ const payAppointment = (item) => {
     cancelButtonText: '取消',
     type: 'info'
   }).then(async () => {
-    await payAppointmentApi(item.id)
+    // paymentStatus @NotBlank，paidAmount 取挂号费（后端 PaymentUpdateRequest 接受）
+    await payAppointmentApi(item.id, { paidAmount: item.fee })
     ElMessage.success('支付成功')
     fetchList()
   }).catch(() => {})

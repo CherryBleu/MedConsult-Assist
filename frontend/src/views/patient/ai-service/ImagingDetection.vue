@@ -337,6 +337,8 @@ const startPolling = () => {
   progressText.value = '任务排队中...'
 
   let pollCount = 0
+  // 最大轮询次数：约 60 次 × 1.5s = 90s（与 request.js 超时对齐），超时自动停止避免页面假死 + 持续打接口
+  const MAX_POLL_COUNT = 60
   pollTimer.value = setInterval(async () => {
     // 退出登录后 token 被清除，立即停止轮询避免 401 死循环
     if (!getToken()) {
@@ -346,6 +348,17 @@ const startPolling = () => {
       return
     }
     pollCount++
+    // 超过最大次数仍未完成，停止轮询并提示
+    if (pollCount > MAX_POLL_COUNT) {
+      clearInterval(pollTimer.value)
+      pollTimer.value = null
+      detecting.value = false
+      progressStatus.value = 'exception'
+      progressText.value = '检测超时，请稍后在历史记录中查看结果'
+      ElMessage.warning('检测超时，请稍后在历史记录中查看结果')
+      getHistoryList()
+      return
+    }
     try {
       const res = await getImagingResultApi(currentTaskId.value)
       const data = res.data
@@ -367,6 +380,14 @@ const startPolling = () => {
         nextTick(() => {
           drawAnnotations()
         })
+      } else if (data.status === 'FAILED') {
+        // AI 任务失败：停止轮询并提示，避免对 FAILED 任务永久轮询
+        clearInterval(pollTimer.value)
+        pollTimer.value = null
+        detecting.value = false
+        progressStatus.value = 'exception'
+        progressText.value = '检测失败'
+        ElMessage.error(data.failReason || data.errorMessage || '检测失败，请重试')
       }
     } catch (e) {
       clearInterval(pollTimer.value)

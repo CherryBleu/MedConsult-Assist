@@ -102,7 +102,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
-import { createRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
+import { createRecordApi, updateRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
 import { generateSummaryByTextApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 
@@ -112,6 +112,9 @@ const userStore = useUserStore()
 
 const patientName = ref('')
 const saving = ref(false)
+// 当前编辑的病历 id：从路由带入（继续编辑草稿）或首次 create 后回填。
+// 保存草稿时据此判断走 update（PUT）而非重复 create（POST），避免草稿越存越多。
+const currentRecordId = ref(route.query.recordId || null)
 const archiving = ref(false)
 const aiLoading = ref(false)
 const currentDate = ref(dayjs().format('YYYY-MM-DD HH:mm'))
@@ -157,7 +160,14 @@ const saveDraft = async () => {
   }
   saving.value = true
   try {
-    await createRecordApi(buildPayload())
+    // 已有病历 id（继续编辑草稿 / 本会话首次保存后）走 update；否则 create
+    if (currentRecordId.value) {
+      await updateRecordApi(currentRecordId.value, buildPayload())
+    } else {
+      const created = await createRecordApi(buildPayload())
+      const newId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
+      if (newId) currentRecordId.value = newId
+    }
     ElMessage.success('草稿已保存')
   } finally {
     saving.value = false
@@ -176,9 +186,9 @@ const archiveRecord = async () => {
       type: 'warning'
     })
     archiving.value = true
-    // 归档前必须先拿到真实病历 id：新建病历（无 recordId）先 create 再 archive，
-    // 不能用 Date.now() 当 recordId（后端必然 404/参数错误）。
-    let recordId = route.query.recordId
+    // 归档前必须先拿到真实病历 id：复用 currentRecordId（继续编辑/已保存草稿），
+    // 否则新建病历后回填，不能用 Date.now() 当 recordId（后端必然 404/参数错误）。
+    let recordId = currentRecordId.value
     if (!recordId) {
       const created = await createRecordApi(buildPayload())
       recordId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
@@ -186,6 +196,7 @@ const archiveRecord = async () => {
         ElMessage.error('保存病历失败，无法归档')
         return
       }
+      currentRecordId.value = recordId
     }
     await archiveRecordApi(recordId, {
       // 后端 ArchiveRequest.confirmBy 标了 @NotBlank（医生编号 doctor_no）

@@ -97,27 +97,41 @@ export const createAppointmentApi = (data) => {
 }
 
 // 取消预约（对齐后端 POST /appointments/{appointmentId}/cancel）
-export const cancelAppointmentApi = (id, reason) => {
+// 后端 CancelRequest 字段：cancelReason + operatorType（PATIENT/DOCTOR/ADMIN）
+export const cancelAppointmentApi = (id, reason, operatorType = 'PATIENT') => {
   if (USE_MOCK) return Promise.resolve(mockCancelAppointment(id))
-  return request({ url: `/appointments/${id}/cancel`, method: 'post', data: { reason } })
+  return request({
+    url: `/appointments/${id}/cancel`,
+    method: 'post',
+    data: { cancelReason: reason, operatorType }
+  })
 }
 
 // 支付（对齐后端 PATCH /appointments/{appointmentId}/payment）
-export const payAppointmentApi = (id) => {
+// 后端 PaymentUpdateRequest.paymentStatus @NotBlank，必须带 body
+export const payAppointmentApi = (id, payload = {}) => {
   if (USE_MOCK) return Promise.resolve(mockPayAppointment(id))
-  return request({ url: `/appointments/${id}/payment`, method: 'patch' })
+  return request({
+    url: `/appointments/${id}/payment`,
+    method: 'patch',
+    data: {
+      paymentStatus: 'PAID',
+      paymentNo: payload.paymentNo,
+      paidAmount: payload.paidAmount
+    }
+  })
 }
 
-// 签到（状态机 PATCH /appointments/{appointmentId}/status，status=CHECKED_IN）
+// 签到（状态机 PATCH /appointments/{appointmentId}/status，appointmentStatus=CHECKED_IN）
 export const checkInAppointmentApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockCheckInAppointment(id))
-  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { status: 'CHECKED_IN' } })
+  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { appointmentStatus: 'CHECKED_IN' } })
 }
 
-// 标记爽约（状态机 PATCH，status=NO_SHOW）
+// 标记爽约（状态机 PATCH，appointmentStatus=NO_SHOW）
 export const markNoShowApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockMarkNoShow(id))
-  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { status: 'NO_SHOW' } })
+  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { appointmentStatus: 'NO_SHOW' } })
 }
 
 // 接诊列表（医生视角，对齐后端 GET /appointments，按 status=BOOKED/CHECKED_IN 过滤待接诊）
@@ -129,16 +143,16 @@ export const getReceptionListApi = async (params) => {
   return res
 }
 
-// 开始就诊（状态机 PATCH，status=IN_PROGRESS）
+// 开始就诊（状态机 PATCH，appointmentStatus=IN_PROGRESS）
 export const startVisitApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockStartVisit(id))
-  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { status: 'IN_PROGRESS' } })
+  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { appointmentStatus: 'IN_PROGRESS' } })
 }
 
-// 完成就诊（状态机 PATCH，status=COMPLETED）
+// 完成就诊（状态机 PATCH，appointmentStatus=COMPLETED）
 export const endVisitApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockEndVisit(id))
-  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { status: 'COMPLETED' } })
+  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { appointmentStatus: 'COMPLETED' } })
 }
 
 // 管理员：预约列表（复用 GET /appointments，管理员权限在 JWT scope 校验）
