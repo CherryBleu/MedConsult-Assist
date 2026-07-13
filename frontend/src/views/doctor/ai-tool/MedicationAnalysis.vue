@@ -37,7 +37,7 @@
           </div>
           <div v-else class="risk-list">
             <div v-for="(item, index) in analysisResult.contraindicationRisks" :key="index" class="risk-item danger">
-              {{ typeof item === 'string' ? item : (item.description || item.risk || JSON.stringify(item)) }}
+              {{ typeof item === 'string' ? item : (item.description || item.risk || '—') }}
             </div>
           </div>
         </div>
@@ -72,7 +72,7 @@
           </div>
           <ul v-else class="reminder-list">
             <li v-for="(item, index) in analysisResult.reminders" :key="index">
-              {{ typeof item === 'string' ? item : (item.content || item.message || JSON.stringify(item)) }}
+              {{ typeof item === 'string' ? item : ((item.drugName ? item.drugName + '：' : '') + (item.reminder || item.content || item.message || '—')) }}
             </li>
           </ul>
         </div>

@@ -51,9 +51,14 @@ public class MedicationFunctionService {
         functionTrace.add(trace("queryCurrentMedications", summarizeList(context.currentMedications())));
 
         for (PrescriptionDto prescription : request.prescriptions()) {
+            // 前端在无真实处方数据时会硬编码 {drugName:'placeholder'} 占位以满足 @NotEmpty 校验，
+            // 占位处方不应产生用药提醒，否则会向用户显示无意义的 placeholder 药名提醒。
+            if (isPlaceholderDrugName(prescription.drugName())) {
+                continue;
+            }
             reminders.add(Map.of(
                     "drugName", prescription.drugName(),
-                    "reminder", "Use according to the prescribed dosage and frequency. Contact a doctor if discomfort occurs."
+                    "reminder", "请按医嘱规定的剂量和频次服用；如出现不适请及时就诊或咨询药师。"
             ));
             detectLocalContraindication(context, prescription, contraindications);
             applyDrugRiskInfo(prescription, drugRiskInfos, contraindications, interactions, functionTrace);
@@ -116,8 +121,8 @@ public class MedicationFunctionService {
             contraindications.add(Map.of(
                     "drugName", prescription.drugName(),
                     "riskLevel", "MEDIUM",
-                    "description", "Patients with gastric disease history should use NSAIDs cautiously.",
-                    "suggestion", "Ask the pharmacist or doctor to reassess gastrointestinal bleeding risk."
+                    "description", "有胃病既往史的患者应慎用 NSAIDs 类药物。",
+                    "suggestion", "请药师或医生重新评估胃肠道出血风险。"
             ));
         }
     }
@@ -128,10 +133,10 @@ public class MedicationFunctionService {
         String current = context.currentMedications() == null ? "" : String.join(" ", context.currentMedications());
         if (containsAny(prescribed, "布洛芬", "ibuprofen") && containsAny(prescribed + " " + current, "阿司匹林", "aspirin")) {
             interactions.add(Map.of(
-                    "drugA", "ibuprofen",
-                    "drugB", "aspirin",
+                    "drugA", "布洛芬",
+                    "drugB", "阿司匹林",
                     "riskLevel", "MEDIUM",
-                    "description", "Combined use may increase gastrointestinal adverse reaction or bleeding risk."
+                    "description", "合用可能增加胃肠道不良反应或出血风险。"
             ));
         }
     }
@@ -231,6 +236,19 @@ public class MedicationFunctionService {
 
     private static String lower(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 判断药名是否为前端无真实处方时硬编码的占位值。
+     * <p>前端 MedicationAnalysis.vue / api/ai.js 在无处方数据时会传 {drugName:'placeholder'}
+     * 满足后端 @NotEmpty 校验，这类占位处方不应产生用药提醒和风险分析。
+     */
+    private static boolean isPlaceholderDrugName(String drugName) {
+        if (!StringUtils.hasText(drugName)) {
+            return true;
+        }
+        String trimmed = drugName.trim().toLowerCase(Locale.ROOT);
+        return trimmed.equals("placeholder") || trimmed.equals("占位") || trimmed.equals("test");
     }
 
     private static <T> List<T> safe(List<T> value) {
