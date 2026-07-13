@@ -152,17 +152,38 @@ public class AuthDTO {
      * 绑定患者档案请求（补建档场景）。
      *
      * <p>用于历史脏账号（sys_user.patient_id 为 NULL，绕过"注册即建档"流程直接 SQL 插入）
-     * 补全患者档案关联：前端先调 POST /patients 建档拿到 patientNo，再调本接口绑定到当前登录用户。
+     * 补全患者档案关联。后端自动用 sys_user 已有的 name/phone 建档，前端只需补充建档缺失的字段
+     *（身份证号、性别、出生日期等），无需重复填写注册时的手机号和姓名。
      *
      * <p>安全约束：仅 PATIENT 角色且当前 patient_id 为 null 时允许绑定；已绑定则拒绝（防覆盖他人档案）。
+     * 绑定成功后重签 JWT（让新 token 带上 patientId），前端存储新 token 后无需重新登录即可使用全部功能。
      */
     @Data
-    @Schema(description = "绑定患者档案请求")
+    @Schema(description = "绑定患者档案请求（补建档）")
     public static class BindPatientRequest {
-        @Schema(description = "患者档案编号 patient_no（由 POST /patients 创建后返回）", required = true)
-        @NotBlank(message = "patientNo 不能为空")
-        private String patientNo;
+        @Schema(description = "身份证号（PATIENT 建档必填，用于唯一性校验）")
+        @Pattern(regexp = "^$|^[1-9]\\d{16}[0-9Xx]$|^[1-9]\\d{14}$",
+                message = "身份证号格式非法（须 15 或 18 位）")
+        private String idCard;
+
+        @Schema(description = "性别：MALE / FEMALE / UNKNOWN（选填，默认 UNKNOWN）")
+        private String gender;
+
+        @Schema(description = "出生日期（选填，格式 YYYY-MM-DD）")
+        private String birthDate;
     }
+
+    /**
+     * 绑定患者档案响应（含重签的 JWT，前端存储后无需重新登录）。
+     */
+    @Schema(description = "绑定患者档案响应（含新 token）")
+    public record BindPatientResponse(
+            @Schema(description = "新的访问令牌（已带 patientId）") String accessToken,
+            @Schema(description = "新的刷新令牌") String refreshToken,
+            @Schema(description = "令牌类型") String tokenType,
+            @Schema(description = "过期时间（秒）") long expiresIn,
+            @Schema(description = "用户信息（含新的 patientId）") MeResponse user
+    ) {}
 
     /**
      * 用户列表项（管理员后台「用户管理」页 GET /api/v1/auth/users）。

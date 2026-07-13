@@ -291,10 +291,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthDTO.MeResponse bindPatient(Long userId, String patientNo) {
-        if (patientNo == null || patientNo.isBlank()) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "patientNo 不能为空");
-        }
+    public AuthDTO.BindPatientResponse bindPatient(Long userId, AuthDTO.BindPatientRequest req) {
         SysUser u = userMapper.selectById(userId);
         if (u == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
@@ -309,13 +306,23 @@ public class AuthServiceImpl implements AuthService {
         if (!"PATIENT".equals(primaryRole)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅患者角色可绑定患者档案");
         }
-        // 调 patient-service 反查 patientNo 对应的主键 id
-        // 不存在时下游返回 NOT_FOUND，由 FeignErrorDecoder 转为 BusinessException
-        Result<EntityIdDTO> res = patientClient.resolveId(patientNo);
-        if (res == null || res.data() == null || res.data().id() == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "患者档案不存在: " + patientNo);
+        // 同步注册信息：name/phone 直接从 sys_user 取（注册时已填），不要求用户重复输入。
+        // 身份证号 sys_user 表无此列，需前端补充（用于 patient 表唯一性校验）。
+        String name = u.getName();
+        String phone = u.getPhone();
+        if (name == null || name.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "账号缺少姓名信息，请联系管理员补全");
         }
-        Long patientId = res.data().id();
+        String idCard = req != null ? req.getIdCard() : null;
+        // 调 patient-service 注册即建档接口，用 sys_user 已有的 name/phone + 前端补充的 idCard 建档
+        // 证件/手机冲突时下游返回 409 CONFLICT，由 FeignErrorDecoder 转为 BusinessException
+        PatientRegisterRequest archiveReq = new PatientRegisterRequest(name, idCard, phone, "ID_CARD");
+        Result<EntityIdDTO> archiveRes = patientClient.createForRegister(archiveReq);
+        if (archiveRes == null || archiveRes.data() == null || archiveRes.data().id() == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "患者档案创建失败，请稍后重试");
+        }
+        Long patientId = archiveRes.data().id();
+
         // 防 IDOR：校验该 patient 未被其他 sys_user 绑定（一份档案只能关联一个登录账号）
         Long boundCount = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getPatientId, patientId)
@@ -325,16 +332,27 @@ public class AuthServiceImpl implements AuthService {
         }
         u.setPatientId(patientId);
         userMapper.updateById(u);
-        log.info("用户 {} 绑定患者档案成功，patientNo={}, patientId={}", userId, patientNo, patientId);
-        return new AuthDTO.MeResponse(
-                u.getUserNo(),
-                u.getAccount(),
-                u.getName(),
-                MaskType.PHONE.mask(u.getPhone()),
-                primaryRole,
+        log.info("用户 {} 补建档并绑定成功，patientId={}", userId, patientId);
+
+        // 重签 JWT：让新 token 带上 patientId，前端存储后无需重新登录即可使用全部功能。
+        // 旧 token 的 patientId 是 null，refresh 也沿用旧 claims，只有重签才能带上新 patientId。
+        List<String> roles = List.of(primaryRole);
+        List<String> scope = List.of("*");
+        String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
+                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, accessTtl, null);
+        String refresh = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
+                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, refreshTtl, null);
+        // 新 refresh 入 Redis
+        JwtPayload refreshPayload = jwtCodec.parse(refresh);
+        redis.opsForValue().set(refreshKey(refreshPayload.jti()), "1", Duration.ofSeconds(refreshTtl));
+
+        AuthDTO.MeResponse me = new AuthDTO.MeResponse(
+                u.getUserNo(), u.getAccount(), u.getName(),
+                MaskType.PHONE.mask(u.getPhone()), primaryRole,
                 String.valueOf(patientId),
                 u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
                 u.getStatus());
+        return new AuthDTO.BindPatientResponse(access, refresh, "Bearer", accessTtl, me);
     }
 
     // ===== 管理员用户列表 =====

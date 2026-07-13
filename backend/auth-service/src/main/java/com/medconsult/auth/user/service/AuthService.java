@@ -30,14 +30,14 @@ public interface AuthService {
      * 绑定患者档案到当前登录用户（补建档场景）。
      *
      * <p>用于历史脏账号（sys_user.patient_id 为 NULL）补全患者档案关联。
-     * 前端先调 POST /patients 建档拿到 patientNo，再调本接口绑定。
-     * 仅 PATIENT 角色且当前 patient_id 为 null 时允许；已绑定则拒绝。
+     * 后端自动用 sys_user 已有的 name/phone 建档，前端只需补充 idCard 等缺失字段。
+     * 绑定成功后重签 JWT（含新的 patientId），前端存储新 token 后无需重新登录。
      *
-     * @param userId    当前登录用户 ID
-     * @param patientNo 患者档案编号（patient_no）
-     * @return 绑定后的当前用户信息（含新的 patientId）
+     * @param userId 当前登录用户 ID
+     * @param req    建档补充信息（idCard/gender/birthDate）
+     * @return 含新 token 和用户信息的响应
      */
-    AuthDTO.MeResponse bindPatient(Long userId, String patientNo);
+    AuthDTO.BindPatientResponse bindPatient(Long userId, AuthDTO.BindPatientRequest req);
 
     /**
      * 管理员查询用户列表（用户管理页）。

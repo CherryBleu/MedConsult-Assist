@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { setToken, getToken, removeToken, setRefreshToken, getRefreshToken, removeRefreshToken } from '@/utils/auth'
-import { loginApi, getUserInfoApi, logoutApi, refreshTokenApi } from '@/api/user'
+import { loginApi, getUserInfoApi, logoutApi, refreshTokenApi, bindPatientApi } from '@/api/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
 
 export const useUserStore = defineStore('user', {
@@ -36,6 +36,19 @@ export const useUserStore = defineStore('user', {
       this.token = res.data.accessToken
       setToken(res.data.accessToken)
       return res.data.accessToken
+    },
+
+    // 补建档：后端自动建档+绑定+重签JWT，返回新 token 后前端存储，无需重新登录
+    async bindPatient(data) {
+      const res = await bindPatientApi(data)
+      // 存储重签后的新 token（已带 patientId），后续请求自动使用新 token
+      this.token = res.data.accessToken
+      this.refreshToken = res.data.refreshToken
+      setToken(res.data.accessToken)
+      setRefreshToken(res.data.refreshToken)
+      this.userInfo = res.data.user
+      this.role = res.data.user.role
+      return res.data
     },
 
     // 退出登录

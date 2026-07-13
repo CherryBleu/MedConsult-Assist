@@ -10,7 +10,7 @@
           :closable="false"
           show-icon
           title="当前账号未关联患者档案"
-          description="你的账号尚未建立患者档案，挂号、预约查询、智能问诊等功能无法使用。请完善以下信息建立档案。"
+          description="你的账号尚未建立患者档案，挂号、预约查询、智能问诊等功能无法使用。请补充以下信息建立档案（姓名和手机号已从注册信息同步）。"
         />
         <el-form
           ref="archiveFormRef"
@@ -19,8 +19,14 @@
           label-width="100px"
           class="archive-form"
         >
-          <el-form-item label="姓名" prop="name">
-            <el-input v-model="archiveForm.name" placeholder="请输入真实姓名" />
+          <el-form-item label="姓名">
+            <span class="sync-text">{{ userStore.userInfo?.name || '—' }}（已从注册信息同步）</span>
+          </el-form-item>
+          <el-form-item label="手机号">
+            <span class="sync-text">{{ userStore.userInfo?.phoneMasked || '—' }}（已从注册信息同步）</span>
+          </el-form-item>
+          <el-form-item label="身份证号" prop="idCard">
+            <el-input v-model="archiveForm.idCard" placeholder="请输入身份证号" maxlength="18" />
           </el-form-item>
           <el-form-item label="性别" prop="gender">
             <el-radio-group v-model="archiveForm.gender">
@@ -36,12 +42,6 @@
               value-format="YYYY-MM-DD"
               style="width: 100%"
             />
-          </el-form-item>
-          <el-form-item label="身份证号" prop="idNo">
-            <el-input v-model="archiveForm.idNo" placeholder="请输入身份证号" />
-          </el-form-item>
-          <el-form-item label="手机号" prop="phone">
-            <el-input v-model="archiveForm.phone" placeholder="请输入手机号" />
           </el-form-item>
         </el-form>
         <div class="action-bar">
@@ -135,8 +135,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { getPatientInfoApi, updatePatientInfoApi, addPatientApi } from '@/api/patient'
-import { bindPatientApi } from '@/api/user'
+import { getPatientInfoApi, updatePatientInfoApi } from '@/api/patient'
 import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
@@ -159,22 +158,30 @@ const editForm = ref({
   pastMedicalHistoryText: ''
 })
 
-// 补建档表单（对齐后端 PatientDTO.CreateRequest）
+// 补建档表单：只需补充身份证号/性别/出生日期（姓名和手机号从 sys_user 同步）
 const archiveForm = ref({
-  name: '',
-  gender: 'MALE',
-  birthDate: '',
-  idNo: '',
-  phone: ''
+  idCard: '',
+  gender: '',
+  birthDate: ''
 })
 
+// 身份证号校验（15位旧版或18位新版）
+const validateIdCard = (rule, value, callback) => {
+  if (!value || !value.trim()) {
+    callback(new Error('请输入身份证号'))
+    return
+  }
+  if (/(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/.test(value.trim())) {
+    callback()
+  } else {
+    callback(new Error('身份证号格式不正确（须 15 或 18 位）'))
+  }
+}
+
 const archiveRules = {
-  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  idNo: [{ required: true, message: '请输入身份证号', trigger: 'blur' }],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
-  ]
+  idCard: [{ required: true, validator: validateIdCard, trigger: 'blur' }],
+  gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
+  birthDate: [{ required: true, message: '请选择出生日期', trigger: 'change' }]
 }
 
 // List<String> → 顿号分隔字符串（展示用）
@@ -192,7 +199,6 @@ const textToList = (text) => {
 
 const getPatientInfo = async () => {
   if (!hasPatientId.value) {
-    // 未关联档案：预填手机号（从登录态脱敏手机号不可用，留空让用户填）
     return
   }
   const patientId = userStore.userInfo.patientId
@@ -241,32 +247,21 @@ const saveEdit = async () => {
   }
 }
 
-// 补建档：先 POST /patients 创建档案，再 POST /auth/me/bind-patient 绑定到当前用户
+// 补建档：后端自动建档+绑定+重签JWT，返回新 token 后前端存储，无需重新登录
 const submitArchive = async () => {
   if (!archiveFormRef.value) return
   await archiveFormRef.value.validate(async (valid) => {
     if (!valid) return
     saving.value = true
     try {
-      // 1. 创建患者档案（对齐 PatientDTO.CreateRequest）
-      const createRes = await addPatientApi({
-        name: archiveForm.value.name,
+      // 后端用 sys_user 已有的 name/phone 自动建档，前端只补充 idCard/gender/birthDate
+      // 返回新的 accessToken/refreshToken（已带 patientId），存储后无需重新登录
+      await userStore.bindPatient({
+        idCard: archiveForm.value.idCard.trim(),
         gender: archiveForm.value.gender,
-        birthDate: archiveForm.value.birthDate || null,
-        idType: 'ID_CARD',
-        idNo: archiveForm.value.idNo,
-        phone: archiveForm.value.phone
+        birthDate: archiveForm.value.birthDate || null
       })
-      const patientNo = createRes.data?.patientId || createRes.data?.patientNo
-      if (!patientNo) {
-        ElMessage.error('档案创建成功但未返回编号，请联系管理员')
-        return
-      }
-      // 2. 绑定到当前登录用户
-      await bindPatientApi(patientNo)
-      ElMessage.success('档案建立并绑定成功，请重新登录以刷新权限')
-      // 3. 刷新前端 userInfo（patientId 现在有值了）
-      await userStore.getUserInfo()
+      ElMessage.success('档案建立成功，现已可使用全部功能')
       await getPatientInfo()
     } catch (e) {
       // 错误 toast 由 request 拦截器统一弹
@@ -327,6 +322,10 @@ onMounted(() => {
 .info-text {
   font-size: 14px;
   color: var(--text-primary);
+}
+.sync-text {
+  font-size: 14px;
+  color: var(--text-secondary);
 }
 
 .action-bar {
