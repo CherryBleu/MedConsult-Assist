@@ -62,3 +62,6 @@ frontend/dist/
 frontend/.env.local
 frontend/npm-debug.log*
 
+
+# ZCode agent skills (local tooling, not project code)
+.agents/
