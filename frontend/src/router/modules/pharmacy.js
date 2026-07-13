@@ -14,6 +14,12 @@ const pharmacyRoutes = [
         meta: { title: '药房工作台' }
       },
       {
+        path: 'prescription-review',
+        name: 'PharmacyPrescriptionReview',
+        component: () => import('@/views/pharmacy/prescription/PrescriptionReview.vue'),
+        meta: { title: '处方审核' }
+      },
+      {
         path: 'drug',
         name: 'PharmacyDrugList',
         component: () => import('@/views/pharmacy/drug/DrugList.vue'),
