@@ -34,10 +34,11 @@ const mapAppointment = (a) => ({
   createdAt: a.createdAt
 })
 
-// 排班列表（后端排班在 /schedules，按 departmentId/date 查询）
+// 排班列表（后端排班在 /schedules/available，按 doctorId/departmentId/date 查询）
 export const getScheduleListApi = async (doctorId, params) => {
   if (USE_MOCK) return Promise.resolve(mockScheduleList(doctorId))
-  const res = await request({ url: '/schedules/available', method: 'get', params })
+  // doctorId 必传：按选中医生过滤排班，避免显示其他医生的号源导致挂错号
+  const res = await request({ url: '/schedules/available', method: 'get', params: { doctorId, ...(params || {}) } })
   // 后端 /schedules/available 直接返回数组（非分页）
   const list = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   // 后端排班无 scheduleDate 字段（通用可用排班），适配为前端期望结构并展开到近 7 天：

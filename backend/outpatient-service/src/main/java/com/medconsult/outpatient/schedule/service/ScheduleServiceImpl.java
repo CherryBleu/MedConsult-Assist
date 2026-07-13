@@ -187,7 +187,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     // ===== §2.4.3 可预约号源 =====
 
     @Override
-    public List<ScheduleDTO.AvailableItem> available(String departmentId, LocalDate date) {
+    public List<ScheduleDTO.AvailableItem> available(String departmentId, String doctorId, LocalDate date) {
         QueryWrapper<DoctorSchedule> qw = new QueryWrapper<>();
         qw.eq("status", "AVAILABLE");
         if (date != null) {
@@ -200,6 +200,15 @@ public class ScheduleServiceImpl implements ScheduleService {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + departmentId);
             }
             qw.eq("department_id", dept.getId());
+        }
+        if (doctorId != null && !doctorId.isBlank()) {
+            // doctorId 实为 doctor_no（业务编号串，如 D20002），反查主键
+            Doctor doc = doctorMapper.selectOne(
+                    new QueryWrapper<Doctor>().eq("doctor_no", doctorId));
+            if (doc == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorId);
+            }
+            qw.eq("doctor_id", doc.getId());
         }
         qw.orderByAsc("schedule_date").orderByAsc("period");
         List<DoctorSchedule> schedules = scheduleMapper.selectList(qw);

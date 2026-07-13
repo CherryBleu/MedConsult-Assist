@@ -22,8 +22,8 @@ public interface ScheduleService {
     PageResult<ScheduleDTO.ListItem> list(int page, int pageSize, String departmentId,
                                           LocalDate dateFrom, LocalDate dateTo);
 
-    /** §2.4.3 查询可预约号源（status=AVAILABLE 且 remaining>0），按 date 过滤 */
-    List<ScheduleDTO.AvailableItem> available(String departmentId, LocalDate date);
+    /** §2.4.3 查询可预约号源（status=AVAILABLE 且 remaining>0），按 departmentId/doctorId/date 过滤 */
+    List<ScheduleDTO.AvailableItem> available(String departmentId, String doctorId, LocalDate date);
 
     /** §2.4.4 更新排班状态，SUSPENDED 时返回 notifiedAppointments */
     ScheduleDTO.StatusResponse updateStatus(String scheduleNo, ScheduleDTO.StatusUpdateRequest req);

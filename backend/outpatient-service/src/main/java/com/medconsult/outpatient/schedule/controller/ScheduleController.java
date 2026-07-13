@@ -53,8 +53,9 @@ public class ScheduleController {
     @Operation(summary = "查询可预约号源")
     public Result<List<ScheduleDTO.AvailableItem>> available(
             @Parameter(description = "科室编号", required = false) @RequestParam(required = false) String departmentId,
+            @Parameter(description = "医生编号", required = false) @RequestParam(required = false) String doctorId,
             @Parameter(description = "日期", required = false) @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return Result.ok(scheduleService.available(departmentId, date));
+        return Result.ok(scheduleService.available(departmentId, doctorId, date));
     }
 
     /** §2.4.4 更新排班状态 */
