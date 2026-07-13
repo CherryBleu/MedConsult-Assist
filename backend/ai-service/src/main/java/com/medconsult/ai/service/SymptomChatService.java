@@ -222,7 +222,7 @@ public class SymptomChatService {
         long started = System.currentTimeMillis();
         if (knowledge.isEmpty()) {
             log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_empty_knowledge", elapsed(started));
-            return "目前疾病 JSON 向量检索未获得足够依据，无法给出可靠的可能原因。若症状持续、加重或出现胸痛、呼吸困难、意识异常等情况，请及时就医。非诊断，仅供参考，不能替代医生诊断。";
+            return "暂未检索到与您描述匹配的疾病条目。建议您：1）尝试补充更具体的症状描述（如部位、持续时间、诱因、伴随症状）；2）若症状持续、加重或出现胸痛、呼吸困难、意识异常等危急情况，请立即就医。本结果仅供健康咨询参考，不能替代医生诊断。";
         }
         String answer = ruleBasedAnswer(knowledge, departments, risk);
         log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_template", elapsed(started));

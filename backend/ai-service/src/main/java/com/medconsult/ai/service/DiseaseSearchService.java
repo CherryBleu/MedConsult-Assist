@@ -64,8 +64,13 @@ public class DiseaseSearchService {
                 .limit(3)
                 .toList();
         if (candidates.isEmpty()) {
-            log.info("[AI-TIMER] disease.search={}ms candidates=0 results=0", elapsed(started));
-            return List.of();
+            // 纯症状输入兜底：用户未明确提及疾病名时（如只输入"咳嗽""胸闷"），
+            // 所有候选都是"待鉴别"占位符被过滤掉。此时不应直接返回空列表短路，
+            // 否则 Milvus 语义检索路径永远走不到。改为用症状关键词 + 原始文本做检索兜底。
+            List<DiseaseKnowledge> fallback = searchBySymptomText(userText, intent, topK);
+            log.info("[AI-TIMER] disease.search={}ms candidates=0 fallback=symptom results={}",
+                    elapsed(started), fallback.size());
+            return fallback;
         }
 
         List<DiseaseKnowledge> results = new ArrayList<>();
@@ -95,6 +100,58 @@ public class DiseaseSearchService {
         log.info("[AI-TIMER] disease.search={}ms candidates={} rawResults={} results={} sources={}",
                 elapsed(started), candidates.size(), results.size(), deduped.size(), summarizeSources(deduped));
         return deduped;
+    }
+
+    /**
+     * 纯症状输入的检索兜底（docs/修改建议.md §3.1 P0 铁律：不调用生成式 LLM）。
+     *
+     * <p>当用户只输入症状（如"咳嗽""胸闷三天"）而未明确提及疾病名时，意图抽取阶段
+     * 只能产出"待鉴别"占位候选，被 {@link #search} 的占位过滤器剔除后候选为空。
+     * 此方法接管这种场景，按优先级尝试两条降级路径：
+     * <ol>
+     *   <li>Mongo 按症状关键词查询（{@link MongoDiseaseRepository#findBySymptom}）：
+     *       用 intent 中抽取的症状在 diseases 集合的 symptom 数组字段做 $in 匹配。
+     *       只要疾病数据已导入 Mongo，即使 Embedding/Milvus 不可用也能召回。</li>
+     *   <li>Milvus 语义检索（本地 Embedding 向量化 + Milvus topK 召回）：
+     *       用 {@link QueryExpander#expand} 扩展查询文本后 embedding，再向量检索。
+     *       依赖本地 Embedding 容器（localhost:7997）和 Milvus（localhost:19530）。</li>
+     * </ol>
+     * 两条路径任一命中即返回；都未命中返回空列表（由上层 generateFinalAnswer 给出兜底提示）。
+     */
+    private List<DiseaseKnowledge> searchBySymptomText(String userText, DiseaseIntent intent, int topK) {
+        int limit = Math.max(1, Math.min(3, topK));
+
+        // 路径1：Mongo 按症状关键词查询（不依赖 Embedding/Milvus，纯规则）
+        List<String> symptoms = intent.candidates().stream()
+                .flatMap(c -> c.symptoms().stream())
+                .filter(s -> s != null && !s.isBlank())
+                .distinct()
+                .toList();
+        if (!symptoms.isEmpty()) {
+            List<DiseaseKnowledge> mongoMatches = mongoDiseaseRepository.findBySymptom(symptoms, limit);
+            if (!mongoMatches.isEmpty()) {
+                log.info("[AI-TIMER] disease.searchBySymptomText source=mongodb_symptom results={}",
+                        mongoMatches.size());
+                return mongoMatches;
+            }
+        }
+
+        // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）
+        DiseaseCandidate fallbackCandidate = new DiseaseCandidate(
+                "", symptoms.isEmpty() ? List.of(userText) : symptoms,
+                "纯症状输入，基于原始文本做语义检索兜底。");
+        String queryText = QueryExpander.expand(userText, fallbackCandidate);
+        List<DiseaseKnowledge> milvusMatches = llmClient.embedOne(queryText)
+                .map(vector -> milvusRestClient.search(vector, limit))
+                .orElse(List.of());
+        if (!milvusMatches.isEmpty()) {
+            log.info("[AI-TIMER] disease.searchBySymptomText source=milvus_semantic results={}",
+                    milvusMatches.size());
+            return milvusMatches;
+        }
+
+        log.info("[AI-TIMER] disease.searchBySymptomText source=miss results=0");
+        return List.of();
     }
 
     private DiseaseKnowledge standardizeCandidate(String userText, MetadataQuery metadataQuery, DiseaseCandidate candidate) {

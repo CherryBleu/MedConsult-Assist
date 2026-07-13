@@ -70,6 +70,43 @@ public class MongoDiseaseRepository {
         }
     }
 
+    /**
+     * 按症状关键词查询疾病（纯规则兜底路径）。
+     *
+     * <p>用于纯症状输入（如"咳嗽""胸闷"）的检索兜底：当用户未明确提及疾病名、
+     * 候选全是"待鉴别"占位符时，用抽取到的症状关键词在 Mongo 的 {@code symptom}
+     * 数组字段上做 {@code $in} 匹配（MongoDB 自动展开数组元素），召回含有这些症状的疾病。
+     *
+     * <p>这是 Embedding/Milvus 不可用时的降级路径——即使本地 Embedding 容器或
+     * Milvus 未启动，只要 Mongo 疾病集合已导入，也能基于症状给出基本建议，
+     * 避免纯症状输入永远落到"检索未获得足够依据"的空提示。
+     *
+     * @param symptoms 症状关键词列表（如 ["咳嗽","呼吸困难"]）
+     * @param limit     最多返回条数
+     * @return 命中的疾病知识列表；查询异常或 symptoms 为空时返回空列表
+     */
+    public List<DiseaseKnowledge> findBySymptom(List<String> symptoms, int limit) {
+        if (symptoms == null || symptoms.isEmpty()) {
+            return List.of();
+        }
+        try {
+            MongoClient client = mongoClient();
+            MongoCollection<Document> collection = client
+                    .getDatabase(properties.mongo().database())
+                    .getCollection(properties.mongo().collection());
+            // symptom 是数组字段，$in 会自动展开匹配数组元素
+            List<Document> docs = collection
+                    .find(new Document("symptom", new Document("$in", symptoms)))
+                    .projection(Projections.include(projectionFields()))
+                    .limit(Math.max(1, limit))
+                    .into(new ArrayList<>());
+            return docs.stream().map(this::toKnowledge).toList();
+        } catch (Exception ex) {
+            log.warn("MongoDB disease symptom match failed, degrade to empty: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
     private DiseaseKnowledge toKnowledge(Document doc) {
         String name = doc.getString("name");
         Map<String, Object> metadata = new LinkedHashMap<>();
