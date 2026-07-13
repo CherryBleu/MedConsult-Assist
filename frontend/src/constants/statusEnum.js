@@ -3,15 +3,22 @@
  * 对齐状态转移图与数据库状态字段
  */
 
-// 预约挂号状态
+// 预约挂号状态（appointmentStatus 字段，与 paymentStatus 分开）
 export const APPOINTMENT_STATUS = {
-  BOOKED: { value: 'BOOKED', label: '待支付', type: 'warning' },
-  PAID: { value: 'PAID', label: '已预约', type: 'primary' },
+  BOOKED: { value: 'BOOKED', label: '待就诊', type: 'primary' },
   CANCELLED: { value: 'CANCELLED', label: '已取消', type: 'info' },
   CHECKED_IN: { value: 'CHECKED_IN', label: '已签到', type: 'success' },
   IN_PROGRESS: { value: 'IN_PROGRESS', label: '就诊中', type: 'primary' },
   COMPLETED: { value: 'COMPLETED', label: '已完成', type: 'success' },
   NO_SHOW: { value: 'NO_SHOW', label: '爽约', type: 'danger' }
+}
+
+// 支付状态（paymentStatus 字段，与 appointmentStatus 分开）
+export const PAYMENT_STATUS = {
+  UNPAID: { value: 'UNPAID', label: '待支付', type: 'warning' },
+  PAID: { value: 'PAID', label: '已支付', type: 'success' },
+  REFUNDING: { value: 'REFUNDING', label: '退款中', type: 'warning' },
+  REFUNDED: { value: 'REFUNDED', label: '已退款', type: 'info' }
 }
 
 // 电子病历状态

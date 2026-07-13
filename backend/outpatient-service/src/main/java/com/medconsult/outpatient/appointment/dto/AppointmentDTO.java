@@ -56,8 +56,12 @@ public class AppointmentDTO {
             @Schema(description = "就诊日期") LocalDate appointmentDate,
             @Schema(description = "时段") String period,
             @Schema(description = "就诊序号") int queueNo,
+            @Schema(description = "挂号费") BigDecimal fee,
             @Schema(description = "支付状态") String paymentStatus,
-            @Schema(description = "预约状态") String appointmentStatus
+            @Schema(description = "预约状态") String appointmentStatus,
+            @Schema(description = "就诊原因") String visitReason,
+            @Schema(description = "取消原因") String cancelReason,
+            @Schema(description = "创建时间") java.time.OffsetDateTime createdAt
     ) {}
 
     // ===== §2.5.3 列表 =====

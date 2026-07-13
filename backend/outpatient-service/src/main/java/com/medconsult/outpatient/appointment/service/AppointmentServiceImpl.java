@@ -128,8 +128,13 @@ public class AppointmentServiceImpl implements AppointmentService {
                 a.getAppointmentDate(),
                 a.getPeriod(),
                 a.getQueueNo() == null ? 0 : a.getQueueNo(),
+                a.getFee(),
                 a.getPaymentStatus(),
-                a.getAppointmentStatus());
+                a.getAppointmentStatus(),
+                a.getVisitReason(),
+                a.getCancelReason(),
+                a.getCreatedAt() != null ? a.getCreatedAt().atOffset(java.time.OffsetDateTime.now().getOffset())
+                        : null);
     }
 
     // ===== §2.5.3 列表 =====
