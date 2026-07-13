@@ -287,6 +287,56 @@ public class AuthServiceImpl implements AuthService {
                 u.getStatus());
     }
 
+    // ===== 绑定患者档案（补建档）=====
+
+    @Override
+    @Transactional
+    public AuthDTO.MeResponse bindPatient(Long userId, String patientNo) {
+        if (patientNo == null || patientNo.isBlank()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "patientNo 不能为空");
+        }
+        SysUser u = userMapper.selectById(userId);
+        if (u == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+        // 已绑定档案不允许重复绑定（防覆盖他人档案关联）
+        if (u.getPatientId() != null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前账号已关联患者档案，无需重复绑定");
+        }
+        // 仅 PATIENT 角色允许自助绑定（DOCTOR/管理员不通过此接口建档）
+        JwtPayload p = SecurityContext.getPayload();
+        String primaryRole = (p != null && p.primaryRole() != null) ? p.primaryRole() : "PATIENT";
+        if (!"PATIENT".equals(primaryRole)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅患者角色可绑定患者档案");
+        }
+        // 调 patient-service 反查 patientNo 对应的主键 id
+        // 不存在时下游返回 NOT_FOUND，由 FeignErrorDecoder 转为 BusinessException
+        Result<EntityIdDTO> res = patientClient.resolveId(patientNo);
+        if (res == null || res.data() == null || res.data().id() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "患者档案不存在: " + patientNo);
+        }
+        Long patientId = res.data().id();
+        // 防 IDOR：校验该 patient 未被其他 sys_user 绑定（一份档案只能关联一个登录账号）
+        Long boundCount = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getPatientId, patientId)
+                .ne(SysUser::getId, userId));
+        if (boundCount != null && boundCount > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "该患者档案已被其他账号绑定，请联系管理员");
+        }
+        u.setPatientId(patientId);
+        userMapper.updateById(u);
+        log.info("用户 {} 绑定患者档案成功，patientNo={}, patientId={}", userId, patientNo, patientId);
+        return new AuthDTO.MeResponse(
+                u.getUserNo(),
+                u.getAccount(),
+                u.getName(),
+                MaskType.PHONE.mask(u.getPhone()),
+                primaryRole,
+                String.valueOf(patientId),
+                u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
+                u.getStatus());
+    }
+
     // ===== 管理员用户列表 =====
 
     @Override

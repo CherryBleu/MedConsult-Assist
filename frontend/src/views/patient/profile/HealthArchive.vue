@@ -7,6 +7,16 @@
       </div>
 
       <div v-loading="loading" class="archive-content">
+        <!-- 未关联患者档案时给出明确提示，而非静默显示空表 -->
+        <el-alert
+          v-if="!hasPatientId"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="当前账号未关联患者档案"
+          description="请先前往「个人中心」完善个人档案后再查看健康档案。"
+        />
+        <template v-else>
         <!-- 过敏史 -->
         <div class="archive-section">
           <div class="section-header">
@@ -58,6 +68,7 @@
             <span v-else class="empty-text">暂无记录</span>
           </div>
         </div>
+        </template>
       </div>
     </div>
   </div>
@@ -72,6 +83,9 @@ import { useUserStore } from '@/store/modules/user'
 const userStore = useUserStore()
 const loading = ref(false)
 const archive = ref({})
+
+// 是否已关联患者档案（patientId 为 null → 未关联，提示先建档）
+const hasPatientId = computed(() => !!userStore.userInfo?.patientId)
 
 const allergyList = computed(() => {
   const a = archive.value.allergies

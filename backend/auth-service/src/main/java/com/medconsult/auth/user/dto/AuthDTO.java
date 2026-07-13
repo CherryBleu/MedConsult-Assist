@@ -149,6 +149,22 @@ public class AuthDTO {
     ) {}
 
     /**
+     * 绑定患者档案请求（补建档场景）。
+     *
+     * <p>用于历史脏账号（sys_user.patient_id 为 NULL，绕过"注册即建档"流程直接 SQL 插入）
+     * 补全患者档案关联：前端先调 POST /patients 建档拿到 patientNo，再调本接口绑定到当前登录用户。
+     *
+     * <p>安全约束：仅 PATIENT 角色且当前 patient_id 为 null 时允许绑定；已绑定则拒绝（防覆盖他人档案）。
+     */
+    @Data
+    @Schema(description = "绑定患者档案请求")
+    public static class BindPatientRequest {
+        @Schema(description = "患者档案编号 patient_no（由 POST /patients 创建后返回）", required = true)
+        @NotBlank(message = "patientNo 不能为空")
+        private String patientNo;
+    }
+
+    /**
      * 用户列表项（管理员后台「用户管理」页 GET /api/v1/auth/users）。
      *
      * <p><b>安全约束</b>：绝不包含 passwordHash 字段——SysUser 虽有密码摘要，

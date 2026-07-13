@@ -70,6 +70,20 @@ public class AuthController {
     }
 
     /**
+     * 绑定患者档案到当前登录用户（补建档场景）。
+     *
+     * <p>用于历史脏账号（sys_user.patient_id 为 NULL，绕过"注册即建档"流程）补全档案关联。
+     * 前端先调 {@code POST /patients} 建档拿到 patientNo，再调本接口绑定到当前登录用户。
+     * 绑定成功后需重新登录或刷新 token 才能让 JWT 带上新的 patientId（业务接口从 JWT 取 patientId）。
+     */
+    @PostMapping("/me/bind-patient")
+    @Operation(summary = "绑定患者档案（补建档）")
+    public Result<AuthDTO.MeResponse> bindPatient(@Valid @RequestBody AuthDTO.BindPatientRequest req) {
+        Long userId = SecurityContext.requireUser().userId();
+        return Result.ok(authService.bindPatient(userId, req.getPatientNo()));
+    }
+
+    /**
      * 管理员查询用户列表（用户管理页）。
      *
      * <p>权限：仅 HOSPITAL_ADMIN 可访问（service 层手动校验角色，非管理员抛 FORBIDDEN）。

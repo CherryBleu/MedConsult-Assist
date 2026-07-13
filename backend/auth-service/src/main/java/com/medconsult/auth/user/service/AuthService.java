@@ -27,6 +27,19 @@ public interface AuthService {
     AuthDTO.MeResponse me(Long userId);
 
     /**
+     * 绑定患者档案到当前登录用户（补建档场景）。
+     *
+     * <p>用于历史脏账号（sys_user.patient_id 为 NULL）补全患者档案关联。
+     * 前端先调 POST /patients 建档拿到 patientNo，再调本接口绑定。
+     * 仅 PATIENT 角色且当前 patient_id 为 null 时允许；已绑定则拒绝。
+     *
+     * @param userId    当前登录用户 ID
+     * @param patientNo 患者档案编号（patient_no）
+     * @return 绑定后的当前用户信息（含新的 patientId）
+     */
+    AuthDTO.MeResponse bindPatient(Long userId, String patientNo);
+
+    /**
      * 管理员查询用户列表（用户管理页）。
      *
      * <p>权限：仅 HOSPITAL_ADMIN 可调用（service 内手动校验，不依赖 @Permission 切面）。
