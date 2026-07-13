@@ -60,20 +60,24 @@ public class AppointmentTxService {
             throw new BusinessException(ErrorCode.CONFLICT, "号源已约满: " + s.getScheduleNo());
         }
 
-        // 解析 patient_id（BIGINT 主键）。req.getPatientId() 是 patient_no（业务编号串）。
-        // 冒烟期无 Feign 到 patient-service 反查，约定：接口契约 patientId 是 patient_no 串，
-        // 本地仅校验非空。BIGINT patient_id 暂以 patient_no 的 hash 占位（同号稳定），避免
-        // 重复预约校验失真；后续 medical-record-service 接入后由 Feign 解析真实 patient_id。
-        String patientNo = req.getPatientId();
-        if (patientNo == null || patientNo.isBlank()) {
+        // 解析 patient_id（BIGINT 主键）。
+        // enforceCreateScope 已把 PATIENT 的 req.patientId 覆盖为本人 JWT pid（= patient 表主键 id）；
+        // DOCTOR/管理员代挂号时 req.patientId 也是 patient 主键 id 字符串（前端从 userInfo.patientId 传入）。
+        // 直接解析为 long 写入 appointment.patient_id，list/ownership 用同一值比对，无需 Feign 反查。
+        String patientIdStr = req.getPatientId();
+        if (patientIdStr == null || patientIdStr.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
         }
-        // 稳定占位：patient_no 的 Long.hashCode 取无符号值（仅用于本地去重，不对外）
-        long patientId = positiveHash(patientNo);
+        long patientId;
+        try {
+            patientId = Long.parseLong(patientIdStr.trim());
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号格式不正确: " + patientIdStr);
+        }
 
         // 重复预约限制（规则 5 简化版）：同 patient + 同 schedule 已有未取消预约 → CONFLICT
         Long dupCount = appointmentMapper.selectCount(new QueryWrapper<Appointment>()
-                .eq("patient_no", patientNo)
+                .eq("patient_id", patientId)
                 .eq("schedule_id", s.getId())
                 .ne("appointment_status", "CANCELLED"));
         if (dupCount != null && dupCount > 0) {
@@ -94,7 +98,9 @@ public class AppointmentTxService {
         Appointment a = new Appointment();
         a.setAppointmentNo(generateAppointmentNo());
         a.setPatientId(patientId);
-        a.setPatientNo(patientNo);  // 冗余存业务编号，list/detail 接口直接用
+        // patient_no 业务编号串需 Feign 到 patient-service 反查；冒烟期无 Feign，
+        // 暂以 patient_id 主键字符串占位（list/detail 的 PATIENT 过滤走 patient_id，不依赖此列）。
+        a.setPatientNo(String.valueOf(patientId));
         a.setDoctorId(s.getDoctorId());
         a.setDepartmentId(s.getDepartmentId());
         a.setScheduleId(s.getId());
@@ -108,8 +114,8 @@ public class AppointmentTxService {
         a.setSource(req.getSource());
         appointmentMapper.insert(a);
 
-        log.info("预约创建成功: appointmentNo={} scheduleNo={} queueNo={} patientNo={}",
-                a.getAppointmentNo(), s.getScheduleNo(), queueNo, patientNo);
+        log.info("预约创建成功: appointmentNo={} scheduleNo={} queueNo={} patientId={}",
+                a.getAppointmentNo(), s.getScheduleNo(), queueNo, patientId);
         return new AppointmentDTO.CreateResponse(
                 a.getAppointmentNo(), queueNo, a.getFee(), a.getPaymentStatus(), a.getAppointmentStatus());
     }
@@ -169,15 +175,6 @@ public class AppointmentTxService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "预约不存在: " + appointmentNo);
         }
         return a;
-    }
-
-    /**
-     * patient_no 的稳定占位主键：取字符串的无符号 hashCode。
-     * <p>仅用于冒烟期本地去重，medical-record-service 接入后由 Feign 解析真实 patient_id。
-     */
-    private static long positiveHash(String patientNo) {
-        long h = patientNo.hashCode();
-        return h == Long.MIN_VALUE ? 0L : Math.abs(h);
     }
 
     /** 生成预约编号：A + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_appointment_no 兜底 */

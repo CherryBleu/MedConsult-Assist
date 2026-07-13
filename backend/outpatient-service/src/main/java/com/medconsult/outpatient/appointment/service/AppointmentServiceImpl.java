@@ -302,14 +302,14 @@ public class AppointmentServiceImpl implements AppointmentService {
             if (selfId == null) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法挂号");
             }
-            // CreateRequest.patientId 是 patient_no 字符串；这里只做"不允许传他人"的拦截，
-            // 真实主键由 txService 通过 Feign 反查 patient_no → patient_id 得到。
-            // 若 PATIENT 传了非空 patientId 且与本人冲突，拒绝（防代他人挂号）。
-            if (req.getPatientId() != null && !req.getPatientId().isBlank()) {
-                // 无法在 outpatient 内把 patient_no ↔ patientId 直接比对（需 Feign），
-                // 保守策略：PATIENT 一律以本人身份挂号，覆盖请求体。
-                log.warn("PATIENT 创建预约时传入了 patientId={}，已覆盖为本人身份", req.getPatientId());
+            // JWT pid 即 patient 表主键 id（注册即建档时写入 sys_user.patient_id）。
+            // PATIENT 一律以本人身份挂号，强制覆盖请求体 patientId 为本人主键，
+            // txService 据此直接写入 appointment.patient_id（不再 hash），list/ownership 用同一值比对。
+            if (req.getPatientId() != null && !req.getPatientId().isBlank()
+                    && !String.valueOf(selfId).equals(req.getPatientId())) {
+                log.warn("PATIENT 创建预约时传入了 patientId={}，已覆盖为本人身份 {}", req.getPatientId(), selfId);
             }
+            req.setPatientId(String.valueOf(selfId));
         }
     }
 
