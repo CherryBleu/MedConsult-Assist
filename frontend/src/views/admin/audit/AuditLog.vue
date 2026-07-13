@@ -45,6 +45,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="时间" min-width="170" />
+        <template #empty>
+          <el-empty v-if="!loadError" description="暂无审计日志" />
+          <div v-else class="table-error">
+            <el-alert type="error" :closable="false" show-icon :title="loadError" description="审计日志服务暂时不可用，请稍后重试。" />
+            <el-button type="primary" size="small" @click="fetchList" style="margin-top: 12px">重试</el-button>
+          </div>
+        </template>
       </el-table>
 
       <div class="pagination-wrapper" v-if="total > 0">
@@ -69,6 +76,7 @@ import { getAuditLogListApi } from '@/api/audit'
 const loading = ref(false)
 const auditList = ref([])
 const total = ref(0)
+const loadError = ref('')
 
 const filters = reactive({
   resourceType: '',
@@ -81,6 +89,7 @@ const pagination = reactive({ page: 1, pageSize: 10 })
 
 const fetchList = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const params = { page: pagination.page, pageSize: pagination.pageSize }
     if (filters.resourceType) params.resourceType = filters.resourceType
@@ -91,6 +100,12 @@ const fetchList = async () => {
     const data = res.data
     auditList.value = data.items ?? data.records ?? (Array.isArray(data) ? data : [])
     total.value = data.total ?? auditList.value.length
+  } catch (e) {
+    // 审计日志接口超时/503 时不再一直 loading（全局 90s 超时太长，api/audit.js 已调为 15s）。
+    // 在表格 empty 区显示错误 + 重试按钮，让用户知道是服务不可用而非"无数据"。
+    auditList.value = []
+    total.value = 0
+    loadError.value = e?.message || '审计日志查询失败'
   } finally {
     loading.value = false
   }

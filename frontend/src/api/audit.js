@@ -7,6 +7,8 @@ import request from '@/utils/request'
 
 // 分页查询审计日志（支持多条件过滤）
 // params: { resourceType?, resourceId?, operatorId?, action?, dateFrom?, dateTo?, page, pageSize }
+// 超时设为 15 秒（覆盖全局 90s 默认值）：审计日志为查询接口，不应让用户等 90 秒。
+// notification-service 偶发僵死时，15 秒超时让前端快速失败并提示重试，而非一直 loading。
 export const getAuditLogListApi = (params) => {
-  return request({ url: '/audit-logs', method: 'get', params })
+  return request({ url: '/audit-logs', method: 'get', params, timeout: 15000 })
 }

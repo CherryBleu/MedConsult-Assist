@@ -114,7 +114,12 @@
       <el-main class="layout-main">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <!-- keep-alive 缓存 AI 工具等重状态页面：避免切换标签后回来丢失已生成结果，
+                 用户无需重新点击"生成"等待 LLM 调用（病历摘要/用药分析单次 LLM 耗时 10-15s）。
+                 include 按路由 name 精确缓存，避免缓存列表页导致数据不刷新。 -->
+            <keep-alive :include="cachedRouteNames">
+              <component :is="Component" />
+            </keep-alive>
           </transition>
         </router-view>
       </el-main>
@@ -138,6 +143,16 @@ const noticeStore = useNoticeStore()
 
 const isCollapse = ref(false)
 const noticePopoverVisible = ref(false)
+
+// 需要 keep-alive 缓存的路由 name 列表：
+// 仅缓存"重状态"页面（AI 工具等生成结果耗时 10-15s，切走再切回不应丢失）。
+// 列表/详情页不缓存——它们需要每次进入刷新最新数据。
+const cachedRouteNames = ref([
+  'RecordSummary',      // 病历摘要：LLM 生成结果耗时，切走再切回保留结果
+  'MedicationAnalysis', // 用药分析：LLM 生成结果耗时，切走再切回保留结果
+  'AiConsult',          // AI 问诊：保留多轮对话上下文
+  'Triage'              // 智能分诊：保留分诊结果
+])
 
 // 当前激活菜单
 const activeMenu = computed(() => route.path)

@@ -84,6 +84,9 @@
 </template>
 
 <script setup>
+// keep-alive include 按组件 name 匹配，必须显式声明 name（与路由 name 一致）
+defineOptions({ name: 'AiConsult' })
+
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { Cpu, Loading } from '@element-plus/icons-vue'

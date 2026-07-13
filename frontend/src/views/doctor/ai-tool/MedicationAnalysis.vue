@@ -84,6 +84,9 @@
 </template>
 
 <script setup>
+// keep-alive include 按组件 name 匹配，必须显式声明 name（与路由 name 一致）
+defineOptions({ name: 'MedicationAnalysis' })
+
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck } from '@element-plus/icons-vue'
