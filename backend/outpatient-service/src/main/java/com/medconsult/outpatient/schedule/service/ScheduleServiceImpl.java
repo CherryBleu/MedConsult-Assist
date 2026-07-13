@@ -202,9 +202,17 @@ public class ScheduleServiceImpl implements ScheduleService {
             qw.eq("department_id", dept.getId());
         }
         if (doctorId != null && !doctorId.isBlank()) {
-            // doctorId 实为 doctor_no（业务编号串，如 D20002），反查主键
+            // doctorId 可能是 doctor_no（业务编号串，如 D20002）或 BIGINT 主键（如 2001，来自 JWT/userInfo）
+            // 先按 doctor_no 查，查不到再按主键 id 查
             Doctor doc = doctorMapper.selectOne(
                     new QueryWrapper<Doctor>().eq("doctor_no", doctorId));
+            if (doc == null) {
+                try {
+                    long docPk = Long.parseLong(doctorId.trim());
+                    doc = doctorMapper.selectById(docPk);
+                } catch (NumberFormatException ignored) {
+                }
+            }
             if (doc == null) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorId);
             }

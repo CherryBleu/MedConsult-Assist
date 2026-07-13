@@ -49,6 +49,9 @@ import { ref, computed, onMounted } from 'vue'
 import dayjs from 'dayjs'
 import { SCHEDULE_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getScheduleListApi } from '@/api/appointment'
+import { useUserStore } from '@/store/modules/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const selectedDate = ref('')
@@ -75,7 +78,9 @@ const daySchedule = computed(() => {
 const getSchedule = async () => {
   loading.value = true
   try {
-    const res = await getScheduleListApi()
+    // 只查本人排班（userInfo.doctorId 是主键 id 串，后端 available 支持主键/doctor_no 双查）
+    const doctorId = userStore.userInfo?.doctorId
+    const res = await getScheduleListApi(doctorId)
     scheduleList.value = res.data
   } finally {
     loading.value = false
