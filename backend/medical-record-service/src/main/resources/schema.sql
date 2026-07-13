@@ -86,3 +86,23 @@ CREATE TABLE IF NOT EXISTS prescription_item (
     KEY idx_prescription_item_prescription (prescription_id),
     KEY idx_prescription_item_drug (drug_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='处方明细表';
+
+-- attachment 附件表（《数据库设计文档》§2.12，docs/接口文档.md §2.8.4/2.8.5）
+-- 保存病历/检查报告/影像报告等文件元数据，不约束文件实际存储方式（实际文件走 /files/upload）。
+CREATE TABLE IF NOT EXISTS attachment (
+    id                    BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    attachment_no         VARCHAR(32)   NOT NULL                 COMMENT '附件编号（ATT + 雪花 base36）',
+    biz_type              VARCHAR(50)   NOT NULL                 COMMENT '业务类型：MEDICAL_RECORD/EXAM_REPORT/IMAGING_REPORT',
+    biz_id                VARCHAR(64)   NOT NULL                 COMMENT '业务编号（如 record_no）',
+    file_name             VARCHAR(255)                           COMMENT '文件名',
+    file_type             VARCHAR(50)                            COMMENT '文件类型（PDF/DICOM/JPG 等）',
+    file_url              VARCHAR(1000)                          COMMENT '文件访问地址',
+    file_size             BIGINT                                 COMMENT '文件大小（Byte）',
+    uploaded_by           BIGINT                                 COMMENT '上传人 ID（sys_user.id）',
+    created_at            DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at            DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted               TINYINT       NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_attachment_no (attachment_no),
+    KEY idx_attachment_biz (biz_type, biz_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='附件元数据表';

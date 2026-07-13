@@ -40,12 +40,12 @@ spring:
           uri: lb://drug-service
           predicates:
             - Path=/api/v1/drugs/**
-        # 电子病历 + 处方服务：病历 / 处方（架构文档 §1.1 medical-record-service）
+        # 电子病历 + 处方 + 附件服务：病历 / 处方 / 附件（架构文档 §1.1 medical-record-service）
         # 逗号分隔多路径，同 outpatient-service 写法；/internal/** 不配路由（JwtAuthFilter 双保险）
         - id: medical-record-service
           uri: lb://medical-record-service
           predicates:
-            - Path=/api/v1/medical-records/**,/api/v1/prescriptions/**
+            - Path=/api/v1/medical-records/**,/api/v1/prescriptions/**,/api/v1/attachments/**
         # 通知 + 审计服务：站内通知 / 审计日志查询（架构文档 §1.1 notification-service）
         - id: notification-service
           uri: lb://notification-service
