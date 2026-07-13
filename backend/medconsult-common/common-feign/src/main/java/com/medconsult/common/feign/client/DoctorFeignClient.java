@@ -6,6 +6,8 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
+import java.util.List;
+
 /**
  * outpatient-service 的 Feign 客户端（架构文档 §2.3）。
  *
@@ -24,4 +26,11 @@ public interface DoctorFeignClient {
     /** 内部：按 department_no 反查 BIGINT 主键 */
     @GetMapping("/internal/departments/no/{departmentNo}/id")
     Result<EntityIdDTO> resolveDepartmentId(@PathVariable("departmentNo") String departmentNo);
+
+    /**
+     * 内部：查询有启用医生的科室编号集合（department_no）。
+     * <p>供 ai-service 智能分诊过滤"无医生可预约"的空科室。
+     */
+    @GetMapping("/internal/departments/with-doctors")
+    Result<List<String>> departmentNosWithDoctors();
 }

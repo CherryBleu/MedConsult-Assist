@@ -5,6 +5,8 @@ import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.outpatient.doctor.dto.DoctorDTO;
 import com.medconsult.outpatient.doctor.entity.Doctor;
 
+import java.util.List;
+
 /**
  * 医生服务接口（对齐《接口文档》§2.3.2）。
  *
@@ -30,4 +32,13 @@ public interface DoctorService {
      * <p>供 medical-record-service 落库存真实主键。未找到抛 NOT_FOUND。
      */
     EntityIdDTO internalResolveId(String doctorNo);
+
+    /**
+     * 内部接口：查询有启用医生的科室编号集合（department_no）。
+     * <p>供 ai-service 智能分诊过滤"无医生可预约"的科室，避免推荐全科医学科等
+     * 只有科室没有医生的空科室，导致用户挂号时无医生可选。
+     * <p>逻辑：SELECT DISTINCT department_id FROM doctor WHERE enabled=1，
+     * 再回查 department 拿 department_no（业务层组装，非 SQL JOIN）。
+     */
+    List<String> internalDepartmentNosWithDoctors();
 }

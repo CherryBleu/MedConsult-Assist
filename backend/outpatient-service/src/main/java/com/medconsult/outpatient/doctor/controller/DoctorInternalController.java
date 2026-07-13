@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 门诊域对内接口（架构文档 §2.3 补充）。
  *
@@ -42,5 +44,15 @@ public class DoctorInternalController {
     public Result<EntityIdDTO> resolveDepartmentId(@PathVariable String departmentNo) {
         SecurityContext.requireService();
         return Result.ok(departmentService.internalResolveId(departmentNo));
+    }
+
+    /**
+     * 查询有启用医生的科室编号集合（department_no）。
+     * <p>供 ai-service 智能分诊过滤"无医生可预约"的空科室。
+     */
+    @GetMapping("/departments/with-doctors")
+    public Result<List<String>> departmentNosWithDoctors() {
+        SecurityContext.requireService();
+        return Result.ok(doctorService.internalDepartmentNosWithDoctors());
     }
 }

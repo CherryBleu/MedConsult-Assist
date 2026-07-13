@@ -119,6 +119,31 @@ public class DoctorServiceImpl implements DoctorService {
         return EntityIdDTO.of(requireByNo(doctorNo).getId());
     }
 
+    @Override
+    public List<String> internalDepartmentNosWithDoctors() {
+        // 查启用医生的 department_id（去重），再批量查 department 拿 department_no。
+        // 业务层组装（非 SQL JOIN），符合架构红线。
+        List<Doctor> activeDoctors = doctorMapper.selectList(
+                new QueryWrapper<Doctor>().eq("enabled", 1).select("DISTINCT department_id"));
+        List<Long> deptIds = new ArrayList<>();
+        for (Doctor d : activeDoctors) {
+            if (d.getDepartmentId() != null && !deptIds.contains(d.getDepartmentId())) {
+                deptIds.add(d.getDepartmentId());
+            }
+        }
+        if (deptIds.isEmpty()) {
+            return List.of();
+        }
+        List<Department> depts = departmentMapper.selectBatchIds(deptIds);
+        List<String> nos = new ArrayList<>();
+        for (Department dept : depts) {
+            if (dept.getDepartmentNo() != null && !dept.getDepartmentNo().isBlank()) {
+                nos.add(dept.getDepartmentNo());
+            }
+        }
+        return nos;
+    }
+
     // ===== 私有助手 =====
 
     /** 批量按 id 查询科室（一次 selectBatchIds），返回 id → Department 映射 */

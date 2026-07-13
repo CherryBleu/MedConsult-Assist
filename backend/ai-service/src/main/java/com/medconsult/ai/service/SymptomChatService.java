@@ -20,19 +20,25 @@ import com.medconsult.ai.util.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class SymptomChatService {
@@ -43,20 +49,30 @@ public class SymptomChatService {
     private final AiChatSessionMapper chatSessionMapper;
     private final AiChatMessageMapper chatMessageMapper;
     private final AiCallLogService callLogService;
+    private final DoctorFeignClient doctorFeignClient;
+    private final StringRedisTemplate redisTemplate;
     private final RiskRuleEngine riskRuleEngine = new RiskRuleEngine();
+
+    /** 有医生科室集合的 Redis 缓存 key（5 分钟 TTL，与 TriageService 共用） */
+    private static final String DEPT_WITH_DOCTORS_CACHE_KEY = "medconsult:ai:dept-with-doctors";
+    private static final Duration DEPT_WITH_DOCTORS_TTL = Duration.ofMinutes(5);
 
     public SymptomChatService(
             DiseaseSearchService diseaseSearchService,
             AiProperties properties,
             AiChatSessionMapper chatSessionMapper,
             AiChatMessageMapper chatMessageMapper,
-            AiCallLogService callLogService
+            AiCallLogService callLogService,
+            DoctorFeignClient doctorFeignClient,
+            StringRedisTemplate redisTemplate
     ) {
         this.diseaseSearchService = diseaseSearchService;
         this.properties = properties;
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
         this.callLogService = callLogService;
+        this.doctorFeignClient = doctorFeignClient;
+        this.redisTemplate = redisTemplate;
     }
 
     /**
@@ -344,19 +360,78 @@ public class SymptomChatService {
     }
 
     private List<String> extractDepartments(List<DiseaseKnowledge> knowledge, RiskAssessment risk) {
+        // 过滤无医生的科室：避免推荐用户挂号时找不到医生的空科室（如全科医学科）。
+        Set<String> deptNosWithDoctors = departmentNosWithDoctors();
         LinkedHashSet<String> departments = new LinkedHashSet<>();
-        if (risk.emergencyAdvice()) {
+        if (risk.emergencyAdvice() && deptNosWithDoctors.contains("DEP_EMERGENCY")) {
             departments.add("急诊科");
         }
         for (DiseaseKnowledge item : knowledge) {
             Object value = item.metadata().get("cure_department");
+            List<String> rawDepts;
             if (value instanceof List<?> list) {
-                list.stream().map(Objects::toString).forEach(departments::add);
+                rawDepts = list.stream().map(Objects::toString).toList();
             } else if (value != null) {
-                departments.add(value.toString());
+                rawDepts = List.of(value.toString());
+            } else {
+                rawDepts = List.of();
+            }
+            for (String dept : rawDepts) {
+                if (dept.isBlank()) {
+                    continue;
+                }
+                // 仅保留有医生的科室
+                if (deptNosWithDoctors.contains(departmentIdOf(dept))) {
+                    departments.add(dept);
+                }
             }
         }
         return departments.stream().filter(item -> !item.isBlank()).toList();
+    }
+
+    /** 科室中文名 → 科室编号（与 TriageService.departmentIdOf 对齐） */
+    private static String departmentIdOf(String department) {
+        if (department.contains("心")) {
+            return "DEP_CARDIOLOGY";
+        }
+        if (department.contains("呼吸")) {
+            return "DEP_RESPIRATORY";
+        }
+        if (department.contains("儿")) {
+            return "DEP_PEDIATRICS";
+        }
+        if (department.contains("急诊")) {
+            return "DEP_EMERGENCY";
+        }
+        return "DEP_GENERAL";
+    }
+
+    /**
+     * 查询有启用医生的科室编号集合（带 5 分钟 Redis 缓存，与 TriageService 共用同一 key）。
+     * <p>调用失败时降级为空集合（不过滤），保持原行为。
+     */
+    private Set<String> departmentNosWithDoctors() {
+        try {
+            String cached = redisTemplate.opsForValue().get(DEPT_WITH_DOCTORS_CACHE_KEY);
+            if (cached != null && !cached.isBlank()) {
+                Set<String> nos = JsonUtils.MAPPER.readValue(cached,
+                        JsonUtils.MAPPER.getTypeFactory().constructCollectionType(Set.class, String.class));
+                if (!nos.isEmpty()) {
+                    return nos;
+                }
+            }
+            Result<List<String>> resp = doctorFeignClient.departmentNosWithDoctors();
+            List<String> nos = resp == null ? null : resp.data();
+            if (nos == null || nos.isEmpty()) {
+                return Collections.emptySet();
+            }
+            Set<String> set = Set.copyOf(nos);
+            redisTemplate.opsForValue().set(DEPT_WITH_DOCTORS_CACHE_KEY, JsonUtils.toJson(set), DEPT_WITH_DOCTORS_TTL);
+            return set;
+        } catch (Exception e) {
+            log.warn("查询有医生科室失败，降级为不过滤: {}", e.getMessage());
+            return Collections.emptySet();
+        }
     }
 
     private static String truncate(String value, int length) {

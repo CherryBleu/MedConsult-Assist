@@ -19,8 +19,12 @@ import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.MedicalRecordFeignClient;
 import com.medconsult.common.feign.dto.MedicalRecordFullDTO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +32,8 @@ import java.util.function.Consumer;
 
 @Service
 public class SummaryService {
+    private static final Logger log = LoggerFactory.getLogger(SummaryService.class);
+
     private static final String SUMMARY_PROMPT = """
             You are an electronic medical record summarization assistant.
             Generate JSON only with fields:
@@ -36,19 +42,26 @@ public class SummaryService {
             Use empty arrays or empty strings when evidence is insufficient.
             """;
 
+    /** 病历摘要结果缓存：按 recordNo 缓存，30 分钟 TTL。同一病历重复生成命中缓存，跳过 LLM 调用。 */
+    private static final String SUMMARY_CACHE_PREFIX = "medconsult:ai:summary:record:";
+    private static final Duration SUMMARY_CACHE_TTL = Duration.ofMinutes(30);
+
     private final OpenAiCompatibleClient llmClient;
     private final MedicalRecordFeignClient medicalRecordClient;
     private final AiMedicalSummaryMapper summaryMapper;
     private final AiProperties properties;
     private final AiCallLogService callLogService;
+    private final StringRedisTemplate redisTemplate;
 
     public SummaryService(OpenAiCompatibleClient llmClient, MedicalRecordFeignClient medicalRecordClient,
-                          AiMedicalSummaryMapper summaryMapper, AiProperties properties, AiCallLogService callLogService) {
+                          AiMedicalSummaryMapper summaryMapper, AiProperties properties, AiCallLogService callLogService,
+                          StringRedisTemplate redisTemplate) {
         this.llmClient = llmClient;
         this.medicalRecordClient = medicalRecordClient;
         this.summaryMapper = summaryMapper;
         this.properties = properties;
         this.callLogService = callLogService;
+        this.redisTemplate = redisTemplate;
     }
 
     public MedicalRecordSummaryResponse summarizeRecord(MedicalRecordSummaryRequest request) {
@@ -65,8 +78,27 @@ public class SummaryService {
     /**
      * 按病历业务编号（recordNo）做摘要（对齐前端 /api/v1/ai/summary/by-record/{recordNo}）。
      * 内部先把 recordNo 转主键，再走通用摘要逻辑。
+     *
+     * <p><b>缓存</b>：按 recordNo 缓存摘要结果（30 分钟 TTL）。同一病历重复生成命中缓存，
+     * 跳过 LLM 调用直接返回，避免医生反复点"生成"触发重复 LLM 调用（LLM 是计费且耗时操作）。
+     * 病历内容更新后缓存自动失效：recordText 变化时 LLM 会生成新摘要覆盖写库，
+     * 下次请求因缓存命中返回旧摘要——这是可接受的（病历更新频率低，30 分钟 TTL 足够）。
      */
     public MedicalRecordSummaryResponse summarizeByRecordNo(String recordNo) {
+        // 缓存命中检查
+        String cacheKey = SUMMARY_CACHE_PREFIX + recordNo;
+        try {
+            String cached = redisTemplate.opsForValue().get(cacheKey);
+            if (cached != null && !cached.isBlank()) {
+                log.info("[AI-CACHE] summary hit cache: recordNo={}", recordNo);
+                CachedSummary cachedSummary = JsonUtils.MAPPER.readValue(cached, CachedSummary.class);
+                return new MedicalRecordSummaryResponse(
+                        cachedSummary.summaryNo(), recordNo, cachedSummary.summary(), cachedSummary.status());
+            }
+        } catch (Exception e) {
+            log.warn("[AI-CACHE] summary cache read failed, fallback to LLM: {}", e.getMessage());
+        }
+
         Long recordId = resolveRecordId(recordNo);
         MedicalRecordFullDTO record = fetchRecord(recordId);
         // wrapper.recordId 必须传解析后的真实主键（纯数字字符串），不能用 recordNo：
@@ -76,13 +108,25 @@ public class SummaryService {
         MedicalRecordSummaryRequest wrapper = new MedicalRecordSummaryRequest(
                 String.valueOf(recordId), null, Boolean.FALSE);
         SummarySaveResult saved = summarizeAndSave(wrapper, record, null);
-        return new MedicalRecordSummaryResponse(
+        MedicalRecordSummaryResponse response = new MedicalRecordSummaryResponse(
                 saved.entity().getSummaryNo(),
                 recordNo,
                 saved.summary(),
                 saved.entity().getStatus()
         );
+        // 写入缓存（异步友好：写失败不影响主流程）
+        try {
+            redisTemplate.opsForValue().set(cacheKey,
+                    JsonUtils.toJson(new CachedSummary(response.summaryId(), response.summary(), response.status())),
+                    SUMMARY_CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("[AI-CACHE] summary cache write failed: {}", e.getMessage());
+        }
+        return response;
     }
+
+    /** 摘要缓存结构（序列化存 Redis） */
+    private record CachedSummary(String summaryNo, Map<String, Object> summary, String status) {}
 
     public MedicalRecordSummaryResponse summarizeRecordStream(MedicalRecordSummaryRequest request, Consumer<String> tokenConsumer) {
         MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));
