@@ -93,7 +93,7 @@
         <!-- 编辑模式：仅可编辑后端 UpdateRequest 允许的字段 -->
         <el-form v-else ref="editFormRef" :model="editForm" label-width="100px" class="info-form">
           <el-form-item label="手机号">
-            <el-input v-model="editForm.phone" placeholder="请输入手机号" />
+            <el-input v-model="editForm.phone" placeholder="如需修改请输入新手机号，留空则保持原号" maxlength="11" />
           </el-form-item>
           <el-form-item label="联系地址">
             <el-input v-model="editForm.address" placeholder="请输入联系地址" />
@@ -214,7 +214,10 @@ const getPatientInfo = async () => {
 // 进入编辑模式：把 List 字段转成文本填入表单
 const startEdit = () => {
   editForm.value = {
-    phone: patientInfo.value.phone || '',
+    // phone 后端返回的是脱敏值（如 139****0001），不能回填编辑框——
+    // 用户若不改动直接保存会把脱敏串写回 DB 损坏真实手机号。
+    // 编辑框留空，placeholder 提示"如需修改请输入新手机号"；不填则提交 null（后端保持原值）。
+    phone: '',
     address: patientInfo.value.address || '',
     allergiesText: Array.isArray(patientInfo.value.allergies) ? patientInfo.value.allergies.join('、') : '',
     pastMedicalHistoryText: Array.isArray(patientInfo.value.pastMedicalHistory) ? patientInfo.value.pastMedicalHistory.join('、') : ''
