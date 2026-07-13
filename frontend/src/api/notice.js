@@ -41,9 +41,9 @@ export const markAllReadApi = (unreadIds = []) => {
     .then(() => ({ code: 0, message: 'success', data: null }))
 }
 
-// 删除通知（后端无删除端点，占位）
+// 删除通知（docs/接口文档.md §2.8 未定义删除端点，后端未实现）
+// 不再返回假成功占位——明确拒绝，让用户知道该功能未提供，避免「删了又回来」的误导。
 export const deleteNoticeApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockDeleteNotice(id))
-  // 后端暂无通知删除接口；返回成功占位
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return Promise.reject(new Error('通知删除功能未提供（系统暂不支持删除通知）'))
 }

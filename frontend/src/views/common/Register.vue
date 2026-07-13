@@ -32,22 +32,13 @@
           </el-radio-group>
         </el-form-item>
 
-        <el-form-item v-if="form.role === 'DOCTOR'" label="科室" prop="departmentId">
-          <el-select v-model="form.departmentId" placeholder="请选择所属科室" style="width: 100%">
-            <el-option v-for="dept in deptList" :key="dept.id" :label="dept.name" :value="dept.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.role === 'DOCTOR'" label="职称" prop="title">
-          <el-select v-model="form.title" placeholder="请选择职称" style="width: 100%">
-            <el-option label="主任医师" value="主任医师" />
-            <el-option label="副主任医师" value="副主任医师" />
-            <el-option label="主治医师" value="主治医师" />
-            <el-option label="住院医师" value="住院医师" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.role === 'DOCTOR'" label="擅长" prop="specialty">
-          <el-input v-model="form.specialty" type="textarea" :rows="2" placeholder="请输入擅长领域" />
-        </el-form-item>
+        <el-alert
+          v-if="form.role === 'DOCTOR'"
+          type="info"
+          :closable="false"
+          style="margin-bottom: 18px"
+          title="医生账号注册后，科室/职称/擅长等档案信息由管理员在「医生管理」中维护。"
+        />
 
         <el-form-item>
           <el-button type="primary" size="large" style="width: 100%" :loading="submitting" @click="handleRegister">
@@ -64,16 +55,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { registerApi } from '@/api/user'
-import { getDepartmentListApi } from '@/api/department'
 
 const router = useRouter()
 const formRef = ref()
 const submitting = ref(false)
-const deptList = ref([])
 
 const form = reactive({
   account: '',
@@ -82,10 +71,7 @@ const form = reactive({
   name: '',
   phone: '',
   idCard: '',
-  role: 'PATIENT',
-  departmentId: null,
-  title: '',
-  specialty: ''
+  role: 'PATIENT'
 })
 
 const validateConfirmPassword = (rule, value, callback) => {
@@ -129,16 +115,7 @@ const rules = {
     { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }
   ],
   idCard: [{ validator: validateIdCard, trigger: 'blur' }],
-  role: [{ required: true, message: '请选择注册身份', trigger: 'change' }],
-  departmentId: [{ required: true, message: '请选择科室', trigger: 'change' }],
-  title: [{ required: true, message: '请选择职称', trigger: 'change' }]
-}
-
-const getDeptList = async () => {
-  try {
-    const res = await getDepartmentListApi()
-    deptList.value = res.data
-  } catch (e) {}
+  role: [{ required: true, message: '请选择注册身份', trigger: 'change' }]
 }
 
 // 切换角色时重新校验 idCard（PATIENT 必填，DOCTOR 选填）
@@ -178,10 +155,6 @@ const handleRegister = async () => {
     submitting.value = false
   }
 }
-
-onMounted(() => {
-  getDeptList()
-})
 </script>
 
 <style scoped>
