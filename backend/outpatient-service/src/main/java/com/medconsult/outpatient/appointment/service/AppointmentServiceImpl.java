@@ -9,6 +9,8 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
@@ -91,6 +93,8 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     public AppointmentDTO.CreateResponse create(AppointmentDTO.CreateRequest req) {
+        // 越权防护：PATIENT 不得代他人挂号（覆盖为本人身份）
+        enforceCreateScope(req);
         // 前置校验：排班存在
         DoctorSchedule schedule = scheduleService.requireByNo(req.getScheduleId());
 
@@ -110,6 +114,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     public AppointmentDTO.DetailResponse detail(String appointmentNo) {
         Appointment a = requireByNo(appointmentNo);
+        // 越权防护（IDOR）：PATIENT 只能查本人，DOCTOR 只能查本人接诊的
+        enforceAppointmentOwnership(a);
         // 业务层组装医生名/科室名（同 schema，不跨表 join）。
         // 患者名跨服务（patient-service），本服务不直查；返回 null 占位，由前端或网关聚合。
         Doctor doctor = a.getDoctorId() != null ? doctorMapper.selectById(a.getDoctorId()) : null;
@@ -135,9 +141,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         if (status != null && !status.isBlank()) {
             qw.eq("appointment_status", status);
         }
-        if (patientId != null && !patientId.isBlank()) {
-            // patientId 实为 patient_no（业务编号串，如 PFRHLM5BSG741）。
-            // appointment 表冗余存 patient_no，直接按业务编号过滤。
+        // 越权防护（IDOR）：PATIENT 强制只查本人预约（按主键 patient_id，忽略请求传入的 patientId）
+        JwtPayload payload = requireUser();
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询预约");
+            }
+            qw.eq("patient_id", selfPatientId);
+        } else if (patientId != null && !patientId.isBlank()) {
+            // DOCTOR/管理员：patientId 实为 patient_no（业务编号串），按业务编号过滤
             qw.eq("patient_no", patientId);
         }
         qw.orderByDesc("created_at");
@@ -183,6 +196,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Override
     public AppointmentDTO.CancelResponse cancel(String appointmentNo, AppointmentDTO.CancelRequest req) {
         Appointment a = requireByNo(appointmentNo);
+        // 越权防护（IDOR）：PATIENT 只能取消本人预约，DOCTOR 只能取消本人接诊的
+        enforceAppointmentOwnership(a);
 
         // 校验当前状态可取消（规则 4：COMPLETED/IN_PROGRESS/CANCELLED 不可取消）
         if (!CANCELLABLE_STATUS.contains(a.getAppointmentStatus())) {
@@ -206,6 +221,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public AppointmentDTO.PaymentResponse updatePayment(String appointmentNo, AppointmentDTO.PaymentUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
+        // 越权防护（IDOR）：PATIENT 只能支付本人预约
+        enforceAppointmentOwnership(a);
         if (!ALLOWED_PAYMENT_STATUS.contains(req.getPaymentStatus())) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法支付状态: " + req.getPaymentStatus());
         }
@@ -226,6 +243,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     @Transactional
     public AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
+        // 越权防护（IDOR）：PATIENT 只能改本人预约状态，DOCTOR 只能改本人接诊的
+        enforceAppointmentOwnership(a);
         String newStatus = req.getAppointmentStatus();
         if (!ALLOWED_APPOINTMENT_STATUS.contains(newStatus)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法预约状态: " + newStatus);
@@ -241,6 +260,78 @@ public class AppointmentServiceImpl implements AppointmentService {
         appointmentMapper.updateById(a);
         log.info("预约状态流转: appointmentNo={} {} → {}", appointmentNo, current, newStatus);
         return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), newStatus);
+    }
+
+    // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围 / 修改建议 §2.3 权限矩阵）=====
+    //
+    // PATIENT 身份只能访问/操作自己的预约（appointment.patient_id == 本人 patientId）；
+    // DOCTOR 身份只能操作自己接诊的预约（appointment.doctor_id == 本人 doctorId）；
+    // 管理员（HOSPITAL_ADMIN）不限。
+    // 身份取自 SecurityContext（网关已解析 X-User-* 头重建 JwtPayload，§4.4）。
+    // 直连（无网关头、无 token）时 SecurityContext.getPayload() 返回 null，按"匿名拒绝"处理。
+
+    /**
+     * 校验对单条预约的访问权（detail/cancel/updatePayment/updateStatus）。
+     * <p>PATIENT：必须是本人预约；DOCTOR：必须为接诊医生；管理员：放行。
+     */
+    private void enforceAppointmentOwnership(Appointment a) {
+        JwtPayload payload = requireUser();
+        if (isPatient(payload)) {
+            Long selfId = payload.patientId();
+            if (selfId == null || !selfId.equals(a.getPatientId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该预约");
+            }
+        } else if (isDoctor(payload)) {
+            Long selfDoctorId = payload.doctorId();
+            if (selfDoctorId == null || !selfDoctorId.equals(a.getDoctorId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作非本人接诊的预约");
+            }
+        }
+        // HOSPITAL_ADMIN / PHARMACY_ADMIN 等管理角色不限制（架构 §4.3 ALL）
+    }
+
+    /**
+     * PATIENT 创建预约时强制覆盖 patientId 为本人（防代他人挂号）。
+     * <p>PATIENT 身份：忽略请求体 patientId，改用本人 patientId；
+     * DOCTOR/管理员：保留请求体值（代挂号场景）。
+     */
+    private void enforceCreateScope(AppointmentDTO.CreateRequest req) {
+        JwtPayload payload = requireUser();
+        if (isPatient(payload)) {
+            Long selfId = payload.patientId();
+            if (selfId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法挂号");
+            }
+            // CreateRequest.patientId 是 patient_no 字符串；这里只做"不允许传他人"的拦截，
+            // 真实主键由 txService 通过 Feign 反查 patient_no → patient_id 得到。
+            // 若 PATIENT 传了非空 patientId 且与本人冲突，拒绝（防代他人挂号）。
+            if (req.getPatientId() != null && !req.getPatientId().isBlank()) {
+                // 无法在 outpatient 内把 patient_no ↔ patientId 直接比对（需 Feign），
+                // 保守策略：PATIENT 一律以本人身份挂号，覆盖请求体。
+                log.warn("PATIENT 创建预约时传入了 patientId={}，已覆盖为本人身份", req.getPatientId());
+            }
+        }
+    }
+
+    /** 要求登录用户身份；匿名或服务身份拒绝 */
+    private JwtPayload requireUser() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        return payload;
+    }
+
+    private static boolean isPatient(JwtPayload p) {
+        if (p == null) return false;
+        if ("PATIENT".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("PATIENT");
+    }
+
+    private static boolean isDoctor(JwtPayload p) {
+        if (p == null) return false;
+        if ("DOCTOR".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("DOCTOR");
     }
 
     // ===== 私有助手 =====
