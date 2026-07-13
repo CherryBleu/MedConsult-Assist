@@ -165,7 +165,11 @@ public class SummaryService {
     }
 
     private Map<String, Object> summarizeText(String text) {
-        JsonNode json = llmClient.chatJson(SUMMARY_PROMPT, text).orElseGet(SummaryService::emptySummaryJson);
+        // LLM 不可用时不再静默兜底空 JSON（会导致前端显示空摘要表假装成功），
+        // 改为抛业务异常，让前端走 catch 分支显示明确错误提示。
+        JsonNode json = llmClient.chatJson(SUMMARY_PROMPT, text)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AI_EXTERNAL_FAILED,
+                        "病历摘要生成失败：AI 服务暂不可用，请稍后重试或联系管理员检查 LLM 配置"));
         return JsonUtils.MAPPER.convertValue(json, Map.class);
     }
 
@@ -174,9 +178,16 @@ public class SummaryService {
                                                Consumer<String> tokenConsumer) {
         long started = System.currentTimeMillis();
         String text = recordText(record);
+        // LLM 不可用时不再静默兜底空 JSON（会导致前端显示空摘要表假装成功），
+        // 改为抛业务异常，让前端走 catch 分支显示明确错误提示。
+        // 用户要求"不允许返回空值"：LLM 是摘要的唯一数据源，不可用时必须报错而非返回空内容。
         JsonNode json = tokenConsumer == null
-                ? llmClient.chatJson(SUMMARY_PROMPT, text).orElseGet(SummaryService::emptySummaryJson)
-                : llmClient.chatJsonStream(SUMMARY_PROMPT, text, tokenConsumer).orElseGet(SummaryService::emptySummaryJson);
+                ? llmClient.chatJson(SUMMARY_PROMPT, text)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.AI_EXTERNAL_FAILED,
+                            "病历摘要生成失败：AI 服务暂不可用，请稍后重试或联系管理员检查 LLM 配置"))
+                : llmClient.chatJsonStream(SUMMARY_PROMPT, text, tokenConsumer)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.AI_EXTERNAL_FAILED,
+                            "病历摘要生成失败：AI 服务暂不可用，请稍后重试或联系管理员检查 LLM 配置"));
         Map<String, Object> summary = JsonUtils.MAPPER.convertValue(json, Map.class);
 
         String summaryNo = BusinessIds.next("SUM");
@@ -195,12 +206,6 @@ public class SummaryService {
                 summaryNo, properties.llm().model(), request.recordId(), JsonUtils.toJson(summary), null,
                 System.currentTimeMillis() - started);
         return new SummarySaveResult(entity, summary);
-    }
-
-    private static JsonNode emptySummaryJson() {
-        return JsonUtils.readTree("""
-                {"chiefComplaint":"","diagnosis":[],"treatmentPlan":"","medications":[],"followUpAdvice":""}
-                """);
     }
 
     private static String recordText(MedicalRecordFullDTO record) {
