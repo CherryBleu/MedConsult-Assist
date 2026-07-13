@@ -161,8 +161,12 @@ public class PatientServiceImpl implements PatientService {
             items.add(new PatientDTO.ListItem(
                     pat.getPatientNo(),
                     pat.getName(),
+                    pat.getGender(),
+                    computeAge(pat.getBirthDate()),
                     MaskType.PHONE.mask(pat.getPhone()),
-                    pat.getStatus()));
+                    MaskType.ID_NO.mask(pat.getIdNo()),
+                    pat.getStatus(),
+                    pat.getCreatedAt()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }

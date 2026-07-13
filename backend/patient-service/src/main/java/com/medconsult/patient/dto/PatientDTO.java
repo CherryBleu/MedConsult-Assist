@@ -128,8 +128,12 @@ public class PatientDTO {
     public record ListItem(
             @Schema(description = "患者编号") String patientId,           // patient_no
             @Schema(description = "姓名") String name,
+            @Schema(description = "性别：MALE/FEMALE/UNKNOWN") String gender,
+            @Schema(description = "年龄") Integer age,
             @Schema(description = "脱敏手机号") String phoneMasked,         // 脱敏后手机号
-            @Schema(description = "档案状态") String status
+            @Schema(description = "脱敏身份证号") String idNoMasked,        // 脱敏后身份证号
+            @Schema(description = "档案状态") String status,
+            @Schema(description = "注册时间") java.time.LocalDateTime createdAt
     ) {}
 
     // ===== §2.2.4 更新档案 =====

@@ -176,9 +176,12 @@ public class ScheduleServiceImpl implements ScheduleService {
                     dept != null ? dept.getName() : null,
                     s.getScheduleDate(),
                     s.getPeriod(),
+                    s.getStartTime(),
+                    s.getEndTime(),
                     total,
                     booked,
                     total - booked,
+                    s.getRegistrationFee(),
                     s.getStatus()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);

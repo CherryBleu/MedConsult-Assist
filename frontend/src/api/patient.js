@@ -56,15 +56,33 @@ export const updatePatientInfoApi = (patientId, data) => {
 }
 
 // 管理员：患者列表（对齐后端 GET /patients）
-export const getAdminPatientListApi = (params) => {
+// 后端 ListItem: patientId/name/gender/age/phoneMasked/idNoMasked/status/createdAt
+// 前端 PatientManage 期望: patientNo/name/gender/age/phone/idCard/status/createdAt
+const mapAdminPatient = (p) => ({
+  patientNo: p.patientId ?? p.patientNo,
+  patientId: p.patientId,
+  name: p.name,
+  gender: p.gender,
+  age: p.age,
+  phone: p.phoneMasked ?? p.phone,
+  idCard: p.idNoMasked ?? p.idCard,
+  status: p.status,
+  createdAt: p.createdAt
+})
+
+export const getAdminPatientListApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockPatientList(params))
   }
-  return request({
+  const res = await request({
     url: '/patients',
     method: 'get',
     params
   })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  const mapped = list.map(mapAdminPatient)
+  res.data = { ...(res.data || {}), records: mapped, items: mapped, total: res.data?.total ?? mapped.length }
+  return res
 }
 
 // 管理员：患者详情（对齐后端 GET /patients/{patientId}）

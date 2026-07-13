@@ -107,15 +107,21 @@ export const getDoctorListApi = async (params) => {
   res.data = list.map(d => ({
     id: d.doctorId ?? d.id,
     doctorId: d.doctorId,
+    // 后端 ListItem.doctorId 即 doctor_no（业务编号），前端表格"工号"列读 doctorNo
+    doctorNo: d.doctorId ?? d.doctorNo,
     name: d.doctorName ?? d.name,
     doctorName: d.doctorName,
     departmentId: d.departmentId,
     departmentName: d.departmentName ?? d.deptName,
     title: d.title,
     specialties: Array.isArray(d.specialties) ? d.specialties.join('、') : (d.specialties ?? ''),
-    registrationFee: d.registrationFee ?? d.fee,
+    // 后端 Doctor 实体无 gender/phone/registrationFee 字段，暂回退为空
+    gender: d.gender ?? '',
+    phone: d.phone ?? '',
+    registrationFee: d.registrationFee ?? d.fee ?? '',
     fee: d.registrationFee ?? d.fee,
-    enabled: d.enabled
+    enabled: d.enabled,
+    status: d.enabled ? 'ACTIVE' : 'DISABLED'
   }))
   return res
 }

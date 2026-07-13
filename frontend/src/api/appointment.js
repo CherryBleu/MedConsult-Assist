@@ -163,9 +163,35 @@ export const getAdminAppointmentListApi = (params) => {
 }
 
 // 管理员：排班列表（对齐后端 GET /schedules）
-export const getScheduleManageListApi = (params) => {
+// 后端 ListItem: scheduleId/doctorName/departmentName/scheduleDate/period/startTime/endTime
+//                /totalQuota/bookedQuota/remainingQuota/registrationFee/status
+// 前端 ScheduleManage 期望: scheduleNo/doctorName/deptName/scheduleDate/period/startTime/endTime
+//                          /totalQuota/bookedQuota/registrationFee/status
+const mapAdminSchedule = (s) => ({
+  scheduleNo: s.scheduleId ?? s.scheduleNo,
+  scheduleId: s.scheduleId,
+  doctorName: s.doctorName,
+  deptName: s.departmentName ?? s.deptName,
+  departmentName: s.departmentName,
+  scheduleDate: s.scheduleDate,
+  period: s.period,
+  startTime: s.startTime,
+  endTime: s.endTime,
+  totalQuota: s.totalQuota,
+  bookedQuota: s.bookedQuota,
+  remainingQuota: s.remainingQuota,
+  registrationFee: s.registrationFee,
+  fee: s.registrationFee,
+  status: s.status
+})
+
+export const getScheduleManageListApi = async (params) => {
   if (USE_MOCK) return Promise.resolve(mockScheduleManageList(params))
-  return request({ url: '/schedules', method: 'get', params })
+  const res = await request({ url: '/schedules', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  const mapped = list.map(mapAdminSchedule)
+  res.data = { ...(res.data || {}), records: mapped, items: mapped, total: res.data?.total ?? mapped.length }
+  return res
 }
 
 // 管理员：创建排班（对齐后端 POST /schedules）

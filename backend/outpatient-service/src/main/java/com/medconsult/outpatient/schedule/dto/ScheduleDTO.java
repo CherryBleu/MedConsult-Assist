@@ -60,9 +60,12 @@ public class ScheduleDTO {
             @Schema(description = "科室名称") String departmentName,
             @Schema(description = "排班日期") LocalDate scheduleDate,
             @Schema(description = "时段") String period,
+            @Schema(description = "开始时间") LocalTime startTime,
+            @Schema(description = "结束时间") LocalTime endTime,
             @Schema(description = "总号源") int totalQuota,
             @Schema(description = "已预约号源") int bookedQuota,
             @Schema(description = "剩余号源") int remainingQuota,
+            @Schema(description = "挂号费") BigDecimal registrationFee,
             @Schema(description = "状态") String status
     ) {}
 
