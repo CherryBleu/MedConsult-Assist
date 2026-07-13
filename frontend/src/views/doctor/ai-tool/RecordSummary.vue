@@ -10,7 +10,7 @@
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} - ${item.patientName} - ${item.chiefComplaint}`"
+                :label="`${item.recordNo} - ${item.patientName || '未知患者'} - ${item.chiefComplaint || '无主诉'}`"
                 :value="item.recordNo"
               />
             </el-select>
@@ -35,10 +35,10 @@
             <span class="diagnosis-text">{{ formatList(summaryResult.summary?.diagnosis || summaryResult.summaryContent?.diagnosis) }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="用药方案" :span="2">
-            {{ formatList(summaryResult.summary?.medications || summaryResult.summaryContent?.medications) || formatList(summaryResult.summary?.treatmentPlan || summaryResult.summaryContent?.treatmentPlan) }}
+            {{ formatList(summaryResult.summary?.medications ?? summaryResult.summaryContent?.medications) || formatList(summaryResult.summary?.treatmentPlan ?? summaryResult.summaryContent?.treatmentPlan) || '-' }}
           </el-descriptions-item>
           <el-descriptions-item label="医嘱建议" :span="2">
-            {{ summaryResult.summary?.followUpAdvice || summaryResult.summaryContent?.followUpAdvice || '-' }}
+            {{ formatList(summaryResult.summary?.followUpAdvice ?? summaryResult.summaryContent?.followUpAdvice) || '-' }}
           </el-descriptions-item>
         </el-descriptions>
 

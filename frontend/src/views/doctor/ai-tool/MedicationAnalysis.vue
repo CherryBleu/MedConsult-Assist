@@ -10,7 +10,7 @@
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} - ${item.patientName}`"
+                :label="`${item.recordNo} - ${item.patientName || '未知患者'}`"
                 :value="item.id"
               />
             </el-select>
