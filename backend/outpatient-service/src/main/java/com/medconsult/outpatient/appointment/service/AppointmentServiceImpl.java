@@ -154,8 +154,19 @@ public class AppointmentServiceImpl implements AppointmentService {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询预约");
             }
             qw.eq("patient_id", selfPatientId);
+        } else if (isDoctor(payload)) {
+            // DOCTOR 只查本人接诊的预约（按 doctor_id 过滤，忽略请求传入的 patientId）
+            Long selfDoctorId = payload.doctorId();
+            if (selfDoctorId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联医生档案，无法查询预约");
+            }
+            qw.eq("doctor_id", selfDoctorId);
+            // 可选：再按 patient_no 细分
+            if (patientId != null && !patientId.isBlank()) {
+                qw.eq("patient_no", patientId);
+            }
         } else if (patientId != null && !patientId.isBlank()) {
-            // DOCTOR/管理员：patientId 实为 patient_no（业务编号串），按业务编号过滤
+            // 管理员：patientId 实为 patient_no（业务编号串），按业务编号过滤
             qw.eq("patient_no", patientId);
         }
         qw.orderByDesc("created_at");
