@@ -1,7 +1,6 @@
 package com.medconsult.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.medconsult.ai.client.OpenAiCompatibleClient;
 import com.medconsult.ai.config.AiProperties;
 import com.medconsult.ai.dto.AiModels.CitationDto;
 import com.medconsult.ai.dto.AiModels.SymptomChatRequest;
@@ -39,22 +38,7 @@ import java.util.Objects;
 public class SymptomChatService {
     private static final Logger log = LoggerFactory.getLogger(SymptomChatService.class);
 
-    private static final String FINAL_ANSWER_PROMPT = """
-            你是严谨的医疗健康问答助手。你只能使用用户输入、患者上下文、系统风险规则和最多三个疾病 JSON RAG 命中片段生成单一、连贯的回复。
-            必须遵守：
-            1. 不作确定诊断；
-            2. 不新增命中知识之外的疾病知识；
-            3. 明确包含“非诊断，仅供参考，不能替代医生诊断”；
-            4. 如 emergencyAdvice 为 true，优先建议急诊；
-            5. 行动建议优先：第一段先回答“接下来该怎么办”，明确是在家观察、尽快门诊、还是立即急诊；
-            6. 第二段再用简洁语言综合相关条目，不要罗列一堆病名吓唬用户；
-            7. 第三段说明建议就诊科室、可与医生沟通的检查方向和需要立刻就医的警示信号；
-            8. 语气自然、简洁，不输出 Markdown 表格。
-            
-            """;
-
     private final DiseaseSearchService diseaseSearchService;
-    private final OpenAiCompatibleClient llmClient;
     private final AiProperties properties;
     private final AiChatSessionMapper chatSessionMapper;
     private final AiChatMessageMapper chatMessageMapper;
@@ -63,14 +47,12 @@ public class SymptomChatService {
 
     public SymptomChatService(
             DiseaseSearchService diseaseSearchService,
-            OpenAiCompatibleClient llmClient,
             AiProperties properties,
             AiChatSessionMapper chatSessionMapper,
             AiChatMessageMapper chatMessageMapper,
             AiCallLogService callLogService
     ) {
         this.diseaseSearchService = diseaseSearchService;
-        this.llmClient = llmClient;
         this.properties = properties;
         this.chatSessionMapper = chatSessionMapper;
         this.chatMessageMapper = chatMessageMapper;
@@ -210,7 +192,7 @@ public class SymptomChatService {
             SymptomChatResponse response = new SymptomChatResponse(
                     request.sessionId(),
                     answer,
-                    "RAG_WITH_FINAL_LLM",
+                    "VECTOR_SEARCH_AND_RULE",
                     causes,
                     departments,
                     risk.riskLevel(),
@@ -234,29 +216,17 @@ public class SymptomChatService {
 
     private String generateFinalAnswer(SymptomChatRequest request, List<DiseaseKnowledge> knowledge,
                                        List<CitationDto> citations, List<String> departments, RiskAssessment risk) {
+        // 症状自诊不调用生成式 LLM（docs/修改建议.md §3.1 P0 铁律）：
+        // 回答仅由规则模板拼装（ruleBasedAnswer），answer 文本可追溯到疾病 JSON 命中片段，
+        // 不含模型自由生成内容。Embedding 检索仍允许（仅向量化，非生成式）。
         long started = System.currentTimeMillis();
         if (knowledge.isEmpty()) {
             log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_empty_knowledge", elapsed(started));
             return "目前疾病 JSON 向量检索未获得足够依据，无法给出可靠的可能原因。若症状持续、加重或出现胸痛、呼吸困难、意识异常等情况，请及时就医。非诊断，仅供参考，不能替代医生诊断。";
         }
-        Map<String, Object> payload = Map.of(
-                "userMessage", request.message(),
-                "patientContext", request.patientContext() == null ? Map.of() : request.patientContext(),
-                "risk", risk,
-                "suggestedDepartments", departments,
-                "ragKnowledge", knowledge.stream().limit(3).toList(),
-                "citations", citations
-        );
-        String llmAnswer = llmClient.chatText(FINAL_ANSWER_PROMPT, JsonUtils.toJson(payload))
-                .filter(answer -> answer.contains("仅供参考") || answer.contains("不能替代医生诊断"))
-                .orElse(null);
-        if (llmAnswer != null) {
-            log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=llm", elapsed(started));
-            return llmAnswer;
-        }
-        String fallbackAnswer = ruleBasedAnswer(knowledge, departments, risk);
-        log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_fallback", elapsed(started));
-        return fallbackAnswer;
+        String answer = ruleBasedAnswer(knowledge, departments, risk);
+        log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_template", elapsed(started));
+        return answer;
     }
 
     private String ruleBasedAnswer(List<DiseaseKnowledge> knowledge, List<String> departments, RiskAssessment risk) {
