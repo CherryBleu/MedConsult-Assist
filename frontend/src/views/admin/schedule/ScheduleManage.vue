@@ -198,7 +198,16 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="batchDialogVisible = false">取消</el-button>
+        <div v-if="batchProgress.visible" class="batch-progress">
+          <el-progress
+            :percentage="batchProgress.total ? Math.round(batchProgress.done * 100 / batchProgress.total) : 0"
+            :status="batchProgress.fail > 0 ? 'warning' : 'success'"
+          />
+          <div class="form-tip">
+            进度 {{ batchProgress.done }}/{{ batchProgress.total }}（成功 {{ batchProgress.success }}，失败 {{ batchProgress.fail }}）
+          </div>
+        </div>
+        <el-button :disabled="batchSubmitting" @click="batchDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">
           生成排班
         </el-button>
@@ -358,6 +367,9 @@ const handleToggleStatus = (row, status) => {
 // ===== #16：批量排班（前端循环调用 createScheduleApi） =====
 const batchDialogVisible = ref(false)
 const batchSubmitting = ref(false)
+// 批量排班进度（#16：180 条串行最坏 10s+，并发 8 + 进度展示，避免管理员干等）
+const batchProgress = reactive({ visible: false, done: 0, total: 0, success: 0, fail: 0 })
+const BATCH_CONCURRENCY = 8
 const weekdayOptions = [
   { value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' },
   { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' },
@@ -437,26 +449,39 @@ const submitBatch = async () => {
   }
 
   batchSubmitting.value = true
-  let successCount = 0
-  let failCount = 0
+  batchProgress.visible = true
+  batchProgress.done = 0
+  batchProgress.total = tasks.length
+  batchProgress.success = 0
+  batchProgress.fail = 0
   try {
-    for (const task of tasks) {
-      try {
-        await createScheduleApi(task)
-        successCount++
-      } catch {
-        failCount++
+    // 并发池（并发上限 8）：避免 180 条串行最坏 10s+，又不会打爆后端连接池
+    const queue = [...tasks]
+    const run = async () => {
+      while (queue.length) {
+        const task = queue.shift()
+        try {
+          await createScheduleApi(task)
+          batchProgress.success++
+        } catch {
+          batchProgress.fail++
+        }
+        batchProgress.done++
       }
     }
-    if (failCount === 0) {
-      ElMessage.success(`批量排班完成，共生成 ${successCount} 条排班`)
+    await Promise.all(
+      Array.from({ length: Math.min(BATCH_CONCURRENCY, tasks.length) }, () => run())
+    )
+    if (batchProgress.fail === 0) {
+      ElMessage.success(`批量排班完成，共生成 ${batchProgress.success} 条排班`)
     } else {
-      ElMessage.warning(`生成 ${successCount} 条成功，${failCount} 条失败（可能日期重复）`)
+      ElMessage.warning(`生成 ${batchProgress.success} 条成功，${batchProgress.fail} 条失败（可能日期重复）`)
     }
     batchDialogVisible.value = false
     getList()
   } finally {
     batchSubmitting.value = false
+    batchProgress.visible = false
   }
 }
 
@@ -499,5 +524,8 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
   line-height: 1.4;
   margin-top: 4px;
+}
+.batch-progress {
+  margin-bottom: 12px;
 }
 </style>

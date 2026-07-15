@@ -51,10 +51,7 @@
           <div class="form-tip">患者请引导自助注册；管理类角色需由系统管理员通过数据库/脚本创建</div>
         </el-form-item>
         <el-form-item label="状态">
-          <el-radio-group v-model="form.status">
-            <el-radio value="ACTIVE">正常</el-radio>
-            <el-radio value="DISABLED">禁用</el-radio>
-          </el-radio-group>
+          <div class="form-tip">新用户默认为「正常」状态，后端 /auth/register 暂不接受状态参数，如需禁用请后续通过数据库调整</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -83,8 +80,7 @@ const form = reactive({
   account: '',
   name: '',
   password: '',
-  role: 'DOCTOR',
-  status: 'ACTIVE'
+  role: 'DOCTOR'
 })
 
 // 表单校验规则（#19：新增用户接口错误的根因之一是前端无校验）
@@ -113,7 +109,7 @@ const getUserList = async () => {
 }
 
 const openAddDialog = () => {
-  Object.assign(form, { account: '', name: '', password: '', role: 'DOCTOR', status: 'ACTIVE' })
+  Object.assign(form, { account: '', name: '', password: '', role: 'DOCTOR' })
   dialogVisible.value = true
 }
 

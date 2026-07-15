@@ -118,6 +118,8 @@ public class PatientDTO {
             @Schema(description = "脱敏手机号") String phoneMasked,         // 脱敏后手机号
             @Schema(description = "过敏史") List<String> allergies,
             @Schema(description = "既往病史") List<String> pastMedicalHistory,
+            @Schema(description = "家族病史") List<String> familyHistory,
+            @Schema(description = "紧急联系人信息") EmergencyContact emergencyContact,
             @Schema(description = "档案状态") String status
     ) {}
 

@@ -130,6 +130,8 @@ public class PatientServiceImpl implements PatientService {
                 MaskType.PHONE.mask(p.getPhone()),
                 fromJsonArray(p.getAllergies()),
                 fromJsonArray(p.getPastMedicalHistory()),
+                fromJsonArray(p.getFamilyHistory()),
+                fromEmergencyContact(p.getEmergencyContact()),
                 p.getStatus());
     }
 
@@ -469,6 +471,19 @@ public class PatientServiceImpl implements PatientService {
         } catch (JsonProcessingException e) {
             log.warn("反序列化 JSON 数组失败，原样返回单元素: {}", json, e);
             return List.of(json);
+        }
+    }
+
+    /** 反序列化紧急联系人 JSON 对象串（emergency_contact 列存 {"name":..,"relation":..,"phone":..}）。 */
+    private PatientDTO.EmergencyContact fromEmergencyContact(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, PatientDTO.EmergencyContact.class);
+        } catch (JsonProcessingException e) {
+            log.warn("反序列化紧急联系人失败: {}", json, e);
+            return null;
         }
     }
 
