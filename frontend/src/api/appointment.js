@@ -200,18 +200,9 @@ export const createScheduleApi = (data) => {
   return request({ url: '/schedules', method: 'post', data })
 }
 
-// 管理员：更新排班（后端无 PUT /schedules/{id}，用 PATCH status 兜底）
-export const updateScheduleApi = (data) => {
-  if (USE_MOCK) return Promise.resolve(mockUpdateSchedule(data))
-  return request({ url: `/schedules/${data.id}/status`, method: 'patch', data })
-}
-
-// 管理员：删除排班（后端无删除端点，占位）
-export const deleteScheduleApi = (id) => {
-  if (USE_MOCK) return Promise.resolve(mockDeleteSchedule(id))
-  // 后端暂无排班删除接口；返回成功占位
-  return Promise.resolve({ code: 0, message: 'success', data: null })
-}
+// 注：排班字段更新/删除接口未在 docs §2.4 定义、后端亦未实现。
+// 原 updateScheduleApi/deleteScheduleApi 为假成功占位，已移除以免误导。
+// 排班状态变更请用下方 toggleScheduleStatusApi（对齐 PATCH /schedules/{id}/status）。
 
 // 管理员：切换排班状态（对齐后端 PATCH /schedules/{scheduleId}/status）
 export const toggleScheduleStatusApi = (id, status) => {

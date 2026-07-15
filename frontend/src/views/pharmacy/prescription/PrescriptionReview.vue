@@ -235,8 +235,9 @@ const openDispense = (row) => {
 const handleDispense = async () => {
   submitting.value = true
   try {
+    // pharmacistId 取当前登录药师关联编号（与 handleReview 一致，由 /auth/me 返回、JWT 透传）
     await dispensePrescriptionApi(currentPrescription.value.prescriptionId, {
-      pharmacistId: String(userStore.userInfo?.userId || '')
+      pharmacistId: String(userStore.userInfo?.pharmacistId || '')
     })
     ElMessage.success('发药成功')
     dispenseDialogVisible.value = false

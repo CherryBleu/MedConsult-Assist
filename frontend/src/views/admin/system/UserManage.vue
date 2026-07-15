@@ -24,17 +24,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="createdAt" label="创建时间" width="180" />
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
-          </template>
-        </el-table-column>
+        <!-- 编辑/删除操作已移除：后端无 PUT/DELETE /auth/users/{id}，docs §2.1 也未定义，
+             假成功占位会误导管理员。如需调整用户状态/角色请走数据库或后续补接口。 -->
       </el-table>
     </div>
 
-    <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="500px">
+    <!-- 新增用户弹窗 -->
+    <el-dialog v-model="dialogVisible" title="新增用户" width="500px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="账号" prop="account">
           <el-input v-model="form.account" placeholder="4-32位字母/数字/下划线" />
@@ -42,7 +38,7 @@
         <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
-        <el-form-item v-if="!isEdit" label="密码" prop="password">
+        <el-form-item label="密码" prop="password">
           <el-input v-model="form.password" type="password" show-password placeholder="默认 Med@123456，用户登录后可修改" />
           <div class="form-tip">不填写则使用默认密码 Med@123456</div>
         </el-form-item>
@@ -71,18 +67,16 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getRoleLabel } from '@/constants'
-import { getUserListApi, addUserApi, updateUserApi, deleteUserApi } from '@/api/system'
+import { getUserListApi, addUserApi } from '@/api/system'
 
 const DEFAULT_PASSWORD = 'Med@123456'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
-const isEdit = ref(false)
 const submitting = ref(false)
 const userList = ref([])
-const currentId = ref(null)
 const formRef = ref(null)
 
 const form = reactive({
@@ -119,22 +113,7 @@ const getUserList = async () => {
 }
 
 const openAddDialog = () => {
-  isEdit.value = false
-  currentId.value = null
   Object.assign(form, { account: '', name: '', password: '', role: 'DOCTOR', status: 'ACTIVE' })
-  dialogVisible.value = true
-}
-
-const handleEdit = (row) => {
-  isEdit.value = true
-  currentId.value = row.id
-  Object.assign(form, {
-    account: row.account ?? '',
-    name: row.name ?? '',
-    password: '',
-    role: row.role ?? 'DOCTOR',
-    status: row.status ?? 'ACTIVE'
-  })
   dialogVisible.value = true
 }
 
@@ -145,35 +124,18 @@ const submitForm = async () => {
   }
   submitting.value = true
   try {
-    if (isEdit.value) {
-      await updateUserApi(currentId.value, form)
-      ElMessage.success('更新成功')
-    } else {
-      // #19/#20：后端 /auth/register 要求 password 必填，前端不填则用默认密码
-      const submitData = { ...form }
-      if (!submitData.password) {
-        submitData.password = DEFAULT_PASSWORD
-      }
-      await addUserApi(submitData)
-      ElMessage.success(`新增成功，初始密码：${submitData.password}，请通知用户登录后修改`)
+    // #19/#20：后端 /auth/register 要求 password 必填，前端不填则用默认密码
+    const submitData = { ...form }
+    if (!submitData.password) {
+      submitData.password = DEFAULT_PASSWORD
     }
+    await addUserApi(submitData)
+    ElMessage.success(`新增成功，初始密码：${submitData.password}，请通知用户登录后修改`)
     dialogVisible.value = false
     getUserList()
   } finally {
     submitting.value = false
   }
-}
-
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除用户「${row.name}」吗？`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    await deleteUserApi(row.id)
-    ElMessage.success('删除成功')
-    getUserList()
-  }).catch(() => {})
 }
 
 getUserList()

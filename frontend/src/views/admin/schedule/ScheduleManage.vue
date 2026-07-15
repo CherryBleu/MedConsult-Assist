@@ -71,9 +71,10 @@
             <el-tag v-else type="danger" size="small">已停诊</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
+            <!-- 编辑/删除已移除：后端仅 PATCH /schedules/{id}/status，docs §2.4 无 PUT/DELETE，
+                 排班字段编辑静默不生效、删除为假成功占位。如需排班失效请用「停诊」。 -->
             <el-button
               v-if="row.status !== 'STOPPED'"
               size="small"
@@ -88,7 +89,6 @@
               link
               @click="handleToggleStatus(row, 'AVAILABLE')"
             >恢复</el-button>
-            <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -105,10 +105,10 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="560px">
+    <el-dialog v-model="dialogVisible" title="新增排班" width="560px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
-          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" :disabled="isEdit" @change="handleDoctorChange">
+          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" @change="handleDoctorChange">
             <el-option v-for="doc in allDoctors" :key="doc.id" :label="doc.deptName + ' - ' + doc.name + ' (' + doc.title + ')'" :value="doc.id" />
           </el-select>
         </el-form-item>
@@ -210,14 +210,13 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getScheduleManageListApi, createScheduleApi, updateScheduleApi, deleteScheduleApi, toggleScheduleStatusApi } from '@/api/appointment'
+import { getScheduleManageListApi, createScheduleApi, toggleScheduleStatusApi } from '@/api/appointment'
 import { getDepartmentListApi } from '@/api/department'
 import { getDoctorListApi } from '@/api/doctor'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
-const isEdit = ref(false)
 const submitting = ref(false)
 const tableData = ref([])
 const total = ref(0)
@@ -226,7 +225,6 @@ const doctorList = ref([])
 const allDoctors = ref([])
 const dateRange = ref([])
 const formRef = ref(null)
-const currentId = ref(null)
 
 const queryParams = reactive({
   pageNum: 1,
@@ -318,8 +316,6 @@ const handleReset = () => {
 }
 
 const openAddDialog = () => {
-  isEdit.value = false
-  currentId.value = null
   Object.assign(form, {
     doctorId: '',
     scheduleDate: '',
@@ -332,33 +328,13 @@ const openAddDialog = () => {
   dialogVisible.value = true
 }
 
-const handleEdit = (row) => {
-  isEdit.value = true
-  currentId.value = row.id
-  Object.assign(form, {
-    doctorId: row.doctorId,
-    scheduleDate: row.scheduleDate,
-    period: row.period,
-    startTime: row.startTime,
-    endTime: row.endTime,
-    totalQuota: row.totalQuota,
-    registrationFee: row.registrationFee
-  })
-  dialogVisible.value = true
-}
-
 const submitForm = async () => {
   if (!formRef.value) return
   await formRef.value.validate()
   submitting.value = true
   try {
-    if (isEdit.value) {
-      await updateScheduleApi({ id: currentId.value, ...form })
-      ElMessage.success('更新成功')
-    } else {
-      await createScheduleApi(form)
-      ElMessage.success('新增成功')
-    }
+    await createScheduleApi(form)
+    ElMessage.success('新增成功')
     dialogVisible.value = false
     getList()
   } finally {
@@ -482,18 +458,6 @@ const submitBatch = async () => {
   } finally {
     batchSubmitting.value = false
   }
-}
-
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除该排班吗？`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    await deleteScheduleApi(row.id)
-    ElMessage.success('删除成功')
-    getList()
-  }).catch(() => {})
 }
 
 onMounted(() => {

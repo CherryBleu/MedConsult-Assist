@@ -6,10 +6,8 @@
       </div>
 
       <el-table :data="deptList" v-loading="loading" border stripe>
-        <el-table-column prop="name" label="科室名称" width="140" />
-        <el-table-column prop="description" label="科室描述" />
-        <el-table-column prop="location" label="位置" width="140" />
-        <el-table-column prop="doctorCount" label="医生数量" width="100" align="center" />
+        <el-table-column prop="name" label="科室名称" width="160" />
+        <el-table-column prop="location" label="位置" />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'">

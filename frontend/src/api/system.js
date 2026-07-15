@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 import { mockDoctorList, mockAddDoctor, mockUpdateDoctor, mockDeleteDoctor } from '@/mock/system'
 import {
-  mockUserList, mockAddUser, mockUpdateUser, mockDeleteUser,
+  mockUserList, mockAddUser,
   mockDeptList, mockAddDept, mockUpdateDept, mockDeleteDept
 } from '@/mock/system'
 
@@ -32,21 +32,8 @@ export const addUserApi = (data) => {
   })
 }
 
-// 更新用户（后端暂无用户更新接口，占位）
-export const updateUserApi = (id, data) => {
-  if (USE_MOCK) {
-    return Promise.resolve(mockUpdateUser(id, data))
-  }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
-}
-
-// 删除用户（后端暂无用户删除接口，占位）
-export const deleteUserApi = (id) => {
-  if (USE_MOCK) {
-    return Promise.resolve(mockDeleteUser(id))
-  }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
-}
+// 注：用户更新/删除接口未在 docs §2.1 定义、后端亦未实现。
+// 原 updateUserApi/deleteUserApi 为假成功占位，已移除以免误导。
 
 // ===== 科室管理 =====
 
