@@ -79,12 +79,6 @@
           <el-form-item label="联系地址">
             <span class="info-text">{{ patientInfo.address || '未设置' }}</span>
           </el-form-item>
-          <el-form-item label="过敏史">
-            <span class="info-text">{{ formatList(patientInfo.allergies) }}</span>
-          </el-form-item>
-          <el-form-item label="既往病史">
-            <span class="info-text">{{ formatList(patientInfo.pastMedicalHistory) }}</span>
-          </el-form-item>
           <el-form-item label="档案状态">
             <el-tag type="success">正常</el-tag>
           </el-form-item>
@@ -119,7 +113,7 @@
         <div class="action-bar">
           <template v-if="!editing">
             <el-button type="primary" @click="startEdit">编辑档案</el-button>
-            <el-button @click="goToHealthArchive">查看健康档案</el-button>
+            <el-button @click="goToHealthArchive">查看完整健康档案</el-button>
           </template>
           <template v-else>
             <el-button type="primary" :loading="saving" @click="saveEdit">保存</el-button>

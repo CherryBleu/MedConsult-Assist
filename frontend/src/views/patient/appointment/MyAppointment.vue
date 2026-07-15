@@ -10,6 +10,7 @@
 
       <el-tabs v-model="activeTab" class="appointment-tabs" @tab-change="fetchList">
         <el-tab-pane label="全部" name="all" />
+        <el-tab-pane label="待支付" name="UNPAID" />
         <el-tab-pane label="待就诊" name="BOOKED" />
         <el-tab-pane label="已签到" name="CHECKED_IN" />
         <el-tab-pane label="就诊中" name="IN_PROGRESS" />
@@ -145,6 +146,15 @@ const currentDetail = ref(null)
 const fetchList = async () => {
   loading.value = true
   try {
+    // "待支付"标签：后端 list 接口不支持 paymentStatus 过滤，
+    // 拉全量后前端按 paymentStatus==='UNPAID' 本地过滤（患者预约量小，可接受）
+    if (activeTab.value === 'UNPAID') {
+      const res = await getAppointmentListApi({ page: 1, pageSize: 1000 })
+      const all = res.data.records || res.data || []
+      list.value = all.filter(i => i.paymentStatus === 'UNPAID' && i.appointmentStatus !== 'CANCELLED')
+      total.value = list.value.length
+      return
+    }
     const params = { page: pageNum.value, pageSize: pageSize.value }
     if (activeTab.value !== 'all') params.status = activeTab.value
     const res = await getAppointmentListApi(params)

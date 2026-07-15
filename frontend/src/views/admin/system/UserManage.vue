@@ -46,9 +46,6 @@
           <el-input v-model="form.password" type="password" show-password placeholder="默认 Med@123456，用户登录后可修改" />
           <div class="form-tip">不填写则使用默认密码 Med@123456</div>
         </el-form-item>
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="中国大陆 11 位手机号（选填）" />
-        </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
             <el-option label="医生" value="DOCTOR" />
@@ -91,12 +88,11 @@ const form = reactive({
   account: '',
   name: '',
   password: '',
-  phone: '',
   role: 'DOCTOR',
   status: 'ACTIVE'
 })
 
-// 表单校验规则（#19：手机号未作校验 + #20：新增用户接口错误的根因之一是前端无校验）
+// 表单校验规则（#19：新增用户接口错误的根因之一是前端无校验）
 const rules = {
   account: [
     { required: true, message: '请输入账号', trigger: 'blur' },
@@ -105,9 +101,6 @@ const rules = {
   name: [
     { required: true, message: '请输入姓名', trigger: 'blur' },
     { pattern: /^[\u4e00-\u9fa5A-Za-z·.\s]{1,50}$/, message: '姓名须 1-50 位中文/字母/空格/点', trigger: 'blur' }
-  ],
-  phone: [
-    { pattern: /^$|^1[3-9]\d{9}$/, message: '手机号格式非法（须 11 位 1[3-9] 开头）', trigger: 'blur' }
   ]
 }
 
@@ -127,7 +120,7 @@ const getUserList = async () => {
 const openAddDialog = () => {
   isEdit.value = false
   currentId.value = null
-  Object.assign(form, { account: '', name: '', password: '', phone: '', role: 'DOCTOR', status: 'ACTIVE' })
+  Object.assign(form, { account: '', name: '', password: '', role: 'DOCTOR', status: 'ACTIVE' })
   dialogVisible.value = true
 }
 
@@ -138,7 +131,6 @@ const handleEdit = (row) => {
     account: row.account ?? '',
     name: row.name ?? '',
     password: '',
-    phone: row.phone ?? '',
     role: row.role ?? 'DOCTOR',
     status: row.status ?? 'ACTIVE'
   })
