@@ -125,6 +125,7 @@ public class AuthDTO {
             @Schema(description = "角色") String role,
             @Schema(description = "患者编号") String patientId,
             @Schema(description = "医生编号") String doctorId,
+            @Schema(description = "药师编号") String pharmacistId,
             @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status
     ) {}
 
@@ -145,6 +146,7 @@ public class AuthDTO {
             @Schema(description = "角色") String role,
             @Schema(description = "患者编号") String patientId,
             @Schema(description = "医生编号") String doctorId,
+            @Schema(description = "药师编号") String pharmacistId,
             @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status
     ) {}
 
@@ -204,6 +206,7 @@ public class AuthDTO {
             @Schema(description = "角色（来自 Redis，兜底 PATIENT）") String role,
             @Schema(description = "关联患者档案 ID") Long patientId,
             @Schema(description = "关联医生 ID") Long doctorId,
+            @Schema(description = "关联药师 ID") Long pharmacistId,
             @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status,
             @Schema(description = "创建时间") java.time.LocalDateTime createdAt
     ) {}

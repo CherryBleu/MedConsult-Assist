@@ -13,8 +13,12 @@ import com.medconsult.ai.persistence.entity.AiTriageResultEntity;
 import com.medconsult.ai.persistence.mapper.AiTriageResultMapper;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.ai.util.JsonUtils;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DoctorFeignClient;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -58,6 +62,15 @@ public class TriageService {
 
     public TriageResponse triage(TriageRequest request) {
         long started = System.currentTimeMillis();
+        // 患者身份从 JWT 取（与 symptom-chat 同源），不信任请求体（IDOR 防越权）
+        JwtPayload payload = SecurityContext.requireUser();
+        Long jwtPatientId = payload.patientId();
+        if (jwtPatientId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "当前账号未关联患者档案，请先完善个人档案后再使用智能分诊");
+        }
+        String patientIdStr = String.valueOf(jwtPatientId);
+
         String text = String.join("、", request.symptoms()) + " " + (request.duration() == null ? "" : request.duration());
         DiseaseIntent intent = diseaseSearchService.extractIntent(text);
         List<DiseaseKnowledge> knowledge = diseaseSearchService.search(text, intent, 5);
@@ -67,7 +80,7 @@ public class TriageService {
         String triageNo = BusinessIds.next("TRIAGE");
         AiTriageResultEntity entity = new AiTriageResultEntity();
         entity.setTriageNo(triageNo);
-        entity.setPatientId(BusinessIds.numericId(request.patientId()));
+        entity.setPatientId(jwtPatientId);
         entity.setSymptoms(JsonUtils.toJson(request.symptoms()));
         entity.setDuration(request.duration());
         entity.setSeverity(request.severity());
@@ -77,7 +90,7 @@ public class TriageService {
         entity.setModelName(properties.llm().model());
         entity.setCreatedAt(LocalDateTime.now());
         triageResultMapper.insert(entity);
-        callLogService.success("TRIAGE", request.patientId(), triageNo, properties.llm().model(),
+        callLogService.success("TRIAGE", patientIdStr, triageNo, properties.llm().model(),
                 text, JsonUtils.toJson(recommendations), risk.riskLevel(), System.currentTimeMillis() - started);
         return new TriageResponse(risk.emergencyAdvice(), recommendations);
     }

@@ -43,6 +43,9 @@ public class SysUser extends BaseEntity {
     /** 关联医生 ID，可为空 */
     private Long doctorId;
 
+    /** 关联药师 ID，可为空（PHARMACY_ADMIN 角色使用） */
+    private Long pharmacistId;
+
     /** 账号状态：ACTIVE / DISABLED / LOCKED */
     private String status;
 

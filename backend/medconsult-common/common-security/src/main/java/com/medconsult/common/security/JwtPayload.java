@@ -13,7 +13,7 @@ import java.util.List;
  * <ul>
  *   <li>{@code userId} = 系统用户 ID</li>
  *   <li>{@code roles} = 角色码列表（PATIENT/DOCTOR/PHARMACY_ADMIN/HOSPITAL_ADMIN）</li>
- *   <li>{@code patientId} / {@code doctorId} 可选，支持一人多角色（RBAC 五表，§4.3）</li>
+ *   <li>{@code patientId} / {@code doctorId} / {@code pharmacistId} 可选，支持一人多角色（RBAC 五表，§4.3）</li>
  *   <li>{@code userNo} = 用户业务编号（U+雪花base36），供通知等按业务编号关联的服务用</li>
  *   <li>{@code scope} = 权限点列表（如 patient:read、prescription:review）</li>
  * </ul>
@@ -34,6 +34,7 @@ import java.util.List;
  * @param primaryRole  主角色（用户身份必填，便于数据范围过滤快速判定）
  * @param patientId    关联患者档案 ID（可空，一人多角色）
  * @param doctorId     关联医生 ID（可空）
+ * @param pharmacistId 关联药师 ID（可空，PHARMACY_ADMIN 角色使用）
  * @param userNo       用户业务编号（U+雪花base36，可空；供通知等按业务编号关联的服务用，
  *                     旧 token 无此 claim 时为 null）
  * @param scope        权限点列表（可空）
@@ -49,6 +50,7 @@ public record JwtPayload(
         String primaryRole,
         Long patientId,
         Long doctorId,
+        Long pharmacistId,
         String userNo,
         List<String> scope,
         String jti,

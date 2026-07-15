@@ -209,10 +209,10 @@ const handleReview = async () => {
   }
   submitting.value = true
   try {
-    // pharmacistId 取当前登录用户编号（药师身份）
+    // pharmacistId 取当前登录药师的关联编号（由 /auth/me 返回，JWT 全链路透传）
     await reviewPrescriptionApi(currentPrescription.value.prescriptionId, {
       action: reviewForm.action,
-      pharmacistId: String(userStore.userInfo?.userId || ''),
+      pharmacistId: String(userStore.userInfo?.pharmacistId || ''),
       reviewComment: reviewForm.reviewComment || undefined,
       rejectReason: reviewForm.action === 'REJECT' ? reviewForm.rejectReason : undefined
     })

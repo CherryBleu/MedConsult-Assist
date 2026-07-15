@@ -81,7 +81,7 @@ class NotificationServiceImplSecurityTest {
         // PATIENT 带 userNo=U123ABC；库里恰好有一条 receiver_id=U123ABC 的通知
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, RECEIVER_OWN,
+                List.of("PATIENT"), "PATIENT", null, null, null, RECEIVER_OWN,
                 List.of(), "jti-self", 0L));
 
         Notification own = notification(RECEIVER_OWN, "N001", "本人预约通知", 0);
@@ -109,7 +109,7 @@ class NotificationServiceImplSecurityTest {
         // PATIENT 带 userNo=U123ABC，却试图传 receiverId=U999ZZZ 查他人通知
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, RECEIVER_OWN,
+                List.of("PATIENT"), "PATIENT", null, null, null, RECEIVER_OWN,
                 List.of(), "jti-self", 0L));
 
         // 库里只有 receiver_id=U999ZZZ（他人）的通知
@@ -138,7 +138,7 @@ class NotificationServiceImplSecurityTest {
         // 旧 token 无 userNo claim（null）
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, null,
+                List.of("PATIENT"), "PATIENT", null, null, null, null,
                 List.of(), "jti-old", 0L));
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -155,7 +155,7 @@ class NotificationServiceImplSecurityTest {
         // PATIENT 带 userNo=U123ABC，通知 receiver_id=U999ZZZ（非本人）
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, RECEIVER_OWN,
+                List.of("PATIENT"), "PATIENT", null, null, null, RECEIVER_OWN,
                 List.of(), "jti-self", 0L));
 
         Notification others = notification(RECEIVER_OTHER, "N002", "他人通知", 0);
@@ -174,7 +174,7 @@ class NotificationServiceImplSecurityTest {
     void markRead_userNoMatches_passesAndMarksRead() {
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, RECEIVER_OWN,
+                List.of("PATIENT"), "PATIENT", null, null, null, RECEIVER_OWN,
                 List.of(), "jti-self", 0L));
 
         Notification own = notification(RECEIVER_OWN, "N001", "本人通知", 0);
@@ -196,7 +196,7 @@ class NotificationServiceImplSecurityTest {
     void markRead_userNoAbsent_throwsForbidden() {
         setUser(new JwtPayload(
                 JwtPayload.SubjectType.USER, 100L, null, "患者A",
-                List.of("PATIENT"), "PATIENT", null, null, null,
+                List.of("PATIENT"), "PATIENT", null, null, null, null,
                 List.of(), "jti-old", 0L));
 
         Notification own = notification(RECEIVER_OWN, "N001", "本人通知", 0);

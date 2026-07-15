@@ -119,6 +119,7 @@ public class AiController {
     // ===== 智能分诊 =====
 
     @Operation(summary = "智能分诊")
+    @Permission(code = "ai:triage", dataScope = DataScope.SELF, roles = {"PATIENT"})
     @PostMapping("/api/v1/ai/triage")
     public Result<TriageResponse> triage(@Valid @RequestBody TriageRequest request) {
         return Result.ok(triageService.triage(request));

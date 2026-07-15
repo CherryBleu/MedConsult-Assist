@@ -46,7 +46,7 @@ class AuthRelayInterceptorTest {
         // 模拟用户身份：医生，处方权限
         SecurityContext.setPayload(new JwtPayload(
                 JwtPayload.SubjectType.USER, 1001L, null, "张医生",
-                List.of("DOCTOR"), "DOCTOR", null, 3001L, null,
+                List.of("DOCTOR"), "DOCTOR", null, 3001L, null, null,
                 List.of("prescription:write"), "jti-1", 0L));
         RequestContext.setUserToken("user-jwt-token");
         RequestContext.setCallerService("medical-record-service");
@@ -97,7 +97,7 @@ class AuthRelayInterceptorTest {
         // 即便有 payload 但 subjectType=SERVICE，仍走服务模式
         SecurityContext.setPayload(new JwtPayload(
                 JwtPayload.SubjectType.SERVICE, null, "ai-service", "AI",
-                null, null, null, null, null, List.of("patient:read"), "jti-s", 0L));
+                null, null, null, null, null, null, List.of("patient:read"), "jti-s", 0L));
 
         RequestTemplate tpl = new RequestTemplate();
         interceptor.apply(tpl);

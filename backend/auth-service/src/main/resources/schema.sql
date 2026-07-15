@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     name            VARCHAR(50)                           COMMENT '姓名',
     patient_id      BIGINT                                COMMENT '关联患者编号',
     doctor_id       BIGINT                                COMMENT '关联医生编号',
+    pharmacist_id   BIGINT                                COMMENT '关联药师编号',
     status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT '账号状态：ACTIVE/DISABLED/LOCKED',
     last_login_at   DATETIME(3)                           COMMENT '最后登录时间',
     created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -25,6 +26,22 @@ CREATE TABLE IF NOT EXISTS sys_user (
     UNIQUE KEY uk_sys_user_user_no (user_no),
     KEY idx_sys_user_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户账号表';
+
+-- 幂等迁移：已有库补 pharmacist_id 列（MySQL 无 ADD COLUMN IF NOT EXISTS，用存储过程守护）
+DROP PROCEDURE IF EXISTS medconsult_auth_add_pharmacist_id;
+DELIMITER $$
+CREATE PROCEDURE medconsult_auth_add_pharmacist_id()
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME = 'sys_user'
+                     AND COLUMN_NAME = 'pharmacist_id') THEN
+        ALTER TABLE sys_user ADD COLUMN pharmacist_id BIGINT COMMENT '关联药师编号' AFTER doctor_id;
+    END IF;
+END$$
+DELIMITER ;
+CALL medconsult_auth_add_pharmacist_id();
+DROP PROCEDURE IF EXISTS medconsult_auth_add_pharmacist_id;
 
 -- sys_service_account 服务账号表（架构文档 §4.2，服务间调用的服务身份凭证）
 -- 服务（如 ai-service）用 service_code + api_key 向 auth-service 换发 SERVICE 类型 JWT，

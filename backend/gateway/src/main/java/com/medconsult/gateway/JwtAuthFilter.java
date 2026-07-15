@@ -126,6 +126,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 h.remove("X-User-Primary-Role");
                 h.remove("X-User-Patient-Id");
                 h.remove("X-User-Doctor-Id");
+                h.remove("X-User-Pharmacist-Id");
                 h.remove("X-User-No");
                 h.remove("X-Caller-Service");
                 h.remove("X-Service-Code");
@@ -148,6 +149,9 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             }
             if (payload.doctorId() != null) {
                 reqBuilder.header("X-User-Doctor-Id", String.valueOf(payload.doctorId()));
+            }
+            if (payload.pharmacistId() != null) {
+                reqBuilder.header("X-User-Pharmacist-Id", String.valueOf(payload.pharmacistId()));
             }
             // 透传用户业务编号（userNo），供通知等按业务编号关联的服务匹配 receiver_id。
             if (payload.userNo() != null) {

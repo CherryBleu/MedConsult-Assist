@@ -27,6 +27,7 @@ import java.time.Duration;
  *   <li>admin / HOSPITAL_ADMIN（userId=1）</li>
  *   <li>doctor / DOCTOR，关联 doctor_id=2001（与 outpatient-service 种子对齐）</li>
  *   <li>patient / PATIENT，关联 patient_id=3001（与 patient-service 种子对齐）</li>
+ *   <li>yaofang / PHARMACY_ADMIN，关联 pharmacist_id=4001（药房管理员）</li>
  * </ul>
  *
  * <p><b>跨服务 ID 引用</b>：doctor_id/patient_id 引用 outpatient/patient 服务种子固定主键，
@@ -53,15 +54,18 @@ public class DataSeeder implements CommandLineRunner {
 
         // admin（医院管理员，不关联 patient/doctor 档案）
         seedUser(1L, "U0000001", "admin", "13800000000", hash, "系统管理员",
-                null, null, "HOSPITAL_ADMIN");
+                null, null, null, "HOSPITAL_ADMIN");
         // doctor（对应 outpatient-service 种子 doctor id=2001 张心明）
         seedUser(2L, "U0000002", "doctor", "13800000002", hash, "张心明",
-                null, 2001L, "DOCTOR");
+                null, 2001L, null, "DOCTOR");
         // patient（对应 patient-service 种子 patient id=3001 赵演示）
         seedUser(3L, "U0000003", "patient", "13800000001", hash, "赵演示",
-                3001L, null, "PATIENT");
+                3001L, null, null, "PATIENT");
+        // pharmacy admin（药房管理员，关联 pharmacist_id=4001）
+        seedUser(4L, "U0000004", "yaofang", "13800000003", hash, "药房管理员",
+                null, null, 4001L, "PHARMACY_ADMIN");
 
-        log.info("[DataSeeder] 演示账号初始化完成：admin / doctor / patient（密码均 123456）");
+        log.info("[DataSeeder] 演示账号初始化完成：admin / doctor / patient / yaofang（密码均 123456）");
     }
 
     /**
@@ -69,7 +73,7 @@ public class DataSeeder implements CommandLineRunner {
      */
     private void seedUser(Long id, String userNo, String account, String phone,
                           String passwordHash, String name,
-                          Long patientId, Long doctorId, String role) {
+                          Long patientId, Long doctorId, Long pharmacistId, String role) {
         SysUser u = new SysUser();
         u.setId(id);
         u.setUserNo(userNo);
@@ -79,6 +83,7 @@ public class DataSeeder implements CommandLineRunner {
         u.setName(name);
         u.setPatientId(patientId);
         u.setDoctorId(doctorId);
+        u.setPharmacistId(pharmacistId);
         u.setStatus("ACTIVE");
         userMapper.insert(u);
         // 角色暂存 Redis（与 AuthServiceImpl.register 一致：冒烟期角色走 Redis，TTL 365 天）

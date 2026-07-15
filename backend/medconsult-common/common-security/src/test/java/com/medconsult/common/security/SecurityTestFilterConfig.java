@@ -32,7 +32,7 @@ public class SecurityTestFilterConfig {
                     JwtPayload p = new JwtPayload(
                             JwtPayload.SubjectType.USER,
                             1L, null, "tester",
-                            List.of(role), role, null, null, null,
+                            List.of(role), role, null, null, null, null,
                             scopes, "test-jti", 0L);
                     SecurityContext.setPayload(p);
                 }

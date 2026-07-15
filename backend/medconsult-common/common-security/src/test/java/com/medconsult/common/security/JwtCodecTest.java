@@ -35,7 +35,7 @@ class JwtCodecTest {
     void signAndParseUserToken_roundTrip() {
         String token = codec.signUser(
                 1001L, "张三", List.of("DOCTOR", "PATIENT"), "DOCTOR",
-                2001L, 3001L, "U123ABC", List.of("prescription:write", "patient:read"),
+                2001L, 3001L, null, "U123ABC", List.of("prescription:write", "patient:read"),
                 3600L, "jti-001");
 
         JwtPayload p = codec.parse(token);
@@ -77,7 +77,7 @@ class JwtCodecTest {
     void expiredToken_throwsUnauthorized() throws InterruptedException {
         // ttl = 1 秒，等待过期
         String token = codec.signUser(1L, "x", List.of("PATIENT"), "PATIENT",
-                null, null, null, List.of(), 1L, null);
+                null, null, null, null, List.of(), 1L, null);
         Thread.sleep(1100); // 过期
 
         BusinessException ex = assertThrows(BusinessException.class, () -> codec.parse(token));
@@ -88,7 +88,7 @@ class JwtCodecTest {
     @Test
     void tamperedToken_throwsUnauthorized() {
         String token = codec.signUser(1L, "x", List.of("PATIENT"), "PATIENT",
-                null, null, null, List.of(), 3600L, null);
+                null, null, null, null, List.of(), 3600L, null);
         String tampered = token.substring(0, token.length() - 5) + "XXXXX";
 
         BusinessException ex = assertThrows(BusinessException.class, () -> codec.parse(tampered));
@@ -98,7 +98,7 @@ class JwtCodecTest {
     @Test
     void differentSecrets_verifyFails() {
         JwtCodec other = new JwtCodec(SECRET + "different-bytes-here!!!"); // 另一 ≥32 字节密钥
-        String token = codec.signUser(1L, "x", List.of(), "PATIENT", null, null, null, List.of(), 3600L, null);
+        String token = codec.signUser(1L, "x", List.of(), "PATIENT", null, null, null, null, List.of(), 3600L, null);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> other.parse(token));
         assertEquals(com.medconsult.common.core.ErrorCode.UNAUTHORIZED, ex.getErrorCode());
@@ -114,7 +114,7 @@ class JwtCodecTest {
     void payloadHelpers_hasPermissionAndRole() {
         JwtPayload p = new JwtPayload(
                 JwtPayload.SubjectType.USER, 1L, null, "x",
-                List.of("DOCTOR"), "DOCTOR", null, null, null,
+                List.of("DOCTOR"), "DOCTOR", null, null, null, null,
                 List.of("prescription:write"), "j", 0L);
 
         assertTrue(p.hasPermission("prescription:write"));
@@ -127,7 +127,7 @@ class JwtCodecTest {
     void wildcardScope_grantsAll() {
         JwtPayload p = new JwtPayload(
                 JwtPayload.SubjectType.USER, 1L, null, "x",
-                List.of(), null, null, null, null, List.of("*"), "j", 0L);
+                List.of(), null, null, null, null, null, List.of("*"), "j", 0L);
         assertTrue(p.hasPermission("anything:whatever"));
     }
 }

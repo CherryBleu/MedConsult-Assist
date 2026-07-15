@@ -148,7 +148,7 @@ public class AuthServiceImpl implements AuthService {
         return new AuthDTO.UserInfo(
                 u.getUserNo(), u.getName(), role,
                 patientId != null ? String.valueOf(patientId) : req.getPatientId(),
-                req.getDoctorId(), u.getStatus());
+                req.getDoctorId(), null, u.getStatus());
     }
 
     /**
@@ -222,9 +222,9 @@ public class AuthServiceImpl implements AuthService {
         List<String> scope = List.of("*"); // 冒烟期全权限；RBAC 阶段改为查 sys_role_permission
 
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
-                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, accessTtl, null);
+                u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, accessTtl, null);
         String refresh = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
-                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, refreshTtl, null);
+                u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, refreshTtl, null);
 
         // refresh 入 Redis（key=refresh:{userId}:{jti}）便于登出/校验
         JwtPayload refreshPayload = jwtCodec.parse(refresh);
@@ -238,6 +238,7 @@ public class AuthServiceImpl implements AuthService {
                 new AuthDTO.UserInfo(u.getUserNo(), u.getName(), primaryRole,
                         u.getPatientId() != null ? String.valueOf(u.getPatientId()) : null,
                         u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
+                        u.getPharmacistId() != null ? String.valueOf(u.getPharmacistId()) : null,
                         u.getStatus()));
     }
 
@@ -251,7 +252,7 @@ public class AuthServiceImpl implements AuthService {
         }
         // 重签 access
         String access = jwtCodec.signUser(p.userId(), p.name(), p.roles(), p.primaryRole(),
-                p.patientId(), p.doctorId(), p.userNo(), p.scope(), accessTtl, null);
+                p.patientId(), p.doctorId(), p.pharmacistId(), p.userNo(), p.scope(), accessTtl, null);
         return new AuthDTO.RefreshResponse(access, "Bearer", accessTtl);
     }
 
@@ -284,6 +285,7 @@ public class AuthServiceImpl implements AuthService {
                 primaryRole,
                 u.getPatientId() != null ? String.valueOf(u.getPatientId()) : null,
                 u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
+                u.getPharmacistId() != null ? String.valueOf(u.getPharmacistId()) : null,
                 u.getStatus());
     }
 
@@ -339,9 +341,9 @@ public class AuthServiceImpl implements AuthService {
         List<String> roles = List.of(primaryRole);
         List<String> scope = List.of("*");
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
-                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, accessTtl, null);
+                u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, accessTtl, null);
         String refresh = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
-                u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, refreshTtl, null);
+                u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, refreshTtl, null);
         // 新 refresh 入 Redis
         JwtPayload refreshPayload = jwtCodec.parse(refresh);
         redis.opsForValue().set(refreshKey(refreshPayload.jti()), "1", Duration.ofSeconds(refreshTtl));
@@ -351,6 +353,7 @@ public class AuthServiceImpl implements AuthService {
                 MaskType.PHONE.mask(u.getPhone()), primaryRole,
                 String.valueOf(patientId),
                 u.getDoctorId() != null ? String.valueOf(u.getDoctorId()) : null,
+                u.getPharmacistId() != null ? String.valueOf(u.getPharmacistId()) : null,
                 u.getStatus());
         return new AuthDTO.BindPatientResponse(access, refresh, "Bearer", accessTtl, me);
     }
@@ -404,6 +407,7 @@ public class AuthServiceImpl implements AuthService {
                     userRole,
                     u.getPatientId(),
                     u.getDoctorId(),
+                    u.getPharmacistId(),
                     u.getStatus(),
                     u.getCreatedAt()));
         }
