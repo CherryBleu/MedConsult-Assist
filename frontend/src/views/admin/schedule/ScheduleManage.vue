@@ -3,7 +3,10 @@
     <div class="card-box">
       <div class="page-header">
         <h2 class="page-title">排班管理</h2>
-        <el-button type="primary" @click="openAddDialog">新增排班</el-button>
+        <div>
+          <el-button type="success" @click="openBatchDialog">批量排班</el-button>
+          <el-button type="primary" @click="openAddDialog">新增排班</el-button>
+        </div>
       </div>
 
       <el-form :model="queryParams" inline class="search-form">
@@ -148,6 +151,57 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 批量排班弹窗（#16：循环调用 createScheduleApi 生成多天排班，不改后端） -->
+    <el-dialog v-model="batchDialogVisible" title="批量排班" width="560px">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+        选择医生 + 日期范围 + 时段，系统将自动为范围内的每一天生成排班
+      </el-alert>
+      <el-form :model="batchForm" label-width="100px">
+        <el-form-item label="医生" required>
+          <el-select v-model="batchForm.doctorId" placeholder="请选择医生" style="width: 100%" @change="handleBatchDoctorChange">
+            <el-option v-for="doc in allDoctors" :key="doc.id" :label="doc.deptName + ' - ' + doc.name + ' (' + doc.title + ')'" :value="doc.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="日期范围" required>
+          <el-date-picker
+            v-model="batchForm.dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+            :disabled-date="disabledDate"
+          />
+        </el-form-item>
+        <el-form-item label="时段" required>
+          <el-checkbox-group v-model="batchForm.periods">
+            <el-checkbox value="MORNING">上午</el-checkbox>
+            <el-checkbox value="AFTERNOON">下午</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item label="每周">
+          <el-checkbox-group v-model="batchForm.weekdays">
+            <el-checkbox v-for="w in weekdayOptions" :key="w.value" :value="w.value">{{ w.label }}</el-checkbox>
+          </el-checkbox-group>
+          <div class="form-tip">不勾选则包含范围内每一天</div>
+        </el-form-item>
+        <el-form-item label="总号源数">
+          <el-input-number v-model="batchForm.totalQuota" :min="1" :max="100" style="width: 200px" />
+        </el-form-item>
+        <el-form-item label="挂号费">
+          <el-input-number v-model="batchForm.registrationFee" :min="0" :precision="0" style="width: 200px" />
+          <span class="fee-unit">元</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">
+          生成排班
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -325,6 +379,106 @@ const handleToggleStatus = (row, status) => {
   }).catch(() => {})
 }
 
+// ===== #16：批量排班（前端循环调用 createScheduleApi） =====
+const batchDialogVisible = ref(false)
+const batchSubmitting = ref(false)
+const weekdayOptions = [
+  { value: 1, label: '周一' }, { value: 2, label: '周二' }, { value: 3, label: '周三' },
+  { value: 4, label: '周四' }, { value: 5, label: '周五' }, { value: 6, label: '周六' },
+  { value: 0, label: '周日' }
+]
+const batchForm = reactive({
+  doctorId: '',
+  dateRange: [],
+  periods: ['MORNING', 'AFTERNOON'],
+  weekdays: [],
+  totalQuota: 20,
+  registrationFee: 50
+})
+
+const handleBatchDoctorChange = (val) => {
+  const doctor = allDoctors.value.find(d => d.id === val)
+  if (doctor) {
+    batchForm.registrationFee = doctor.registrationFee ?? doctor.fee ?? 50
+  }
+}
+
+const openBatchDialog = () => {
+  batchForm.doctorId = ''
+  batchForm.dateRange = []
+  batchForm.periods = ['MORNING', 'AFTERNOON']
+  batchForm.weekdays = []
+  batchForm.totalQuota = 20
+  batchForm.registrationFee = 50
+  batchDialogVisible.value = true
+}
+
+const submitBatch = async () => {
+  if (!batchForm.doctorId) {
+    ElMessage.warning('请选择医生')
+    return
+  }
+  if (!batchForm.dateRange || batchForm.dateRange.length !== 2) {
+    ElMessage.warning('请选择日期范围')
+    return
+  }
+  if (batchForm.periods.length === 0) {
+    ElMessage.warning('请至少选择一个时段')
+    return
+  }
+
+  // 展开日期范围 + 时段，生成所有排班请求
+  const start = dayjs(batchForm.dateRange[0])
+  const end = dayjs(batchForm.dateRange[1])
+  const tasks = []
+  let cursor = start
+  while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {
+    // 按星期过滤（未勾选则全部包含）
+    if (batchForm.weekdays.length === 0 || batchForm.weekdays.includes(cursor.day())) {
+      for (const period of batchForm.periods) {
+        tasks.push({
+          doctorId: batchForm.doctorId,
+          scheduleDate: cursor.format('YYYY-MM-DD'),
+          period,
+          startTime: period === 'MORNING' ? '08:00' : '14:00',
+          endTime: period === 'MORNING' ? '12:00' : '17:00',
+          totalQuota: batchForm.totalQuota,
+          registrationFee: batchForm.registrationFee
+        })
+      }
+    }
+    cursor = cursor.add(1, 'day')
+  }
+
+  if (tasks.length === 0) {
+    ElMessage.warning('所选条件下无排班需要生成')
+    return
+  }
+
+  batchSubmitting.value = true
+  let successCount = 0
+  let failCount = 0
+  try {
+    for (const task of tasks) {
+      try {
+        await createScheduleApi(task)
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+    if (failCount === 0) {
+      ElMessage.success(`批量排班完成，共生成 ${successCount} 条排班`)
+    } else {
+      ElMessage.warning(`生成 ${successCount} 条成功，${failCount} 条失败（可能日期重复）`)
+    }
+    batchDialogVisible.value = false
+    getList()
+  } finally {
+    batchSubmitting.value = false
+  }
+}
+
 const handleDelete = (row) => {
   ElMessageBox.confirm(`确定要删除该排班吗？`, '提示', {
     confirmButtonText: '确定',
@@ -370,5 +524,11 @@ onMounted(() => {
 .fee-unit {
   margin-left: 10px;
   color: var(--el-text-color-regular);
+}
+.form-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+  margin-top: 4px;
 }
 </style>
