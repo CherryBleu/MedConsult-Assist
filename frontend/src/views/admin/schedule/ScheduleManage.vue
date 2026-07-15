@@ -430,6 +430,11 @@ const submitBatch = async () => {
   // 展开日期范围 + 时段，生成所有排班请求
   const start = dayjs(batchForm.dateRange[0])
   const end = dayjs(batchForm.dateRange[1])
+  const dayCount = end.diff(start, 'day') + 1
+  if (dayCount > 90) {
+    ElMessage.warning('单次批量排班不超过 90 天，请缩小日期范围')
+    return
+  }
   const tasks = []
   let cursor = start
   while (cursor.isBefore(end) || cursor.isSame(end, 'day')) {

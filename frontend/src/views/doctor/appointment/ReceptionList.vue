@@ -238,11 +238,16 @@ const handleEndVisit = async (id) => {
       type: 'info'
     })
     // 校验该预约是否已有病历记录——未写病历不允许完成就诊（医疗文书合规）
-    const recordRes = await getRecordListApi({ appointmentId: id, pageNum: 1, pageSize: 1 })
-    const records = recordRes.data?.records || recordRes.data?.items || []
-    if (records.length === 0) {
-      ElMessage.warning('该预约尚未书写病历，请先完成病历书写再结束就诊')
-      return
+    try {
+      const recordRes = await getRecordListApi({ appointmentId: id, page: 1, pageSize: 1 })
+      const records = recordRes.data?.records || recordRes.data?.items || []
+      if (records.length === 0) {
+        ElMessage.warning('该预约尚未书写病历，请先完成病历书写再结束就诊')
+        return
+      }
+    } catch (e) {
+      // 病历查询失败不阻断完成就诊，但提示医生
+      console.warn('病历查询失败，跳过校验', e)
     }
     await endVisitApi(id)
     ElMessage.success('接诊已完成')

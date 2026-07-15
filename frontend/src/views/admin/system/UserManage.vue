@@ -49,9 +49,10 @@
         <el-form-item label="角色">
           <el-select v-model="form.role" placeholder="请选择角色" style="width: 100%">
             <el-option label="医生" value="DOCTOR" />
-            <el-option label="药房管理员" value="PHARMACY_ADMIN" />
-            <el-option label="医院管理员" value="HOSPITAL_ADMIN" />
+            <el-option disabled label="药房管理员（需脚本创建）" value="PHARMACY_ADMIN" />
+            <el-option disabled label="医院管理员（需脚本创建）" value="HOSPITAL_ADMIN" />
           </el-select>
+          <div class="form-tip">患者请引导自助注册；管理类角色需由系统管理员通过数据库/脚本创建</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -149,11 +150,6 @@ const submitForm = async () => {
       ElMessage.success('更新成功')
     } else {
       // #19/#20：后端 /auth/register 要求 password 必填，前端不填则用默认密码
-      // 管理类角色（PHARMACY_ADMIN/HOSPITAL_ADMIN）后端禁止自助注册——提示引导
-      if (['PHARMACY_ADMIN', 'HOSPITAL_ADMIN'].includes(form.role)) {
-        ElMessage.warning(`${getRoleLabel(form.role)} 角色需由系统管理员通过数据库或脚本创建，暂不支持在此新增`)
-        return
-      }
       const submitData = { ...form }
       if (!submitData.password) {
         submitData.password = DEFAULT_PASSWORD
