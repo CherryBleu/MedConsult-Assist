@@ -39,13 +39,13 @@
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑医生' : '新增医生'" width="520px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="工号">
-          <el-input v-model="form.doctorNo" placeholder="请输入医生工号" />
+          <el-input v-model="form.doctorNo" placeholder="请输入医生工号" :disabled="isEdit" />
         </el-form-item>
         <el-form-item label="姓名">
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
         <el-form-item label="性别">
-          <el-radio-group v-model="form.gender">
+          <el-radio-group v-model="form.gender" :disabled="isEdit">
             <el-radio value="MALE">男</el-radio>
             <el-radio value="FEMALE">女</el-radio>
           </el-radio-group>

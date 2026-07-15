@@ -6,11 +6,11 @@
       <div class="select-section">
         <el-form label-width="100px">
           <el-form-item label="选择病历">
-            <el-select v-model="selectedRecord" placeholder="请选择要分析的病历" style="width: 400px">
+            <el-select v-model="selectedRecord" placeholder="请选择要分析的病历" style="width: 400px" filterable>
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} - ${item.patientName || '未知患者'}`"
+                :label="`${item.recordNo} - ${item.patientName || '未知患者'} - ${item.chiefComplaint || '无主诉'}`"
                 :value="item.id"
               />
             </el-select>
@@ -76,6 +76,11 @@
             </li>
           </ul>
         </div>
+
+        <!-- #10：用药分析与写病历联动 -->
+        <div class="action-bar">
+          <el-button type="primary" @click="goWriteRecord">去写病历</el-button>
+        </div>
       </div>
 
       <el-empty v-else description="选择病历后点击分析，AI将自动检测用药安全风险" />
@@ -88,10 +93,13 @@
 defineOptions({ name: 'MedicationAnalysis' })
 
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck } from '@element-plus/icons-vue'
 import { getRecordListApi } from '@/api/record'
 import { medicationAnalysisApi } from '@/api/ai'
+
+const router = useRouter()
 
 const selectedRecord = ref('')
 const analyzing = ref(false)
@@ -133,6 +141,15 @@ const doAnalysis = async () => {
 onMounted(() => {
   getRecordList()
 })
+
+// #10：用药分析与写病历功能联动
+const goWriteRecord = () => {
+  const record = recordList.value.find(r => r.id === selectedRecord.value)
+  router.push({
+    path: '/doctor/record/write',
+    query: { recordId: selectedRecord.value, patientId: record?.patientId, patientName: record?.patientName }
+  })
+}
 </script>
 
 <style scoped>
@@ -240,5 +257,13 @@ onMounted(() => {
   line-height: 2;
   font-size: 14px;
   color: var(--text-regular);
+}
+
+.action-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
 }
 </style>

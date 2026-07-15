@@ -105,7 +105,7 @@
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="560px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
-          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" @change="handleDoctorChange">
+          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" :disabled="isEdit" @change="handleDoctorChange">
             <el-option v-for="doc in allDoctors" :key="doc.id" :label="doc.deptName + ' - ' + doc.name + ' (' + doc.title + ')'" :value="doc.id" />
           </el-select>
         </el-form-item>

@@ -34,7 +34,7 @@
       <div class="confirm-footer">
         <el-button @click="$router.back()">返回修改</el-button>
         <el-button type="primary" :loading="submitting" @click="submitAppointment">
-          确认预约并支付
+          提交预约
         </el-button>
       </div>
     </div>
@@ -70,11 +70,6 @@ onMounted(() => {
 })
 
 const submitAppointment = async () => {
-  if (!visitReason.value.trim()) {
-    ElMessage.warning('请填写就诊原因')
-    return
-  }
-
   submitting.value = true
   try {
     // 后端 CreateRequest 要求 patientId（@NotBlank），从登录态取；无档案则提示先完善个人信息
@@ -88,7 +83,7 @@ const submitAppointment = async () => {
       patientId: String(patientId),
       scheduleId: formData.scheduleId,
       doctorId: formData.doctorId,
-      visitReason: visitReason.value,
+      visitReason: visitReason.value || undefined,
       source: 'MOBILE_APP'
     })
     ElMessage.success('预约成功，请按时就诊')

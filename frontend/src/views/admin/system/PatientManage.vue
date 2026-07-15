@@ -17,7 +17,6 @@
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
         </div>
-        <el-button type="primary" @click="openAddDialog">新增患者</el-button>
       </div>
 
       <el-table :data="patientList" v-loading="loading" border stripe>

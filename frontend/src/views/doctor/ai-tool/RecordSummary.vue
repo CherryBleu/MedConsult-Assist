@@ -6,7 +6,7 @@
       <div class="select-section">
         <el-form label-width="100px">
           <el-form-item label="选择病历">
-            <el-select v-model="selectedRecord" placeholder="请选择要生成摘要的病历" style="width: 400px">
+            <el-select v-model="selectedRecord" placeholder="请选择要生成摘要的病历" style="width: 400px" filterable>
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
@@ -85,9 +85,12 @@
 defineOptions({ name: 'RecordSummary' })
 
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getRecordListApi } from '@/api/record'
 import { generateSummaryByRecordApi } from '@/api/ai'
+
+const router = useRouter()
 
 const selectedRecord = ref('')
 const generating = ref(false)
@@ -143,7 +146,12 @@ const generateSummary = async () => {
 }
 
 const applyToRecord = () => {
-  ElMessage.success('已将摘要内容填充到病历书写页')
+  // #10：修复假联动——跳转病历书写页并带上 recordId，供医生查看/续写
+  const record = recordList.value.find(r => r.recordNo === selectedRecord.value)
+  router.push({
+    path: '/doctor/record/write',
+    query: { recordId: selectedRecord.value, patientId: record?.patientId, patientName: record?.patientName }
+  })
 }
 
 const reset = () => {
