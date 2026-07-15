@@ -18,8 +18,8 @@ public interface MedicalRecordService {
     /** §2.6.2 病历详情 */
     MedicalRecordDTO.DetailResponse detail(String recordNo);
 
-    /** §2.6.3 分页查询病历（可按 patientId 过滤） */
-    PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId);
+    /** §2.6.3 分页查询病历（可按 patientId / appointmentId 过滤） */
+    PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId, Long appointmentId);
 
     /** §2.6.4 更新草稿病历（仅 DRAFT 可改） */
     MedicalRecordDTO.UpdateResponse updateDraft(String recordNo, MedicalRecordDTO.UpdateDraftRequest req);

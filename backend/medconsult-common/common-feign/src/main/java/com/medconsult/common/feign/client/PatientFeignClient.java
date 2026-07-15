@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -50,4 +51,11 @@ public interface PatientFeignClient {
      */
     @PostMapping("/internal/patients/register")
     Result<EntityIdDTO> createForRegister(@RequestBody PatientRegisterRequest req);
+
+    /**
+     * 内部：按主键 ID 批量查患者姓名（供 outpatient-service 预约列表显示患者名）。
+     * <p>返回 patientId → name 映射；不存在的 ID 不含在结果中。
+     */
+    @GetMapping("/internal/patients/names")
+    Result<java.util.Map<Long, String>> namesByIds(@RequestParam("ids") List<Long> ids);
 }

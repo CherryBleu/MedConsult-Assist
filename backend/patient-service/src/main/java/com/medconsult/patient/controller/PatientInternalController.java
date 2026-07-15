@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -74,5 +75,15 @@ public class PatientInternalController {
     public Result<EntityIdDTO> createForRegister(@RequestBody PatientRegisterRequest req) {
         SecurityContext.requireService();
         return Result.ok(patientService.internalCreate(req.name(), req.idNo(), req.phone(), req.idType()));
+    }
+
+    /**
+     * 内部接口：按主键 ID 批量查患者姓名（供 outpatient-service 预约列表显示患者名）。
+     * <p>GET 参数传逗号分隔的 ID 列表，返回 patientId → name 映射。
+     */
+    @GetMapping("/names")
+    public Result<java.util.Map<Long, String>> namesByIds(@RequestParam("ids") List<Long> ids) {
+        SecurityContext.requireService();
+        return Result.ok(patientService.internalNamesByIds(ids));
     }
 }

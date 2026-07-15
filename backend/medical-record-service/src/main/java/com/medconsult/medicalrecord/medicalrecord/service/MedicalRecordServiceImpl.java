@@ -134,7 +134,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     // ===== §2.6.3 列表 =====
 
     @Override
-    public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId) {
+    public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId, Long appointmentId) {
         Page<MedicalRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
         // 越权防护（IDOR）：PATIENT 只能列自己的病历（架构 §4.3 SELF 数据范围）。
@@ -143,6 +143,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         Long scopePatientId = resolvePatientScope(patientId);
         if (scopePatientId != null) {
             qw.eq("patient_id", scopePatientId);
+        }
+        // 可选：按预约 ID 过滤（供"完成就诊前校验是否有病历"场景）
+        if (appointmentId != null) {
+            qw.eq("appointment_id", appointmentId);
         }
         qw.orderByDesc("created_at");
         IPage<MedicalRecord> result = medicalRecordMapper.selectPage(p, qw);

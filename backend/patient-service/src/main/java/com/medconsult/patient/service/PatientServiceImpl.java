@@ -481,4 +481,17 @@ public class PatientServiceImpl implements PatientService {
         }
         return Period.between(birthDate, LocalDate.now()).getYears();
     }
+
+    @Override
+    public java.util.Map<Long, String> internalNamesByIds(java.util.Collection<Long> patientIds) {
+        if (patientIds == null || patientIds.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        List<Patient> patients = patientMapper.selectBatchIds(patientIds);
+        java.util.Map<Long, String> result = new java.util.HashMap<>();
+        for (Patient p : patients) {
+            result.put(p.getId(), p.getName());
+        }
+        return result;
+    }
 }

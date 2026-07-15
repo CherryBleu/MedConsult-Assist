@@ -65,4 +65,10 @@ public interface PatientService {
      * @return 新建档案的主键 id
      */
     EntityIdDTO internalCreate(String name, String idNo, String phone, String idType);
+
+    /**
+     * 内部接口：按主键 ID 批量查患者姓名（供 outpatient-service 预约列表显示患者名）。
+     * <p>返回 patientId → name 映射；不存在的 ID 不含在结果中。
+     */
+    java.util.Map<Long, String> internalNamesByIds(java.util.Collection<Long> patientIds);
 }

@@ -71,6 +71,8 @@ public class AppointmentServiceImpl implements AppointmentService {
     private final DistributedLock distributedLock;
     /** 锁内事务体（独立 Bean，避免 self-injection 循环依赖） */
     private final AppointmentTxService txService;
+    /** Feign 调 patient-service 批量查患者姓名（列表展示用） */
+    private final com.medconsult.common.feign.client.PatientFeignClient patientFeignClient;
 
     /** 分布式锁租约：5s（够覆盖一次 DB 事务 + 网络往返） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
@@ -175,9 +177,11 @@ public class AppointmentServiceImpl implements AppointmentService {
         // 组装医生名/科室名（用 LinkedHashSet 去重，O(n)；避免 ArrayList.contains 的 O(n²)）
         Set<Long> doctorIdSet = new java.util.LinkedHashSet<>();
         Set<Long> deptIdSet = new java.util.LinkedHashSet<>();
+        Set<Long> patientIdSet = new java.util.LinkedHashSet<>();
         for (Appointment a : result.getRecords()) {
             if (a.getDoctorId() != null) doctorIdSet.add(a.getDoctorId());
             if (a.getDepartmentId() != null) deptIdSet.add(a.getDepartmentId());
+            if (a.getPatientId() != null) patientIdSet.add(a.getPatientId());
         }
         // 空集合时跳过 selectBatchIds：MyBatis-Plus 对空 IN () 会生成非法 SQL 抛异常（500）。
         Map<Long, Doctor> doctorMap = doctorIdSet.isEmpty()
@@ -186,6 +190,8 @@ public class AppointmentServiceImpl implements AppointmentService {
         Map<Long, Department> deptMap = deptIdSet.isEmpty()
                 ? java.util.Collections.emptyMap()
                 : toDeptMap(departmentMapper.selectBatchIds(new ArrayList<>(deptIdSet)));
+        // 批量查患者姓名（Feign 调 patient-service），失败降级为空 Map 不阻断列表
+        Map<Long, String> patientNameMap = resolvePatientNames(patientIdSet);
 
         List<AppointmentDTO.ListItem> items = new ArrayList<>();
         for (Appointment a : result.getRecords()) {
@@ -194,6 +200,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             items.add(new AppointmentDTO.ListItem(
                     a.getAppointmentNo(),
                     a.getPatientNo(),
+                    patientNameMap.get(a.getPatientId()),
                     dept != null ? dept.getName() : null,
                     doctor != null ? doctor.getName() : null,
                     a.getAppointmentDate(),
@@ -379,6 +386,26 @@ public class AppointmentServiceImpl implements AppointmentService {
             map.put(d.getId(), d);
         }
         return map;
+    }
+
+    /**
+     * 批量查患者姓名（Feign 调 patient-service /internal/patients/names）。
+     * <p>patient-service 不可用时降级为空 Map——列表仍正常显示，只是 patientName 为 null。
+     */
+    private Map<Long, String> resolvePatientNames(Set<Long> patientIds) {
+        if (patientIds == null || patientIds.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        try {
+            com.medconsult.common.core.Result<java.util.Map<Long, String>> resp =
+                    patientFeignClient.namesByIds(new ArrayList<>(patientIds));
+            if (resp != null && resp.data() != null) {
+                return resp.data();
+            }
+        } catch (Exception e) {
+            log.warn("批量查患者姓名失败，降级为空: {}", e.getMessage());
+        }
+        return java.util.Collections.emptyMap();
     }
 
     /** 锁 key：复用 RedisKey.SCHEDULE_QUOTA_LOCK 常量，避免锁键字符串漂移 */

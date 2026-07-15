@@ -51,6 +51,13 @@ const adminRoutes = [
         component: () => import('@/views/admin/drug/StockWarning.vue'),
         meta: { title: '库存预警' }
       },
+      {
+        path: 'stock-flow',
+        name: 'AdminStockFlow',
+        // 复用药房管理员的库存流水页（系统管理员只读查看，不做出入库操作）
+        component: () => import('@/views/pharmacy/drug/StockFlow.vue'),
+        meta: { title: '库存流水' }
+      },
       // 排班管理
       {
         path: 'schedule',

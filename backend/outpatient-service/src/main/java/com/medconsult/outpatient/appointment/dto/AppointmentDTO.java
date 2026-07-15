@@ -71,6 +71,7 @@ public class AppointmentDTO {
     public record ListItem(
             @Schema(description = "预约编号") String appointmentId,     // appointment_no
             @Schema(description = "患者编号") String patientNo,         // patient_no（冗余，便于识别患者）
+            @Schema(description = "患者姓名") String patientName,        // 从 patient-service 批量查回填
             @Schema(description = "科室名称") String departmentName,
             @Schema(description = "医生姓名") String doctorName,
             @Schema(description = "就诊日期") LocalDate appointmentDate,

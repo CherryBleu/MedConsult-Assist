@@ -135,6 +135,7 @@ import {
   endVisitApi,
   markNoShowApi
 } from '@/api/appointment'
+import { getRecordListApi } from '@/api/record'
 
 const router = useRouter()
 const loading = ref(false)
@@ -203,7 +204,8 @@ const getList = async () => {
   loading.value = true
   try {
     const res = await getReceptionListApi({ pageNum: 1, pageSize: 1000 })
-    allData.value = res.data.records || []
+    // 过滤掉患者已取消的预约——医生接诊列表不应再显示已取消的记录
+    allData.value = (res.data.records || []).filter(i => i.appointmentStatus !== 'CANCELLED')
   } finally {
     loading.value = false
   }
@@ -235,6 +237,13 @@ const handleEndVisit = async (id) => {
       cancelButtonText: '取消',
       type: 'info'
     })
+    // 校验该预约是否已有病历记录——未写病历不允许完成就诊（医疗文书合规）
+    const recordRes = await getRecordListApi({ appointmentId: id, pageNum: 1, pageSize: 1 })
+    const records = recordRes.data?.records || recordRes.data?.items || []
+    if (records.length === 0) {
+      ElMessage.warning('该预约尚未书写病历，请先完成病历书写再结束就诊')
+      return
+    }
     await endVisitApi(id)
     ElMessage.success('接诊已完成')
     getList()

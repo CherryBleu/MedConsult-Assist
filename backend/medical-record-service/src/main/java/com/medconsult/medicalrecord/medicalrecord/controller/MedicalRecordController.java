@@ -48,8 +48,9 @@ public class MedicalRecordController {
     public Result<PageResult<MedicalRecordDTO.ListItem>> list(
             @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
             @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int pageSize,
-            @Parameter(description = "患者编号") @RequestParam(required = false) String patientId) {
-        return Result.ok(medicalRecordService.list(page, pageSize, patientId));
+            @Parameter(description = "患者编号") @RequestParam(required = false) String patientId,
+            @Parameter(description = "预约 ID（按预约过滤病历）") @RequestParam(required = false) Long appointmentId) {
+        return Result.ok(medicalRecordService.list(page, pageSize, patientId, appointmentId));
     }
 
     /** §2.6.4 更新草稿病历（仅 DRAFT 可改） */
