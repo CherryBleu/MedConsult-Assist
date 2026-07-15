@@ -53,9 +53,7 @@
                 <el-button v-if="!item.isRead" size="small" link type="primary" @click="handleMarkRead(item)">
                   标记已读
                 </el-button>
-                <el-button size="small" link type="danger" @click="handleDelete(item)">
-                  删除
-                </el-button>
+                <!-- 删除按钮已移除：后端/docs §2.8 无通知删除端点，deleteNoticeApi 硬 reject 会报错 -->
               </div>
             </div>
           </div>
@@ -103,7 +101,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Bell, Calendar, Wallet, Setting, Cpu } from '@element-plus/icons-vue'
 import { useNoticeStore } from '@/store/modules/notice'
 
@@ -142,7 +140,8 @@ const fetchList = async () => {
       pageSize: pagination.pageSize
     }
     if (activeTab.value === 'UNREAD') {
-      params.isRead = false
+      // 后端 @RequestParam 名为 read（mock 同时识别 isRead），统一用 read 对齐后端契约
+      params.read = false
     } else if (activeTab.value !== 'ALL') {
       params.type = activeTab.value
     }
@@ -177,19 +176,6 @@ const handleMarkAllRead = async () => {
   await noticeStore.markAllRead()
   ElMessage.success('已全部标记为已读')
   fetchList()
-}
-
-const handleDelete = (item) => {
-  ElMessageBox.confirm('确定要删除这条通知吗？', '提示', {
-    confirmButtonText: '确定删除',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    await noticeStore.deleteNotice(item.id)
-    ElMessage.success('删除成功')
-    fetchList()
-    fetchUnreadCount()
-  }).catch(() => {})
 }
 
 const handleItemClick = (item) => {

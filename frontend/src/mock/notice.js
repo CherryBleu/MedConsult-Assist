@@ -91,8 +91,10 @@ const saveCurrentNotices = (list) => {
 
 export const mockNoticeList = (params = {}) => {
   let list = [...getCurrentNotices()]
-  if (params.isRead !== undefined && params.isRead !== '' && params.isRead !== 'ALL') {
-    list = list.filter(n => n.isRead === (params.isRead === 'true' || params.isRead === true))
+  // 兼容 read（后端契约）与 isRead（历史参数）两种命名
+  const readVal = params.read !== undefined ? params.read : params.isRead
+  if (readVal !== undefined && readVal !== '' && readVal !== 'ALL') {
+    list = list.filter(n => n.isRead === (readVal === 'true' || readVal === true))
   }
   if (params.type && params.type !== 'ALL') {
     list = list.filter(n => n.type === params.type)

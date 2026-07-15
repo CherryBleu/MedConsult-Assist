@@ -64,7 +64,9 @@ public class NotificationDTO {
             @Schema(description = "通知编号") String notificationId,   // notification_no
             @Schema(description = "通知类型") String type,
             @Schema(description = "标题") String title,
-            @Schema(description = "是否已读") boolean read
+            @Schema(description = "通知正文") String content,
+            @Schema(description = "是否已读") boolean read,
+            @Schema(description = "创建时间") LocalDateTime createdAt
     ) {}
 
     // ===== §2.8.3 标记已读 =====

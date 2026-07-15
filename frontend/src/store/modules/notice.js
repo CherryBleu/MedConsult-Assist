@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import {
-  getNoticeListApi, getUnreadCountApi, markReadApi, markAllReadApi, deleteNoticeApi
+  getNoticeListApi, getUnreadCountApi, markReadApi, markAllReadApi
 } from '@/api/notice'
 
 export const useNoticeStore = defineStore('notice', {
@@ -13,9 +13,17 @@ export const useNoticeStore = defineStore('notice', {
   actions: {
     async fetchNotices(params) {
       const res = await getNoticeListApi(params)
-      this.noticeList = res.data.records
+      // 后端→前端字段映射：notificationId→id, read→isRead（content/createdAt 后端已返回，透传）
+      // mock 仍用 id/isRead，?? 兜底保证两种数据源都兼容
+      const records = (res.data.records || []).map(n => ({
+        ...n,
+        id: n.id ?? n.notificationId,
+        isRead: n.isRead ?? n.read ?? false
+      }))
+      this.noticeList = records
       this.loaded = true
-      return res.data
+      // 返回映射后的数据，供 view 直接使用
+      return { ...res.data, records }
     },
 
     async fetchUnreadCount() {
@@ -41,19 +49,6 @@ export const useNoticeStore = defineStore('notice', {
       const res = await markAllReadApi(unreadIds)
       this.noticeList.forEach(n => { n.isRead = true })
       this.unreadCount = 0
-      return res
-    },
-
-    async deleteNotice(id) {
-      const res = await deleteNoticeApi(id)
-      const index = this.noticeList.findIndex(n => n.id === Number(id))
-      if (index > -1) {
-        const notice = this.noticeList[index]
-        if (!notice.isRead) {
-          this.unreadCount = Math.max(0, this.unreadCount - 1)
-        }
-        this.noticeList.splice(index, 1)
-      }
       return res
     }
   }

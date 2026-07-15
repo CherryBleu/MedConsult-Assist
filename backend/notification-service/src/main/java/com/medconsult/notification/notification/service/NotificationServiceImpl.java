@@ -79,7 +79,9 @@ public class NotificationServiceImpl implements NotificationService {
                     n.getNotificationNo(),
                     n.getType(),
                     n.getTitle(),
-                    n.getReadStatus() != null && n.getReadStatus() == 1));
+                    n.getContent(),
+                    n.getReadStatus() != null && n.getReadStatus() == 1,
+                    n.getCreatedAt()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }
