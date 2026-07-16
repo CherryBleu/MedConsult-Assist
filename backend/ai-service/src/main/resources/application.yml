@@ -77,6 +77,13 @@ medconsult:
       database: ${MILVUS_DATABASE:medical}
       collection: ${MILVUS_COLLECTION:data}
       min-score: ${MILVUS_MIN_SCORE:0.60}
+    # RAG 自检：防止 Mongo/Milvus 未导入数据或 embedding 维度错配时被误判为“无命中”
+    rag:
+      expected-mongo-count: ${RAG_EXPECTED_MONGO_COUNT:8807}
+      expected-milvus-count: ${RAG_EXPECTED_MILVUS_COUNT:8807}
+      expected-embedding-dimension: ${EMBEDDING_DIMENSION:512}
+      startup-check-enabled: ${RAG_STARTUP_CHECK_ENABLED:true}
+      fail-fast: ${RAG_FAIL_FAST:false}
     imaging:
       provider: ${IMAGING_PROVIDER:external-ai-provider}
       model: ${IMAGING_MODEL:chest-ct-abnormal-detector}

@@ -35,6 +35,49 @@ public class MilvusRestClient {
         this.properties = properties;
     }
 
+    public long countEntities() {
+        long started = System.currentTimeMillis();
+        AiProperties.MilvusProperties milvus = properties.milvus();
+        if (milvus == null || isBlank(milvus.uri()) || isBlank(milvus.collection())) {
+            log.info("[AI-TIMER] milvus.countEntities={}ms success=false reason=config_missing", elapsed(started));
+            return -1L;
+        }
+        try {
+            ObjectNode payload = JsonUtils.MAPPER.createObjectNode();
+            payload.put("dbName", milvus.database());
+            payload.put("collectionName", milvus.collection());
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(trimRightSlash(milvus.uri()) + "/v2/vectordb/collections/get_stats"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .header("Accept", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.toJson(payload), StandardCharsets.UTF_8));
+            if (!isBlank(milvus.token())) {
+                builder.header("Authorization", "Bearer " + milvus.token());
+            }
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.info("[AI-TIMER] milvus.countEntities={}ms success=false status={}", elapsed(started), response.statusCode());
+                return -1L;
+            }
+            JsonNode root = JsonUtils.readTree(response.body());
+            if (root.path("code").asInt(0) != 0) {
+                log.info("[AI-TIMER] milvus.countEntities={}ms success=false code={}", elapsed(started), root.path("code").asInt(0));
+                return -1L;
+            }
+            long count = parseRowCount(root.path("data"));
+            log.info("[AI-TIMER] milvus.countEntities={}ms success={} count={}", elapsed(started), count >= 0, count);
+            return count;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            log.info("[AI-TIMER] milvus.countEntities={}ms success=false error=InterruptedException", elapsed(started));
+            return -1L;
+        } catch (IOException | RuntimeException ex) {
+            log.info("[AI-TIMER] milvus.countEntities={}ms success=false error={}", elapsed(started), ex.getClass().getSimpleName());
+            return -1L;
+        }
+    }
+
     public List<DiseaseKnowledge> search(List<Float> vector, int topK) {
         long started = System.currentTimeMillis();
         AiProperties.MilvusProperties milvus = properties.milvus();
@@ -82,9 +125,12 @@ public class MilvusRestClient {
             }
             log.info("[AI-TIMER] milvus.search={}ms success=true matches={}", elapsed(started), matches.size());
             return matches;
-        } catch (IOException | InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            log.info("[AI-TIMER] milvus.search={}ms success=false error={}", elapsed(started), ex.getClass().getSimpleName());
+            log.info("[AI-TIMER] milvus.search={}ms success=false error=InterruptedException", elapsed(started));
+            return List.of();
+        } catch (IOException ex) {
+            log.info("[AI-TIMER] milvus.search={}ms success=false error=IOException", elapsed(started));
             return List.of();
         } catch (RuntimeException ex) {
             log.info("[AI-TIMER] milvus.search={}ms success=false error={}", elapsed(started), ex.getClass().getSimpleName());
@@ -142,6 +188,36 @@ public class MilvusRestClient {
                 .map(String::trim)
                 .filter(item -> !item.isBlank())
                 .toList();
+    }
+
+    private static long parseRowCount(JsonNode data) {
+        if (data == null || data.isMissingNode() || data.isNull()) {
+            return -1L;
+        }
+        List<String> keys = List.of("rowCount", "row_count", "num_entities", "numEntities", "count");
+        if (data.isObject()) {
+            for (String key : keys) {
+                JsonNode value = data.path(key);
+                if (value.isNumber()) {
+                    return value.asLong();
+                }
+                if (value.isTextual()) {
+                    try {
+                        return Long.parseLong(value.asText());
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        if (data.isArray()) {
+            for (JsonNode item : data) {
+                long parsed = parseRowCount(item);
+                if (parsed >= 0) {
+                    return parsed;
+                }
+            }
+        }
+        return -1L;
     }
 
     private static String trimRightSlash(String value) {

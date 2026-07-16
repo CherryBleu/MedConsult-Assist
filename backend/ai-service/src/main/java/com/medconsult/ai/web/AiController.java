@@ -33,6 +33,7 @@ import com.medconsult.ai.service.FileUploadService;
 import com.medconsult.ai.service.ImagingDetectionService;
 import com.medconsult.ai.service.MedicationAnalysisService;
 import com.medconsult.ai.service.SummaryService;
+import com.medconsult.ai.service.RagReadinessService;
 import com.medconsult.ai.service.SymptomChatService;
 import com.medconsult.ai.service.TriageService;
 import com.medconsult.common.core.PageResult;
@@ -84,6 +85,7 @@ public class AiController {
     private final AiCallLogService callLogService;
     private final AiSseService aiSseService;
     private final FileUploadService fileUploadService;
+    private final RagReadinessService ragReadinessService;
 
     // ===== 症状对话 =====
 
@@ -114,6 +116,14 @@ public class AiController {
     @GetMapping("/api/v1/ai/symptom-chat/history/{sessionId}")
     public Result<List<SymptomChatService.ChatHistoryItem>> sessionHistory(@PathVariable("sessionId") String sessionId) {
         return Result.ok(symptomChatService.getHistory(sessionId));
+    }
+
+    @Operation(summary = "RAG 知识库就绪自检")
+    @Permission(roles = {"DOCTOR", "HOSPITAL_ADMIN"})
+    @GetMapping("/api/v1/ai/rag/readiness")
+    public Result<RagReadinessService.RagReadiness> ragReadiness(
+            @RequestParam(name = "refresh", defaultValue = "false") boolean refresh) {
+        return Result.ok(refresh ? ragReadinessService.refresh() : ragReadinessService.current());
     }
 
     // ===== 智能分诊 =====

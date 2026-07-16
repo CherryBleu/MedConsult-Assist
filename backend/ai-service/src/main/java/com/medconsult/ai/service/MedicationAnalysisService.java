@@ -40,12 +40,12 @@ public class MedicationAnalysisService {
             """;
 
     /**
-     * 用药分析结果缓存：按处方内容 hash 缓存，30 分钟 TTL。
-     * 相同处方组合（药名+剂量+频次）命中缓存，跳过 LLM 调用直接返回。
-     * 缓存 key 只含处方内容，不含 patientId（同一处方对不同患者风险提示相同——
-     * 患者特异性风险由 functionService 的禁忌检测动态注入，不随缓存固化）。
+     * 用药分析结果缓存：按“患者 + 患者上下文 + 处方内容” hash 缓存，30 分钟 TTL。
+     *
+     * <p>用药风险具备患者特异性（过敏史、既往史、当前用药会改变禁忌/相互作用），
+     * 整响应缓存绝不能只按处方命中，否则同一处方可能跨患者复用风险结论。
      */
-    private static final String MED_CACHE_PREFIX = "medconsult:ai:medication:rx:";
+    private static final String MED_CACHE_PREFIX = "medconsult:ai:medication:v2:";
     private static final Duration MED_CACHE_TTL = Duration.ofMinutes(30);
 
     private final OpenAiCompatibleClient llmClient;
@@ -78,14 +78,15 @@ public class MedicationAnalysisService {
     }
 
     private MedicationAnalysisResponse analyze(MedicationAnalysisRequest request, Consumer<String> tokenConsumer) {
-        // 缓存命中检查（仅非流式场景缓存；流式需逐 token 返回，不缓存）
+        // 缓存命中检查（仅非流式场景缓存；流式需逐 token 返回，不缓存）。
+        // key 已纳入 patientId/patientContext，避免同处方跨患者复用风险结论。
         String cacheKey = null;
         if (tokenConsumer == null) {
-            cacheKey = MED_CACHE_PREFIX + prescriptionsHash(request.prescriptions());
+            cacheKey = medicationCacheKeyFor(request);
             try {
                 String cached = redisTemplate.opsForValue().get(cacheKey);
                 if (cached != null && !cached.isBlank()) {
-                    log.info("[AI-CACHE] medication hit cache: prescriptionsHash={}", prescriptionsHash(request.prescriptions()));
+                    log.info("[AI-CACHE] medication hit cache: key={}", cacheKey);
                     return JsonUtils.MAPPER.readValue(cached, MedicationAnalysisResponse.class);
                 }
             } catch (Exception e) {
@@ -146,13 +147,19 @@ public class MedicationAnalysisService {
         return response;
     }
 
+    static String medicationCacheKeyFor(MedicationAnalysisRequest request) {
+        Map<String, Object> cacheIdentity = new LinkedHashMap<>();
+        cacheIdentity.put("schema", "medication-cache-v2");
+        cacheIdentity.put("patientId", request.patientId());
+        cacheIdentity.put("patientContext", request.patientContext());
+        cacheIdentity.put("prescriptions", request.prescriptions());
+        return MED_CACHE_PREFIX + stableHash(JsonUtils.toJson(cacheIdentity));
+    }
+
     /**
-     * 处方内容 hash（SHA-256，取前 32 字符）。
-     * <p>同一处方组合（药名+剂量+频次+给药途径+天数）产生相同 hash，
-     * 作为缓存 key 后缀。不含 patientId——患者特异性风险由 functionService 动态注入。
+     * 稳定 hash（SHA-256，取前 32 字符），用于缓存 key 后缀。
      */
-    private static String prescriptionsHash(List<com.medconsult.ai.dto.AiModels.PrescriptionDto> prescriptions) {
-        String json = JsonUtils.toJson(prescriptions);
+    private static String stableHash(String json) {
         try {
             java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));

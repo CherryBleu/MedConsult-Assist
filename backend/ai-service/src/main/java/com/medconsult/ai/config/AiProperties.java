@@ -15,7 +15,8 @@ public record AiProperties(
         VisionProperties vision,
         FileStorageProperties fileStorage,
         InternalProperties internal,
-        RateLimitProperties rateLimit
+        RateLimitProperties rateLimit,
+        RagProperties rag
 ) {
     public record LlmProperties(String baseUrl, String apiKey, String model, int timeoutSeconds) {
     }
@@ -73,6 +74,20 @@ public record AiProperties(
             int windowSeconds,
             boolean includeInternal,
             Map<String, Integer> endpointMaxRequests
+    ) {
+    }
+
+    /**
+     * RAG 数据就绪自检配置。
+     *
+     * <p>expected* 用于防止 Mongo/Milvus 未导入数据或 embedding 维度错配时被误判为“无命中”。
+     */
+    public record RagProperties(
+            long expectedMongoCount,
+            long expectedMilvusCount,
+            int expectedEmbeddingDimension,
+            boolean startupCheckEnabled,
+            boolean failFast
     ) {
     }
 }

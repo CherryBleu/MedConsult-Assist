@@ -51,6 +51,7 @@ public class SymptomChatService {
     private final AiCallLogService callLogService;
     private final DoctorFeignClient doctorFeignClient;
     private final StringRedisTemplate redisTemplate;
+    private final RagReadinessService ragReadinessService;
     private final RiskRuleEngine riskRuleEngine = new RiskRuleEngine();
 
     /** 有医生科室集合的 Redis 缓存 key（5 分钟 TTL，与 TriageService 共用） */
@@ -64,7 +65,8 @@ public class SymptomChatService {
             AiChatMessageMapper chatMessageMapper,
             AiCallLogService callLogService,
             DoctorFeignClient doctorFeignClient,
-            StringRedisTemplate redisTemplate
+            StringRedisTemplate redisTemplate,
+            RagReadinessService ragReadinessService
     ) {
         this.diseaseSearchService = diseaseSearchService;
         this.properties = properties;
@@ -73,6 +75,7 @@ public class SymptomChatService {
         this.callLogService = callLogService;
         this.doctorFeignClient = doctorFeignClient;
         this.redisTemplate = redisTemplate;
+        this.ragReadinessService = ragReadinessService;
     }
 
     /**
@@ -172,7 +175,9 @@ public class SymptomChatService {
             stepStarted = System.currentTimeMillis();
             int topK = request.ragOptions() == null ? 5 : request.ragOptions().safeTopK();
             List<DiseaseKnowledge> knowledge = diseaseSearchService.search(request.message(), intent, topK);
-            log.info("[AI-TIMER] symptomChat.search={}ms knowledge={}", elapsed(stepStarted), knowledge.size());
+            RagReadinessService.RagReadiness ragReadiness = ragReadinessService.current();
+            log.info("[AI-TIMER] symptomChat.search={}ms knowledge={} ragReady={}",
+                    elapsed(stepStarted), knowledge.size(), ragReadiness.ready());
 
             stepStarted = System.currentTimeMillis();
             RiskAssessment risk = riskRuleEngine.assess(request.message(), request.patientContext());
@@ -183,7 +188,7 @@ public class SymptomChatService {
                     elapsed(stepStarted), citations.size(), departments.size(), causes.size());
 
             stepStarted = System.currentTimeMillis();
-            String answer = generateFinalAnswer(request, knowledge, citations, departments, risk);
+            String answer = generateFinalAnswer(request, knowledge, citations, departments, risk, ragReadiness);
             log.info("[AI-TIMER] symptomChat.finalAnswer={}ms", elapsed(stepStarted));
 
             stepStarted = System.currentTimeMillis();
@@ -208,7 +213,7 @@ public class SymptomChatService {
             SymptomChatResponse response = new SymptomChatResponse(
                     request.sessionId(),
                     answer,
-                    "VECTOR_SEARCH_AND_RULE",
+                    ragReadiness.ready() ? "VECTOR_SEARCH_AND_RULE" : "VECTOR_SEARCH_AND_RULE_DEGRADED",
                     causes,
                     departments,
                     risk.riskLevel(),
@@ -231,14 +236,17 @@ public class SymptomChatService {
     }
 
     private String generateFinalAnswer(SymptomChatRequest request, List<DiseaseKnowledge> knowledge,
-                                       List<CitationDto> citations, List<String> departments, RiskAssessment risk) {
+                                       List<CitationDto> citations, List<String> departments, RiskAssessment risk,
+                                       RagReadinessService.RagReadiness ragReadiness) {
         // 症状自诊不调用生成式 LLM（docs/修改建议.md §3.1 P0 铁律）：
         // 回答仅由规则模板拼装（ruleBasedAnswer），answer 文本可追溯到疾病 JSON 命中片段，
         // 不含模型自由生成内容。Embedding 检索仍允许（仅向量化，非生成式）。
         long started = System.currentTimeMillis();
         if (knowledge.isEmpty()) {
-            log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_empty_knowledge", elapsed(started));
-            return "暂未检索到与您描述匹配的疾病条目。建议您：1）尝试补充更具体的症状描述（如部位、持续时间、诱因、伴随症状）；2）若症状持续、加重或出现胸痛、呼吸困难、意识异常等危急情况，请立即就医。本结果仅供健康咨询参考，不能替代医生诊断。";
+            log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_empty_knowledge ragReady={}",
+                    elapsed(started), ragReadiness.ready());
+            String degraded = ragReadiness.ready() ? "" : "当前知识库自检未完全通过（" + summarizeRagIssues(ragReadiness) + "），检索结果可能不完整。";
+            return degraded + "暂未检索到与您描述匹配的疾病条目。建议您：1）尝试补充更具体的症状描述（如部位、持续时间、诱因、伴随症状）；2）若症状持续、加重或出现胸痛、呼吸困难、意识异常等危急情况，请立即就医。本结果仅供健康咨询参考，不能替代医生诊断。";
         }
         String answer = ruleBasedAnswer(knowledge, departments, risk);
         log.info("[AI-TIMER] symptomChat.generateFinalAnswer={}ms mode=rule_template", elapsed(started));
@@ -257,6 +265,17 @@ public class SymptomChatService {
         return action + "根据疾病 JSON 检索结果，相关条目包括：" + evidence
                 + "。建议咨询：" + deptText
                 + "，就诊时可说明症状出现时间、诱因、是否伴随发热/胸痛/呼吸困难等，并由医生判断需要的检查。非诊断，仅供参考，不能替代医生诊断。";
+    }
+
+    private static String summarizeRagIssues(RagReadinessService.RagReadiness readiness) {
+        if (readiness == null || readiness.checks() == null || readiness.checks().isEmpty()) {
+            return "UNKNOWN";
+        }
+        String issues = String.join(";", readiness.checks().stream()
+                .filter(check -> !"UP".equals(check.status()))
+                .map(check -> check.name() + ":" + check.reason())
+                .toList());
+        return issues.isBlank() ? "UNKNOWN" : issues;
     }
 
     private String actionAdvice(RiskAssessment risk) {

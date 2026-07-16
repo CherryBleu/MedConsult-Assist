@@ -40,15 +40,12 @@ public class MedicationFunctionService {
     }
 
     public FunctionResult execute(MedicationAnalysisRequest request) {
-        PatientContext context = enrichPatientContext(request);
-        List<DrugRiskInfoDTO> drugRiskInfos = queryDrugRiskInfos(request.prescriptions());
+        List<Map<String, Object>> functionTrace = new ArrayList<>();
+        PatientContext context = enrichPatientContext(request, functionTrace);
+        List<DrugRiskInfoDTO> drugRiskInfos = queryDrugRiskInfos(request.prescriptions(), functionTrace);
         List<Map<String, Object>> contraindications = new ArrayList<>();
         List<Map<String, Object>> interactions = new ArrayList<>();
         List<Map<String, Object>> reminders = new ArrayList<>();
-        List<Map<String, Object>> functionTrace = new ArrayList<>();
-
-        functionTrace.add(trace("queryPatientAllergies", summarizeList(context.allergies())));
-        functionTrace.add(trace("queryCurrentMedications", summarizeList(context.currentMedications())));
 
         for (PrescriptionDto prescription : request.prescriptions()) {
             // 前端在无真实处方数据时会硬编码 {drugName:'placeholder'} 占位以满足 @NotEmpty 校验，
@@ -69,42 +66,74 @@ public class MedicationFunctionService {
         return new FunctionResult(overallRisk, contraindications, interactions, reminders, functionTrace, context);
     }
 
-    private PatientContext enrichPatientContext(MedicationAnalysisRequest request) {
+    private PatientContext enrichPatientContext(MedicationAnalysisRequest request, List<Map<String, Object>> functionTrace) {
         if (request.patientContext() != null) {
-            return request.patientContext();
+            PatientContext context = request.patientContext();
+            functionTrace.add(toolTrace("queryPatientAllergies", "patientId=" + safeText(request.patientId()),
+                    "SUCCESS", summarizeList(context.allergies()), null));
+            functionTrace.add(toolTrace("queryCurrentMedications", "patientId=" + safeText(request.patientId()),
+                    "SUCCESS", summarizeList(context.currentMedications()), null));
+            return context;
         }
         if (!StringUtils.hasText(request.patientId())) {
-            return new PatientContext(null, null, List.of(), List.of(), List.of());
+            PatientContext empty = new PatientContext(null, null, List.of(), List.of(), List.of());
+            functionTrace.add(toolTrace("queryPatientAllergies", "patientId=missing", "SKIPPED", "empty", null));
+            functionTrace.add(toolTrace("queryCurrentMedications", "patientId=missing", "SKIPPED", "empty", null));
+            return empty;
         }
         try {
             Result<PatientContextDTO> result = patientClient.context(BusinessIds.numericId(request.patientId()));
             if (result == null || result.data() == null) {
-                return new PatientContext(null, null, List.of(), List.of(), List.of());
+                PatientContext empty = new PatientContext(null, null, List.of(), List.of(), List.of());
+                functionTrace.add(toolTrace("queryPatientAllergies", "patientId=" + request.patientId(), "FAILED", "empty", "EMPTY_RESPONSE"));
+                functionTrace.add(toolTrace("queryCurrentMedications", "patientId=" + request.patientId(), "FAILED", "empty", "EMPTY_RESPONSE"));
+                return empty;
             }
             PatientContextDTO dto = result.data();
-            return new PatientContext(dto.age(), dto.gender(), safe(dto.allergies()),
+            PatientContext context = new PatientContext(dto.age(), dto.gender(), safe(dto.allergies()),
                     safe(dto.pastMedicalHistory()), safe(dto.currentMedications()));
+            functionTrace.add(toolTrace("queryPatientAllergies", "patientId=" + request.patientId(),
+                    "SUCCESS", summarizeList(context.allergies()), null));
+            functionTrace.add(toolTrace("queryCurrentMedications", "patientId=" + request.patientId(),
+                    "SUCCESS", summarizeList(context.currentMedications()), null));
+            return context;
         } catch (RuntimeException ex) {
+            functionTrace.add(toolTrace("queryPatientAllergies", "patientId=" + request.patientId(), "FAILED", "empty", errorCode(ex)));
+            functionTrace.add(toolTrace("queryCurrentMedications", "patientId=" + request.patientId(), "FAILED", "empty", errorCode(ex)));
             return new PatientContext(null, null, List.of(), List.of(), List.of());
         }
     }
 
-    private List<DrugRiskInfoDTO> queryDrugRiskInfos(List<PrescriptionDto> prescriptions) {
+    private List<DrugRiskInfoDTO> queryDrugRiskInfos(List<PrescriptionDto> prescriptions, List<Map<String, Object>> functionTrace) {
         List<DrugRiskInfoDTO> result = new ArrayList<>();
+        Map<String, PrescriptionDto> unique = new LinkedHashMap<>();
         for (PrescriptionDto prescription : prescriptions) {
-            if (!StringUtils.hasText(prescription.drugId())) {
+            if (!StringUtils.hasText(prescription.drugId()) || isPlaceholderDrugName(prescription.drugName())) {
                 continue;
             }
+            unique.putIfAbsent(prescription.drugId(), prescription);
+        }
+        for (PrescriptionDto prescription : unique.values()) {
             try {
                 Result<DrugRiskInfoDTO> res = drugClient.getRiskInfo(BusinessIds.numericId(prescription.drugId()));
                 if (res != null && res.data() != null) {
                     result.add(res.data());
+                    functionTrace.add(toolTrace("queryDrugRiskInfo",
+                            "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
+                            "SUCCESS", riskInfoSummary(res.data()), null));
+                } else {
+                    functionTrace.add(toolTrace("queryDrugRiskInfo",
+                            "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
+                            "FAILED", "empty", "EMPTY_RESPONSE"));
                 }
             } catch (RuntimeException ex) {
                 // 用药安全场景：drug-service 不可用时静默降级为本地规则，必须留日志便于发现，
                 // 否则用户拿不到真实禁忌/相互作用却无任何告警。
                 log.warn("drug risk info fetch failed, degrade to local rules, drugId={}",
                         prescription.drugId(), ex);
+                functionTrace.add(toolTrace("queryDrugRiskInfo",
+                        "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
+                        "FAILED", "degraded to local rules", errorCode(ex)));
             }
         }
         return result;
@@ -152,8 +181,10 @@ public class MedicationFunctionService {
             }
             List<DrugRiskInfoDTO.Contraindication> contraList = info.contraindications() == null ? List.of() : info.contraindications();
             List<DrugRiskInfoDTO.Interaction> interList = info.interactions() == null ? List.of() : info.interactions();
-            functionTrace.add(trace("queryDrugContraindications", info.drugId() + " contraindications=" + contraList.size()));
-            functionTrace.add(trace("queryDrugInteractions", info.drugId() + " interactions=" + interList.size()));
+            functionTrace.add(toolTrace("queryDrugContraindications", "drugId=" + info.drugId(),
+                    "SUCCESS", "contraindications=" + contraList.size(), null));
+            functionTrace.add(toolTrace("queryDrugInteractions", "drugId=" + info.drugId(),
+                    "SUCCESS", "interactions=" + interList.size(), null));
             for (DrugRiskInfoDTO.Contraindication item : contraList) {
                 Map<String, Object> risk = new LinkedHashMap<>();
                 risk.put("condition", item.condition());
@@ -180,12 +211,37 @@ public class MedicationFunctionService {
                 || (StringUtils.hasText(info.genericName()) && prescription.drugName().contains(info.genericName()));
     }
 
-    private static Map<String, Object> trace(String functionName, String resultSummary) {
-        return Map.of("functionName", functionName, "resultSummary", resultSummary);
+    private static Map<String, Object> toolTrace(String toolName, String inputSummary, String status,
+                                                String resultSummary, String errorCode) {
+        Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put("type", "tool_call");
+        trace.put("toolName", toolName);
+        trace.put("functionName", toolName); // 兼容旧前端/旧文档字段
+        trace.put("inputSummary", inputSummary);
+        trace.put("status", status);
+        trace.put("resultSummary", resultSummary);
+        if (StringUtils.hasText(errorCode)) {
+            trace.put("errorCode", errorCode);
+        }
+        return trace;
     }
 
     private static String summarizeList(List<String> values) {
         return values == null || values.isEmpty() ? "empty" : String.join(",", values);
+    }
+
+    private static String riskInfoSummary(DrugRiskInfoDTO info) {
+        int contraindications = info.contraindications() == null ? 0 : info.contraindications().size();
+        int interactions = info.interactions() == null ? 0 : info.interactions().size();
+        return "contraindications=" + contraindications + ",interactions=" + interactions;
+    }
+
+    private static String safeText(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String errorCode(RuntimeException ex) {
+        return ex.getClass().getSimpleName();
     }
 
     /**

@@ -50,14 +50,13 @@ show collections          # 应看到 diseases
 exit
 ```
 
-**数据导入**：疾病知识来自 `backend/data/medical.data.unified.json`（48MB / 8807 条）。
-当前该 JSON 存在编码问题（GBK 被当 UTF-8 读取导致乱码），且 `data` 模块尚未挂进 backend 聚合 pom。
-**数据导入延后处理**——本次只确保基础设施就绪，collection 建空即可，ai-service 能正常启动。
+**数据导入**：疾病知识来自 `backend/data/medical.data.unified.json`（48MB / 8807 条，UTF-8）。
+`ai-service` 的 RAG 自检默认要求 Mongo `medconsult.diseases` 至少有 8807 条，否则会在 `/api/v1/ai/rag/readiness` 标记 `mongo=DOWN`，症状自诊会以 degraded 语义提示“知识库自检未完全通过”，不再把空库误判为“无命中”。
 
 验证：
 ```powershell
 mongosh "mongodb://localhost:27017/medconsult" --eval "db.diseases.countDocuments()"
-# 期望输出：0（空 collection，待后续导入）
+# 期望输出：8807（低于该值需重新导入疾病知识库）
 ```
 
 ---
@@ -91,15 +90,21 @@ powershell -Command "Invoke-RestMethod http://localhost:9091/healthz"
 ### 3.3 REST v2 接口验证
 
 ```powershell
-# 列出所有 collection（应该返回空 list，因为还没导入数据）
+# 列出 collection（导入完成后应包含 data）
 $body = '{"dbName":"medical"}'
 Invoke-RestMethod -Uri http://localhost:19530/v2/vectordb/collections/list `
     -Method Post -ContentType "application/json" -Body $body
-# 期望：code=0，data 中无 collection（或报 db 不存在——首次需先建库，见下方）
+# 期望：code=0，data 中包含 collection=data
+
+# 查看向量行数（ai-service RAG 自检也会调用该统计接口）
+$statsBody = '{"dbName":"medical","collectionName":"data"}'
+Invoke-RestMethod -Uri http://localhost:19530/v2/vectordb/collections/get_stats `
+    -Method Post -ContentType "application/json" -Body $statsBody
+# 期望：rowCount/num_entities 约 8807（低于该值需重新导入向量）
 ```
 
-> 注意：ai-service 运行时调 `/v2/vectordb/entities/search`，如果库/collection 不存在会返回错误并被
-> `MilvusRestClient` 捕获为空结果（不影响服务启动，只影响症状对齐检索）。
+> 注意：ai-service 运行时调 `/v2/vectordb/entities/search`，并在启动/人工刷新时通过
+> `/api/v1/ai/rag/readiness?refresh=true` 检查 Mongo 行数、Milvus 行数和 embedding 维度。库/collection 不存在或向量为空会明确标记为 degraded，不再静默当作“未检索到相关疾病”。
 
 ---
 

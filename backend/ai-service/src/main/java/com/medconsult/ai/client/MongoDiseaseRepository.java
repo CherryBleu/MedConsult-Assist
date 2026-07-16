@@ -49,6 +49,19 @@ public class MongoDiseaseRepository {
         return local;
     }
 
+    public long countDocuments() {
+        try {
+            MongoClient client = mongoClient();
+            MongoCollection<Document> collection = client
+                    .getDatabase(properties.mongo().database())
+                    .getCollection(properties.mongo().collection());
+            return collection.countDocuments();
+        } catch (Exception ex) {
+            log.warn("MongoDB disease count failed: {}", ex.getMessage());
+            return -1L;
+        }
+    }
+
     public Optional<DiseaseKnowledge> findByNameExact(String diseaseName) {
         if (diseaseName == null || diseaseName.isBlank()) {
             return Optional.empty();
