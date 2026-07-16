@@ -182,12 +182,12 @@ const tableData = computed(() => {
 })
 
 const getPaymentLabel = (status) => {
-  const map = { PAID: '已支付', UNPAID: '待支付', REFUNDED: '已退款' }
+  const map = { PAID: '已支付', UNPAID: '待支付', REFUNDING: '退款中', REFUNDED: '已退款' }
   return map[status] || status
 }
 
 const getPaymentTagType = (status) => {
-  const map = { PAID: 'success', UNPAID: 'warning', REFUNDED: 'info' }
+  const map = { PAID: 'success', UNPAID: 'warning', REFUNDING: 'warning', REFUNDED: 'info' }
   return map[status] || 'info'
 }
 

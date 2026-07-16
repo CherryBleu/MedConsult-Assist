@@ -107,8 +107,8 @@
         <el-descriptions-item label="序号" v-if="currentDetail.queueNo">第{{ currentDetail.queueNo }}号</el-descriptions-item>
         <el-descriptions-item label="挂号费">¥{{ currentDetail.fee }}</el-descriptions-item>
         <el-descriptions-item label="支付状态">
-          <el-tag :type="currentDetail.paymentStatus === 'PAID' ? 'success' : 'warning'" size="small">
-            {{ currentDetail.paymentStatus === 'PAID' ? '已支付' : currentDetail.paymentStatus === 'REFUNDED' ? '已退款' : '待支付' }}
+          <el-tag :type="getStatusType(PAYMENT_STATUS, currentDetail.paymentStatus)" size="small">
+            {{ getStatusLabel(PAYMENT_STATUS, currentDetail.paymentStatus) }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="预约状态" :span="2">
@@ -128,7 +128,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Calendar } from '@element-plus/icons-vue'
-import { APPOINTMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
+import { APPOINTMENT_STATUS, PAYMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import {
   getAppointmentListApi, cancelAppointmentApi, payAppointmentApi,
   checkInAppointmentApi, getAppointmentDetailApi

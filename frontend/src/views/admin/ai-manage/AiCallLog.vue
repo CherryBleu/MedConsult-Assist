@@ -4,9 +4,9 @@
       <div class="page-header">
         <h2 class="page-title">AI调用日志</h2>
         <div class="stat-bar">
-          <span>今日调用：<b>{{ totalCount }}</b> 次</span>
-          <span>成功：<b class="success">{{ successCount }}</b></span>
-          <span>失败：<b class="danger">{{ failCount }}</b></span>
+          <span>累计调用：<b>{{ total }}</b> 次</span>
+          <span>本页成功：<b class="success">{{ successCount }}</b></span>
+          <span>本页失败：<b class="danger">{{ failCount }}</b></span>
         </div>
       </div>
 
@@ -33,6 +33,18 @@
         </el-table-column>
         <el-table-column prop="createdAt" label="调用时间" width="180" />
       </el-table>
+
+      <div class="pagination-box">
+        <el-pagination
+          v-model:current-page="pageNum"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="getLogList"
+          @current-change="getLogList"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -43,20 +55,25 @@ import { getAiCallLogApi } from '@/api/ai-manage'
 
 const loading = ref(false)
 const logList = ref([])
+const pageNum = ref(1)
+const pageSize = ref(10)
+const total = ref(0)
 
-const totalCount = computed(() => logList.value.length)
+// 统计：成功/失败仅基于当前页样本（后端未提供全量聚合接口），
+// 总数用 total（全量），避免只统计当前 10 条造成的误导。
 const successCount = computed(() => logList.value.filter(i => i.status === 'SUCCESS').length)
 const failCount = computed(() => logList.value.filter(i => i.status === 'FAILED').length)
 
 const getLogList = async () => {
   loading.value = true
   try {
-    const res = await getAiCallLogApi()
+    const res = await getAiCallLogApi({ page: pageNum.value, pageSize: pageSize.value })
     // 后端 GET /ai/call-log 返回 PageResult（{records,total,...}），不是数组。
     // 直接赋 res.data 会导致 logList.value.filter 报 "not a function"（render 崩溃）。
     // request 拦截器已补 records 别名（items→records），这里统一取 records 数组。
     const data = res.data
     logList.value = Array.isArray(data) ? data : (data?.records ?? data?.items ?? [])
+    if (data && typeof data.total === 'number') total.value = data.total
   } finally {
     loading.value = false
   }
@@ -92,4 +109,9 @@ onMounted(() => {
 }
 .stat-bar .success { color: #52c41a; }
 .stat-bar .danger { color: #ff4d4f; }
+.pagination-box {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
 </style>
