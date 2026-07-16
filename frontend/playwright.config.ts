@@ -42,7 +42,8 @@ export default defineConfig({
     command: 'npm run dev -- --host 127.0.0.1 --port 3100 --strictPort',
     url: 'http://127.0.0.1:3100',
     timeout: 60_000,
-    reuseExistingServer: false,
+    // 3100 是 e2e 专用端口；本地允许复用上一次 e2e 遗留的同端口 Vite，避免异常退出后端口占用导致整套测试无法启动。
+    reuseExistingServer: !process.env.CI,
     env: {
       VITE_USE_MOCK: 'true',
       VITE_PORT: '3100',

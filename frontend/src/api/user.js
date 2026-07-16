@@ -20,7 +20,7 @@ export const registerApi = (data) => {
 // 登录接口
 export const loginApi = (data) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockLogin(data.account))
+    return mockLogin(data)
   }
   return request({
     url: '/auth/login',

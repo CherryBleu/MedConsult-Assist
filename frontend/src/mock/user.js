@@ -14,9 +14,18 @@ export const mockRegister = (data) => {
   }
 }
 
-export const mockLogin = (account) => {
+export const mockLogin = (payload) => {
+  const account = typeof payload === 'string' ? payload : payload?.account
+  const clientType = typeof payload === 'string' ? null : payload?.clientType
+  const user = getUserByAccount(account)
+  if (clientType === 'PATIENT' && user.role !== 'PATIENT') {
+    return Promise.reject(new Error('该账号不是患者账号，请从工作人员入口登录'))
+  }
+  if (clientType === 'STAFF' && user.role === 'PATIENT') {
+    return Promise.reject(new Error('该账号不是工作人员账号，请从患者入口登录'))
+  }
   localStorage.setItem(LOGIN_ACCOUNT_KEY, account || '')
-  return {
+  return Promise.resolve({
     code: 0,
     message: '登录成功',
     data: {
@@ -24,7 +33,7 @@ export const mockLogin = (account) => {
       refreshToken: 'mock-refresh-token-' + Date.now(),
       expiresIn: 7200
     }
-  }
+  })
 }
 
 export const mockRefreshToken = (refreshToken) => {

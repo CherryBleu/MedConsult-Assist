@@ -208,6 +208,7 @@ const handleLogin = async () => {
       router.replace(redirect)
     } catch (err) {
       console.error('登录失败', err)
+      ElMessage.error(err?.message || '登录失败，请检查账号或入口')
     } finally {
       loading.value = false
     }
