@@ -2,6 +2,7 @@ package com.medconsult.drug.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.Permission;
 import com.medconsult.drug.dto.DrugDTO;
 import com.medconsult.drug.service.DrugService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -68,8 +69,10 @@ public class DrugController {
         return Result.ok(drugService.listFlows(drugId, page, pageSize));
     }
 
-    /** §2.7.5b 查询全局库存流水（管理员视角，可按 type/drugNo 过滤，含药品名/编号） */
+    /** §2.7.5b 查询全局库存流水（管理员视角，可按 type/drugNo 过滤，含药品名/编号）。
+     *  全院药品出入库流水属管理敏感数据，限药房/医院管理员。 */
     @GetMapping("/stock/flows")
+    @Permission(roles = {"PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
     @Operation(summary = "查询全局库存流水")
     public Result<PageResult<DrugDTO.GlobalStockFlowListItem>> listAllFlows(
             @Parameter(description = "类型过滤：INBOUND / OUTBOUND（可选）") @RequestParam(required = false) String type,

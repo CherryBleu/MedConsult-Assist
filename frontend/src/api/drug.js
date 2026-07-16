@@ -101,9 +101,13 @@ const mapStockWarning = (w) => ({
   ...w
 })
 const mapStockFlow = (f) => ({
-  id: f.flowId ?? f.id,
-  drugId: f.drugId,
+  // 兼容两种后端 ListItem：单药品流水用 stockFlowId，全局流水用 stockFlowId/drugNo
+  id: f.stockFlowId ?? f.flowId ?? f.id,
+  stockFlowId: f.stockFlowId ?? f.flowId,
+  drugId: f.drugNo ?? f.drugId,
+  drugNo: f.drugNo,
   drugName: f.drugName ?? f.genericName,
+  batchNo: f.batchNo,
   type: f.flowType ?? f.type,
   quantity: f.quantity,
   remark: f.remark,

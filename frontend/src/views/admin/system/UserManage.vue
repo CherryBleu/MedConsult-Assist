@@ -53,10 +53,8 @@
           </div>
         </el-form-item>
         <el-form-item label="状态">
-          <el-radio-group v-model="form.status">
-            <el-radio value="ACTIVE">正常</el-radio>
-            <el-radio value="DISABLED">禁用</el-radio>
-          </el-radio-group>
+          <!-- 新建账号后端固定 ACTIVE(createUser 硬编码)，不提供禁用选项避免「改了不生效」误导 -->
+          <el-tag type="success" size="small">正常（新建账号默认启用，如需禁用待用户管理接口补充）</el-tag>
         </el-form-item>
       </el-form>
       <template #footer>

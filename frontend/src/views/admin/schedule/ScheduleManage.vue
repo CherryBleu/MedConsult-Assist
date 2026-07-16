@@ -35,7 +35,7 @@
           <el-select v-model="queryParams.status" placeholder="请选择状态" clearable style="width: 120px">
             <el-option label="可预约" value="AVAILABLE" />
             <el-option label="已约满" value="FULL" />
-            <el-option label="已停诊" value="STOPPED" />
+            <el-option label="已停诊" value="SUSPENDED" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -76,11 +76,11 @@
             <!-- #17：后端 PUT /schedules/{id} 全量更新已实现，编辑排班字段生效 -->
             <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
             <el-button
-              v-if="row.status !== 'STOPPED'"
+              v-if="row.status !== 'SUSPENDED'"
               size="small"
               type="warning"
               link
-              @click="handleToggleStatus(row, 'STOPPED')"
+              @click="handleToggleStatus(row, 'SUSPENDED')"
             >停诊</el-button>
             <el-button
               v-else
@@ -108,7 +108,8 @@
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="560px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
-          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" @change="handleDoctorChange">
+          <!-- 编辑模式禁用：后端 PUT /schedules/{id} 医生/科室不可变(#17)，改了不落库 -->
+          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" :disabled="isEdit" @change="handleDoctorChange">
             <el-option v-for="doc in allDoctors" :key="doc.id" :label="doc.deptName + ' - ' + doc.name + ' (' + doc.title + ')'" :value="doc.id" />
           </el-select>
         </el-form-item>
@@ -378,7 +379,7 @@ const submitForm = async () => {
 }
 
 const handleToggleStatus = (row, status) => {
-  const text = status === 'STOPPED' ? '停诊' : '恢复'
+  const text = status === 'SUSPENDED' ? '停诊' : '恢复'
   ElMessageBox.confirm(`确定要${text}该排班吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',

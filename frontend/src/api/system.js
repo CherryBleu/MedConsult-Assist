@@ -2,7 +2,8 @@ import request from '@/utils/request'
 import { mockDoctorList, mockAddDoctor, mockUpdateDoctor, mockDeleteDoctor } from '@/mock/system'
 import {
   mockUserList, mockAddUser, mockUpdateUser, mockDeleteUser,
-  mockDeptList, mockAddDept, mockUpdateDept, mockDeleteDept
+  mockDeptList, mockAddDept, mockUpdateDept, mockDeleteDept,
+  mockChangePassword
 } from '@/mock/system'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
