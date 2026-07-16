@@ -140,17 +140,20 @@ const isMockMode = import.meta.env.VITE_USE_MOCK === 'true'
 const loginForm = reactive({
   account: '',
   password: '',
-  remember: false
+  remember: false,
+  entry: null      // 登录入口：'PATIENT'/'STAFF'，由 selectedEntry 映射大写后上送后端 clientType
 })
 
 const selectEntry = (entry) => {
   selectedEntry.value = entry
+  loginForm.entry = entry.toUpperCase()   // patient→PATIENT, staff→STAFF（与后端 clientType 契约一致）
 }
 
 const backToEntrySelect = () => {
   selectedEntry.value = null
   loginForm.account = ''
   loginForm.password = ''
+  loginForm.entry = null
 }
 
 const loginRules = {
