@@ -31,6 +31,9 @@ public interface DrugService {
     /** §2.7.5 分页查询某药品的库存流水（按 created_at DESC） */
     PageResult<DrugDTO.StockFlowListItem> listFlows(String drugNo, int page, int pageSize);
 
+    /** §2.7.5b 全局库存流水（管理员视角，可按 type/drugNo 过滤，含药品名/编号） */
+    PageResult<DrugDTO.GlobalStockFlowListItem> listAllFlows(int page, int pageSize, String type, String drugNo);
+
     /** §2.7.6 分页查询库存预警：LOW_STOCK（current_stock &lt; threshold）/ NEAR_EXPIRY（30 天内过期） */
     PageResult<DrugDTO.AlertItem> listAlerts(String type, int page, int pageSize);
 

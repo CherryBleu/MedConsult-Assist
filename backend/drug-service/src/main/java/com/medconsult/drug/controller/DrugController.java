@@ -68,6 +68,17 @@ public class DrugController {
         return Result.ok(drugService.listFlows(drugId, page, pageSize));
     }
 
+    /** §2.7.5b 查询全局库存流水（管理员视角，可按 type/drugNo 过滤，含药品名/编号） */
+    @GetMapping("/stock/flows")
+    @Operation(summary = "查询全局库存流水")
+    public Result<PageResult<DrugDTO.GlobalStockFlowListItem>> listAllFlows(
+            @Parameter(description = "类型过滤：INBOUND / OUTBOUND（可选）") @RequestParam(required = false) String type,
+            @Parameter(description = "药品编号过滤（可选）") @RequestParam(required = false) String drugNo,
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") int pageSize) {
+        return Result.ok(drugService.listAllFlows(page, pageSize, type, drugNo));
+    }
+
     /** §2.7.6 查询库存预警（LOW_STOCK / NEAR_EXPIRY） */
     @GetMapping("/stock/alerts")
     @Operation(summary = "查询库存预警")

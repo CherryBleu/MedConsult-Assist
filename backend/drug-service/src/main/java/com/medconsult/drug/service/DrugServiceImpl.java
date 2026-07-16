@@ -181,6 +181,54 @@ public class DrugServiceImpl implements DrugService {
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }
 
+    // ===== §2.7.5b 全局库存流水（管理员视角） =====
+
+    @Override
+    public PageResult<DrugDTO.GlobalStockFlowListItem> listAllFlows(int page, int pageSize, String type, String drugNo) {
+        Page<DrugStockFlow> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
+        QueryWrapper<DrugStockFlow> qw = new QueryWrapper<DrugStockFlow>().orderByDesc("created_at");
+        if (type != null && !type.isBlank()) {
+            qw.eq("type", type);
+        }
+        // drugNo 过滤需先转 drugId（流水表存 drug_id）
+        Long filterDrugId = null;
+        if (drugNo != null && !drugNo.isBlank()) {
+            Drug d = drugMapper.selectOne(new QueryWrapper<Drug>().eq("drug_no", drugNo));
+            if (d == null) {
+                return PageResult.of(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize), 0L, new ArrayList<>());
+            }
+            filterDrugId = d.getId();
+            qw.eq("drug_id", filterDrugId);
+        }
+        IPage<DrugStockFlow> result = flowMapper.selectPage(p, qw);
+
+        // 跨表组装 drugNo/drugName + batchNo（参照 listAlerts 的批量查询模式）
+        java.util.Set<Long> drugIdSet = new java.util.LinkedHashSet<>();
+        java.util.Set<Long> batchIdSet = new java.util.LinkedHashSet<>();
+        for (DrugStockFlow f : result.getRecords()) {
+            if (f.getDrugId() != null) drugIdSet.add(f.getDrugId());
+            if (f.getBatchId() != null) batchIdSet.add(f.getBatchId());
+        }
+        Map<Long, Drug> drugMap = toDrugMap(
+                drugMapper.selectBatchIds(drugIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(drugIdSet)));
+        Map<Long, String> batchNoMap = toBatchNoMap(
+                batchMapper.selectBatchIds(batchIdSet.isEmpty() ? java.util.List.of() : new ArrayList<>(batchIdSet)));
+
+        List<DrugDTO.GlobalStockFlowListItem> items = new ArrayList<>();
+        for (DrugStockFlow f : result.getRecords()) {
+            Drug d = drugMap.get(f.getDrugId());
+            items.add(new DrugDTO.GlobalStockFlowListItem(
+                    f.getFlowNo(),
+                    f.getType(),
+                    f.getQuantity(),
+                    f.getBatchId() != null ? batchNoMap.get(f.getBatchId()) : null,
+                    d != null ? d.getDrugNo() : null,
+                    d != null ? d.getGenericName() : null,
+                    f.getCreatedAt()));
+        }
+        return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+    }
+
     // ===== §2.7.6 查询库存预警 =====
 
     @Override

@@ -210,6 +210,18 @@ public class DrugDTO {
             @Schema(description = "创建时间") LocalDateTime createdAt
     ) {}
 
+    /** §2.7.5b 全局库存流水列表 item（管理员视角，含药品名/编号）。 */
+    @Schema(description = "全局库存流水列表项")
+    public record GlobalStockFlowListItem(
+            @Schema(description = "流水编号") String stockFlowId,     // flow_no
+            @Schema(description = "类型：INBOUND / OUTBOUND") String type,
+            @Schema(description = "数量") Integer quantity,
+            @Schema(description = "批次号") String batchNo,
+            @Schema(description = "药品编号") String drugNo,
+            @Schema(description = "药品名称") String drugName,
+            @Schema(description = "创建时间") LocalDateTime createdAt
+    ) {}
+
     // ===== §2.7.6 查询库存预警 =====
 
     /** 预警类型：LOW_STOCK 库存不足 / NEAR_EXPIRY 近效期 */
