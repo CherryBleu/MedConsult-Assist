@@ -2,6 +2,8 @@ package com.medconsult.medicalrecord.medicalrecord.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.DataScope;
+import com.medconsult.common.security.Permission;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
 import com.medconsult.medicalrecord.medicalrecord.service.MedicalRecordService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,9 +30,10 @@ public class MedicalRecordController {
 
     private final MedicalRecordService medicalRecordService;
 
-    /** §2.6.1 创建电子病历（初始 DRAFT） */
+    /** §2.6.1 创建电子病历（初始 DRAFT，医生写） */
     @PostMapping
     @Operation(summary = "创建电子病历")
+    @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.CreateResponse> create(@Valid @RequestBody MedicalRecordDTO.CreateRequest req) {
         return Result.ok(medicalRecordService.create(req));
     }
@@ -53,18 +56,20 @@ public class MedicalRecordController {
         return Result.ok(medicalRecordService.list(page, pageSize, patientId, appointmentId));
     }
 
-    /** §2.6.4 更新草稿病历（仅 DRAFT 可改） */
+    /** §2.6.4 更新草稿病历（仅 DRAFT 可改，医生写） */
     @PutMapping("/{recordId}")
     @Operation(summary = "更新草稿病历")
+    @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.UpdateResponse> updateDraft(
             @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.UpdateDraftRequest req) {
         return Result.ok(medicalRecordService.updateDraft(recordId, req));
     }
 
-    /** §2.6.5 归档病历（DRAFT → ARCHIVED，不可逆） */
+    /** §2.6.5 归档病历（DRAFT → ARCHIVED，不可逆，医生） */
     @PostMapping("/{recordId}/archive")
     @Operation(summary = "归档病历")
+    @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.ArchiveResponse> archive(
             @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.ArchiveRequest req) {

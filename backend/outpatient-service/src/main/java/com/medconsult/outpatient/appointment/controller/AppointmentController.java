@@ -2,6 +2,8 @@ package com.medconsult.outpatient.appointment.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.DataScope;
+import com.medconsult.common.security.Permission;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.service.AppointmentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -66,9 +68,10 @@ public class AppointmentController {
         return Result.ok(appointmentService.updatePayment(appointmentId, req));
     }
 
-    /** §2.5.6 更新就诊状态（状态机校验） */
+    /** §2.5.6 更新就诊状态（状态机校验，医生接诊/完成就诊动作） */
     @PatchMapping("/{appointmentId}/status")
     @Operation(summary = "更新就诊状态")
+    @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<AppointmentDTO.StatusResponse> updateStatus(@Parameter(description = "预约编号", required = true) @PathVariable String appointmentId,
                                                                @Valid @RequestBody AppointmentDTO.StatusUpdateRequest req) {
         return Result.ok(appointmentService.updateStatus(appointmentId, req));
