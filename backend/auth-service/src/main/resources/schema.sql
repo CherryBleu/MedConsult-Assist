@@ -27,21 +27,10 @@ CREATE TABLE IF NOT EXISTS sys_user (
     KEY idx_sys_user_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户账号表';
 
--- 幂等迁移：已有库补 pharmacist_id 列（MySQL 无 ADD COLUMN IF NOT EXISTS，用存储过程守护）
-DROP PROCEDURE IF EXISTS medconsult_auth_add_pharmacist_id;
-DELIMITER $$
-CREATE PROCEDURE medconsult_auth_add_pharmacist_id()
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
-                   WHERE TABLE_SCHEMA = DATABASE()
-                     AND TABLE_NAME = 'sys_user'
-                     AND COLUMN_NAME = 'pharmacist_id') THEN
-        ALTER TABLE sys_user ADD COLUMN pharmacist_id BIGINT COMMENT '关联药师编号' AFTER doctor_id;
-    END IF;
-END$$
-DELIMITER ;
-CALL medconsult_auth_add_pharmacist_id();
-DROP PROCEDURE IF EXISTS medconsult_auth_add_pharmacist_id;
+-- 注：pharmacist_id 列已在上面的 CREATE TABLE 中定义（新库直接具备）。
+-- 历史上的"幂等迁移存储过程"（DELIMITER $$ ... CREATE PROCEDURE ...）已移除——
+-- DELIMITER 是 mysql 客户端专用指令，Spring Boot 的 ScriptUtils 经 JDBC 执行时无法解析，
+-- 会在启动时抛 SQLSyntaxErrorException。新库无需补列；老库该列也已存在（早期手动迁移过）。
 
 -- sys_service_account 服务账号表（架构文档 §4.2，服务间调用的服务身份凭证）
 -- 服务（如 ai-service）用 service_code + api_key 向 auth-service 换发 SERVICE 类型 JWT，
