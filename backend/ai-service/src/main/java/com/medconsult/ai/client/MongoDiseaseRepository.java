@@ -119,7 +119,10 @@ public class MongoDiseaseRepository {
         String desc = doc.getString("desc");
         String chunk = "疾病名称：" + name + "\n症状：" + String.join("、", symptoms) + "\n疾病描述：" + desc;
         return new DiseaseKnowledge(
-                String.valueOf(doc.getObjectId("_id")),
+                // _id 类型因导入方式而异：mongoimport 保留为 String、Spring Data 写入为 ObjectId。
+                // 用 doc.get 读取原始值再 String.valueOf，避免 getObjectId 对 String 抛 ClassCastException
+                // （否则 findBySymptom 整条降级为空，RAG 永远返回兜底话术）。
+                String.valueOf(doc.get("_id")),
                 "DISEASE_JSON:" + name,
                 name,
                 desc,
