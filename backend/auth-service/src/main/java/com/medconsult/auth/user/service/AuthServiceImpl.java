@@ -380,6 +380,77 @@ public class AuthServiceImpl implements AuthService {
         return new AuthDTO.BindPatientResponse(access, refresh, "Bearer", accessTtl, me);
     }
 
+    // ===== 管理员创建用户（#20/#21）=====
+
+    @Override
+    public AuthDTO.UserInfo createUser(AuthDTO.RegisterRequest req) {
+        // 权限校验：仅 HOSPITAL_ADMIN 可创建用户（手动校验，同 listUsers，不依赖 @Permission 切面）。
+        JwtPayload payload = SecurityContext.requireUser();
+        if (!payload.hasRole("HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅医院管理员可创建用户");
+        }
+
+        // role 校验：用 ALLOWED_ROLES（含管理类角色），区别于自助注册的 SELF_REGISTER_ROLES。
+        // role 为空默认 PATIENT。
+        String role = (req.getRole() == null || req.getRole().isBlank())
+                ? "PATIENT" : req.getRole();
+        if (!AuthDTO.ALLOWED_ROLES.contains(role)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非法角色: " + req.getRole());
+        }
+
+        // PATIENT 角色建档必填项（同 register）
+        if ("PATIENT".equals(role)) {
+            if (req.getPhone() == null || req.getPhone().isBlank()) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "患者需填写手机号");
+            }
+            if (req.getIdCard() == null || req.getIdCard().isBlank()) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "患者需填写身份证号");
+            }
+        }
+
+        // 唯一性校验（同 register：account 必填唯一，phone 选填唯一）
+        if (userMapper.selectCount(
+                new QueryWrapper<SysUser>().eq("account", req.getAccount())) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "账号已存在: " + req.getAccount());
+        }
+        if (req.getPhone() != null && userMapper.selectCount(
+                new QueryWrapper<SysUser>().eq("phone", req.getPhone())) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "手机号已注册");
+        }
+
+        // PATIENT 建档（事务外调 Feign，同 register 模式 A）
+        Long patientId = null;
+        if ("PATIENT".equals(role)) {
+            patientId = createPatientArchive(req);
+        }
+
+        // 事务内持久化（同 register：写 sys_user + Redis 角色 key）
+        final Long finalPatientId = patientId;
+        final String finalRole = role;
+        SysUser u = transactionTemplate.execute(status -> {
+            SysUser user = new SysUser();
+            user.setUserNo(generateUserNo());
+            user.setAccount(req.getAccount());
+            user.setPhone(req.getPhone());
+            user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
+            user.setName(req.getName());
+            user.setPatientId(finalPatientId);
+            user.setDoctorId(parseLong(req.getDoctorId()));
+            user.setStatus("ACTIVE");
+            userMapper.insert(user);
+            // 冒烟期角色存 Redis（同 register），否则登录角色兜底 PATIENT 导致跳转异常
+            redis.opsForValue().set(roleKey(user.getId()), finalRole, Duration.ofDays(365));
+            return user;
+        });
+
+        log.info("[createUser] 管理员创建用户成功: account={} role={} userId={}",
+                req.getAccount(), role, u.getId());
+        return new AuthDTO.UserInfo(
+                u.getUserNo(), u.getName(), role,
+                patientId != null ? String.valueOf(patientId) : req.getPatientId(),
+                req.getDoctorId(), null, u.getStatus());
+    }
+
     // ===== 管理员用户列表 =====
 
     @Override

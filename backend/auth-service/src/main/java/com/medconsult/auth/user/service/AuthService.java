@@ -62,4 +62,17 @@ public interface AuthService {
      * @return 分页用户列表（不含密码摘要）
      */
     PageResult<AuthDTO.UserListItem> listUsers(int page, int pageSize, String keyword, String role);
+
+    /**
+     * 管理员创建用户（#20/#21）。
+     *
+     * <p>与 {@link #register} 区别：仅 HOSPITAL_ADMIN 可调用（service 内手动校验）；
+     * role 校验用 {@link AuthDTO#ALLOWED_ROLES}（含管理类角色），而非自助注册白名单。
+     * 支持创建所有角色（PATIENT/DOCTOR/PHARMACY_ADMIN/HOSPITAL_ADMIN）。
+     * 建号后写 Redis 角色 key，否则登录后角色兜底 PATIENT 导致跳转异常。
+     *
+     * @param req 注册信息（account/name/phone/password/role/status）
+     * @return 新用户信息
+     */
+    AuthDTO.UserInfo createUser(AuthDTO.RegisterRequest req);
 }

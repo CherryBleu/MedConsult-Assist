@@ -20,13 +20,13 @@ export const getUserListApi = (params) => {
   return request({ url: '/auth/users', method: 'get', params })
 }
 
-// 新增用户（对齐后端 POST /auth/register）
+// 新增用户（对齐后端 POST /auth/users，管理员创建用户接口，支持管理类角色 #20/#21）
 export const addUserApi = (data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockAddUser(data))
   }
   return request({
-    url: '/auth/register',
+    url: '/auth/users',
     method: 'post',
     data
   })

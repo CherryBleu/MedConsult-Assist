@@ -117,6 +117,19 @@ public class AuthController {
         return Result.ok(authService.listUsers(page, pageSize, keyword, role));
     }
 
+    /**
+     * 管理员创建用户（#20/#21）。
+     *
+     * <p>区别于自助 {@link #register}：仅 HOSPITAL_ADMIN 可调用；支持创建所有角色
+     * （PATIENT/DOCTOR/PHARMACY_ADMIN/HOSPITAL_ADMIN）。权限在 service 层手动校验。
+     * 请求体复用 RegisterRequest（account/name/phone/password/role/status）。
+     */
+    @PostMapping("/users")
+    @Operation(summary = "管理员创建用户（支持管理类角色）")
+    public Result<AuthDTO.UserInfo> createUser(@Valid @RequestBody AuthDTO.RegisterRequest req) {
+        return Result.ok(authService.createUser(req));
+    }
+
     private static String clientIp(HttpServletRequest req) {
         String ip = req.getHeader("X-Forwarded-For");
         if (ip != null && !ip.isBlank()) {
