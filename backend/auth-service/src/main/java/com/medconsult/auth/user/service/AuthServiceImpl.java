@@ -205,6 +205,25 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
         }
 
+        // 入口↔身份一致性校验（防止患者从工作人员入口登录等越权，根因 A 修复）。
+        // 身份判定基于 sys_user 的关联 ID 列（稳定），不依赖 Redis（避免抖动兜底 PATIENT 误判医生）。
+        String clientType = req.getClientType();
+        if (clientType != null && !clientType.isBlank()) {
+            String ct = clientType.trim().toUpperCase();
+            boolean isPatient = u.getPatientId() != null
+                    && u.getDoctorId() == null && u.getPharmacistId() == null;
+            boolean isStaff = u.getDoctorId() != null || u.getPharmacistId() != null;
+            if ("PATIENT".equals(ct) && !isPatient) {
+                writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
+                throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是患者账号，请从工作人员入口登录");
+            }
+            if ("STAFF".equals(ct) && !isStaff) {
+                writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
+                throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是工作人员账号，请从患者入口登录");
+            }
+            // 其它 clientType 值（非 PATIENT/STAFF）跳过校验，不阻断登录
+        }
+
         // 登录成功：更新最后登录时间
         u.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(u);

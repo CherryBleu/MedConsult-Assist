@@ -101,6 +101,14 @@ public class AuthDTO {
         @Schema(description = "密码")
         @NotBlank(message = "密码不能为空")
         private String password;
+
+        /**
+         * 登录入口类型，用于校验账号身份是否匹配入口（防止患者从工作人员入口登录等越权）。
+         * 可选：PATIENT（患者入口）/ STAFF（工作人员入口）。
+         * 不传或为空时跳过入口校验（向后兼容老调用方/服务间调用/现有单测）。
+         */
+        @Schema(description = "登录入口：PATIENT/STAFF（可选，不传则跳过入口校验）")
+        private String clientType;
     }
 
     /** 在 service 层调用的角色白名单校验（DTO 静态导入用） */
