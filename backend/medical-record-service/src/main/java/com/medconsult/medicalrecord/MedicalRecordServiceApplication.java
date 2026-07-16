@@ -28,7 +28,8 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @SpringBootApplication(scanBasePackages = {"com.medconsult.medicalrecord", "com.medconsult.common.web"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
-@MapperScan("com.medconsult.medicalrecord.**.mapper")
+// @MapperScan 含 com.medconsult.common.mq：让 LocalMessageMapper 注册（审计生产端本地消息表用）
+@MapperScan({"com.medconsult.medicalrecord.**.mapper", "com.medconsult.common.mq"})
 public class MedicalRecordServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(MedicalRecordServiceApplication.class, args);

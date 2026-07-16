@@ -2,10 +2,10 @@ package com.medconsult.notification;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.mq.AuditLogEvent;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.notification.audit.entity.AuditLog;
 import com.medconsult.notification.audit.mapper.AuditLogMapper;
-import com.medconsult.notification.consumer.AuditLogEvent;
 import com.medconsult.notification.consumer.NotificationEvent;
 import com.medconsult.notification.notification.entity.Notification;
 import com.medconsult.notification.notification.mapper.NotificationMapper;

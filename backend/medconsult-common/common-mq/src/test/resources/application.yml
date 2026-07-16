@@ -30,3 +30,10 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: ASSIGN_ID
+
+# JWT secret：引入 common-security（AuditLogAspect 取操作人身份用）后，
+# JwtAuthServletFilter 自动装配需要 JwtCodec bean，须配置 secret 才创建。
+medconsult:
+  security:
+    jwt:
+      secret: test-secret-0123456789abcdef0123456789abcdef-min32bytes

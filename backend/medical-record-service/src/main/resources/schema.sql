@@ -106,3 +106,20 @@ CREATE TABLE IF NOT EXISTS attachment (
     UNIQUE KEY uk_attachment_no (attachment_no),
     KEY idx_attachment_biz (biz_type, biz_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='附件元数据表';
+
+-- 本地消息表（审计生产端 @AuditLog 经此可靠投递到 audit.log 队列，对齐 notification-service schema.sql）
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    message_no      VARCHAR(64)   NOT NULL                 COMMENT '业务唯一键（消费者幂等去重用）',
+    exchange        VARCHAR(100)                           COMMENT '目标交换机',
+    routing_key     VARCHAR(100)                           COMMENT '路由键',
+    payload_json    TEXT                                   COMMENT '消息载荷（JSON 字符串）',
+    status          VARCHAR(20)   NOT NULL                 COMMENT '状态：PENDING/SENT/CONFIRMED/FAILED',
+    retry_count     INT           NOT NULL DEFAULT 0       COMMENT '已重试次数',
+    next_retry_at   DATETIME(3)                            COMMENT '下次重试时间（退避调度用）',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_local_message_no (message_no),
+    KEY idx_local_message_status_retry (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（可靠投递，MessageDispatcher 扫描）';

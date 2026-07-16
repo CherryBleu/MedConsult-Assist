@@ -1,6 +1,7 @@
 package com.medconsult.notification.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.mq.AuditLogEvent;
 import com.medconsult.common.mq.IdempotentConsumer;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.notification.audit.dto.AuditLogDTO;

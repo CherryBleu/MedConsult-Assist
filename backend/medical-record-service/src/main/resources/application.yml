@@ -21,6 +21,16 @@ spring:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:16379}
       password: ${REDIS_PASSWORD:}
+  # RabbitMQ：操作审计生产端（@AuditLog → local_message 表 → MessageDispatcher 投递到 audit.log 队列）
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:medconsult}
+    password: ${RABBITMQ_PASSWORD:medconsult123}
+    # publisher confirm（MessageDispatcher 可靠投递前提）：broker 确认收到才置 CONFIRMED
+    publisher-confirm-type: correlated
+    # 消息找不到队列时退回（而非丢弃），便于排障
+    publisher-returns: true
   sql:
     init:
       mode: always

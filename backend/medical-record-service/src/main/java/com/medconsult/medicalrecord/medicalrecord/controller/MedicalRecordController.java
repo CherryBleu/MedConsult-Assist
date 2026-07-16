@@ -2,6 +2,8 @@ package com.medconsult.medicalrecord.medicalrecord.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.mq.AuditLog;
+import com.medconsult.common.mq.ResourceIdFrom;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
 import com.medconsult.medicalrecord.medicalrecord.service.MedicalRecordService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +33,7 @@ public class MedicalRecordController {
     /** §2.6.1 创建电子病历（初始 DRAFT） */
     @PostMapping
     @Operation(summary = "创建电子病历")
+    @AuditLog(resourceType = "MEDICAL_RECORD", action = "CREATE", resourceIdFrom = ResourceIdFrom.RESULT)
     public Result<MedicalRecordDTO.CreateResponse> create(@Valid @RequestBody MedicalRecordDTO.CreateRequest req) {
         return Result.ok(medicalRecordService.create(req));
     }
@@ -55,6 +58,7 @@ public class MedicalRecordController {
     /** §2.6.4 更新草稿病历（仅 DRAFT 可改） */
     @PutMapping("/{recordId}")
     @Operation(summary = "更新草稿病历")
+    @AuditLog(resourceType = "MEDICAL_RECORD", action = "UPDATE")
     public Result<MedicalRecordDTO.UpdateResponse> updateDraft(
             @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.UpdateDraftRequest req) {
@@ -64,6 +68,7 @@ public class MedicalRecordController {
     /** §2.6.5 归档病历（DRAFT → ARCHIVED，不可逆） */
     @PostMapping("/{recordId}/archive")
     @Operation(summary = "归档病历")
+    @AuditLog(resourceType = "MEDICAL_RECORD", action = "UPDATE")
     public Result<MedicalRecordDTO.ArchiveResponse> archive(
             @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.ArchiveRequest req) {

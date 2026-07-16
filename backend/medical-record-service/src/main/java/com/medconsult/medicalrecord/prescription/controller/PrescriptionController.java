@@ -2,6 +2,8 @@ package com.medconsult.medicalrecord.prescription.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.mq.AuditLog;
+import com.medconsult.common.mq.ResourceIdFrom;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.service.PrescriptionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +33,7 @@ public class PrescriptionController {
     /** 开方（初始 DRAFT，写主表 + 明细） */
     @PostMapping
     @Operation(summary = "创建处方")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "CREATE", resourceIdFrom = ResourceIdFrom.RESULT)
     public Result<PrescriptionDTO.CreateResponse> create(@Valid @RequestBody PrescriptionDTO.CreateRequest req) {
         return Result.ok(prescriptionService.create(req));
     }
@@ -55,6 +58,7 @@ public class PrescriptionController {
     /** 提交审方（DRAFT → PENDING_REVIEW） */
     @PostMapping("/{prescriptionId}/submit")
     @Operation(summary = "提交处方（草稿→待审）")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "UPDATE")
     public Result<PrescriptionDTO.SubmitResponse> submit(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.submit(prescriptionId));
     }
@@ -62,6 +66,7 @@ public class PrescriptionController {
     /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发） */
     @PostMapping("/{prescriptionId}/review")
     @Operation(summary = "药师审方（待审→已通过/已驳回）")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "UPDATE")
     public Result<PrescriptionDTO.ReviewResponse> review(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.ReviewRequest req) {
@@ -71,6 +76,7 @@ public class PrescriptionController {
     /** 缴费（APPROVED → PAID） */
     @PostMapping("/{prescriptionId}/pay")
     @Operation(summary = "处方缴费（已通过→已缴费）")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "UPDATE")
     public Result<PrescriptionDTO.PayResponse> pay(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.PayRequest req) {
@@ -83,6 +89,7 @@ public class PrescriptionController {
      */
     @PostMapping("/{prescriptionId}/dispense")
     @Operation(summary = "调剂发药（已缴费→已调配）")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "UPDATE")
     public Result<PrescriptionDTO.DispenseResponse> dispense(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.DispenseRequest req) {
@@ -92,6 +99,7 @@ public class PrescriptionController {
     /** 完成（DISPENSED → COMPLETED） */
     @PostMapping("/{prescriptionId}/complete")
     @Operation(summary = "发药完成（已调配→已完成）")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "UPDATE")
     public Result<PrescriptionDTO.CompleteResponse> complete(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.complete(prescriptionId));
     }
@@ -99,6 +107,7 @@ public class PrescriptionController {
     /** 退方（APPROVED/PAID → CANCELLED） */
     @PostMapping("/{prescriptionId}/cancel")
     @Operation(summary = "取消处方")
+    @AuditLog(resourceType = "PRESCRIPTION", action = "DELETE")
     public Result<PrescriptionDTO.CancelResponse> cancel(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
             @Valid @RequestBody PrescriptionDTO.CancelRequest req) {

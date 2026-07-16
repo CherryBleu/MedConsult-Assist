@@ -1,5 +1,6 @@
 package com.medconsult.common.mq;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.ExchangeBuilder;
@@ -11,7 +12,9 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -118,5 +121,32 @@ public class MedConsultMqAutoConfiguration {
     @ConditionalOnMissingBean
     public MessageDispatcher messageDispatcher() {
         return new MessageDispatcher();
+    }
+
+    /**
+     * 审计生产端（@AuditLog 切面 + Producer）。
+     *
+     * <p>仅 SERVLET web 应用装配——切面依赖 HttpServletRequest/SecurityContext，
+     * gateway 是 WebFlux 反应式栈（无 servlet），不能装配（否则类加载/Bean 创建失败）。
+     * producer 顺带在此注册（common-mq 包默认不被业务 @SpringBootApplication 扫描）。
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
+    public static class AuditLogConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        public AuditLogProducer auditLogProducer(LocalMessageMapper localMessageMapper, ObjectMapper objectMapper) {
+            return new AuditLogProducer(localMessageMapper, objectMapper);
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        public AuditLogAspect auditLogAspect(AuditLogProducer auditLogProducer) {
+            AuditLogAspect aspect = new AuditLogAspect();
+            // @Autowired 字段注入（AuditLogAspect 用字段注入以对齐 PermissionAspect 风格）
+            aspect.setAuditLogProducer(auditLogProducer);
+            return aspect;
+        }
     }
 }
