@@ -2,6 +2,7 @@ package com.medconsult.outpatient.schedule.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.Permission;
 import com.medconsult.outpatient.schedule.dto.ScheduleDTO;
 import com.medconsult.outpatient.schedule.service.ScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,9 +32,19 @@ public class ScheduleController {
 
     /** §2.4.1 创建排班 */
     @PostMapping
+    @Permission(roles = {"HOSPITAL_ADMIN"})
     @Operation(summary = "创建医生排班")
     public Result<ScheduleDTO.CreateResponse> create(@Valid @RequestBody ScheduleDTO.CreateRequest req) {
         return Result.ok(scheduleService.create(req));
+    }
+
+    /** §2.4.5 全量更新排班（#17：仅改时间/号源/费用，医生/科室不可变） */
+    @PutMapping("/{scheduleId}")
+    @Permission(roles = {"HOSPITAL_ADMIN"})
+    @Operation(summary = "更新排班")
+    public Result<ScheduleDTO.CreateResponse> update(@Parameter(description = "排班编号", required = true) @PathVariable String scheduleId,
+                                                     @Valid @RequestBody ScheduleDTO.UpdateRequest req) {
+        return Result.ok(scheduleService.update(scheduleId, req));
     }
 
     /** §2.4.2 查询排班列表 */

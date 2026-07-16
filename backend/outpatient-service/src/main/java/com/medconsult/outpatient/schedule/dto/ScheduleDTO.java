@@ -50,12 +50,33 @@ public class ScheduleDTO {
             @Schema(description = "状态：AVAILABLE / FULL / SUSPENDED / CANCELLED") String status
     ) {}
 
+    /** §2.4.5 全量更新排班请求（#17）。编辑不改医生/科室（doctorId/departmentId 不可变），
+     *  仅更新出诊时间/时段/号源/费用。 */
+    @Data
+    @Schema(description = "更新排班请求")
+    public static class UpdateRequest {
+        @NotNull(message = "出诊日期不能为空")
+        @Schema(description = "排班日期") private LocalDate scheduleDate;
+        @NotBlank(message = "时段不能为空")
+        @Pattern(regexp = "^(MORNING|AFTERNOON|EVENING|FULL_DAY)$",
+                message = "时段须为 MORNING / AFTERNOON / EVENING / FULL_DAY")
+        @Schema(description = "时段：MORNING / AFTERNOON / EVENING / FULL_DAY") private String period;
+        @Schema(description = "开始时间") private LocalTime startTime;
+        @Schema(description = "结束时间") private LocalTime endTime;
+        @NotNull(message = "总号源不能为空")
+        @Schema(description = "总号源数") private Integer totalQuota;
+        @Schema(description = "挂号费") private BigDecimal registrationFee;
+    }
+
     // ===== §2.4.2 列表 =====
 
-    /** §2.4.2 排班列表 item（含医生名/科室名，业务层组装） */
+    /** §2.4.2 排班列表 item（含医生名/科室名/编号，业务层组装）。
+     *  doctorId/departmentId 供前端编辑回填（#17）。 */
     @Schema(description = "排班列表项")
     public record ListItem(
             @Schema(description = "排班编号") String scheduleId,        // schedule_no
+            @Schema(description = "医生编号") String doctorId,          // doctor_no（#17 补充，供编辑回填）
+            @Schema(description = "科室编号") String departmentId,      // department_no（#17 补充，供编辑回填）
             @Schema(description = "医生姓名") String doctorName,
             @Schema(description = "科室名称") String departmentName,
             @Schema(description = "排班日期") LocalDate scheduleDate,

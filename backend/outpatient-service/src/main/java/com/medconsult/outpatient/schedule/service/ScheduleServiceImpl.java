@@ -123,6 +123,52 @@ public class ScheduleServiceImpl implements ScheduleService {
         return new ScheduleDTO.CreateResponse(s.getScheduleNo(), remaining, s.getStatus());
     }
 
+    // ===== §2.4.5 全量更新排班（#17） =====
+
+    @Override
+    @Transactional
+    public ScheduleDTO.CreateResponse update(String scheduleNo, ScheduleDTO.UpdateRequest req) {
+        // 时段合法性
+        if (!ALLOWED_PERIOD.contains(req.getPeriod())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非法时段: " + req.getPeriod());
+        }
+        if (req.getTotalQuota() == null || req.getTotalQuota() <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "总号源必须大于 0");
+        }
+        DoctorSchedule s = requireByNo(scheduleNo); // 未找到抛 NOT_FOUND
+
+        // 医生/科室不可变（编辑不改归属），仅校验同医生同日期同时段不重复（排除自身）
+        Long dupCount = scheduleMapper.selectCount(new QueryWrapper<DoctorSchedule>()
+                .eq("doctor_id", s.getDoctorId())
+                .eq("schedule_date", req.getScheduleDate())
+                .eq("period", req.getPeriod())
+                .ne("id", s.getId()));
+        if (dupCount != null && dupCount > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "该医生在此日期此时段已存在排班: " + req.getScheduleDate() + "/" + req.getPeriod());
+        }
+
+        // 已预约号源不可超过新总号源（避免超卖）
+        int booked = s.getBookedQuota() == null ? 0 : s.getBookedQuota();
+        if (req.getTotalQuota() < booked) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "总号源(" + req.getTotalQuota() + ")不可小于已预约号源(" + booked + ")");
+        }
+
+        s.setScheduleDate(req.getScheduleDate());
+        s.setPeriod(req.getPeriod());
+        s.setStartTime(req.getStartTime());
+        s.setEndTime(req.getEndTime());
+        s.setTotalQuota(req.getTotalQuota());
+        s.setRegistrationFee(req.getRegistrationFee());
+        scheduleMapper.updateById(s);
+
+        int remaining = req.getTotalQuota() - booked;
+        log.info("排班全量更新: scheduleNo={} totalQuota={}→{} remaining={}",
+                scheduleNo, booked, req.getTotalQuota(), remaining);
+        return new ScheduleDTO.CreateResponse(s.getScheduleNo(), remaining, s.getStatus());
+    }
+
     // ===== §2.4.2 列表 =====
 
     @Override
@@ -172,6 +218,8 @@ public class ScheduleServiceImpl implements ScheduleService {
             int total = s.getTotalQuota() == null ? 0 : s.getTotalQuota();
             items.add(new ScheduleDTO.ListItem(
                     s.getScheduleNo(),
+                    doc != null ? doc.getDoctorNo() : null,   // #17 补 doctor_no，供前端编辑回填
+                    dept != null ? dept.getDepartmentNo() : null, // #17 补 department_no
                     doc != null ? doc.getName() : null,
                     dept != null ? dept.getName() : null,
                     s.getScheduleDate(),

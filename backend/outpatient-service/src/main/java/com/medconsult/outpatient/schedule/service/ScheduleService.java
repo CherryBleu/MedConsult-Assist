@@ -10,13 +10,16 @@ import java.util.List;
 /**
  * 医生排班服务接口（对齐《接口文档》§2.4）。
  *
- * <p>方法对应 4 个对外接口（create/list/available/updateStatus）。
+ * <p>方法对应 5 个对外接口（create/update/list/available/updateStatus）。
  * <p>内部 {@link #requireByNo(String)} 供 appointment 服务校验排班可用。
  */
 public interface ScheduleService {
 
     /** §2.4.1 创建排班 */
     ScheduleDTO.CreateResponse create(ScheduleDTO.CreateRequest req);
+
+    /** §2.4.5 全量更新排班（#17：仅改时间/号源/费用，不改医生/科室） */
+    ScheduleDTO.CreateResponse update(String scheduleNo, ScheduleDTO.UpdateRequest req);
 
     /** §2.4.2 分页查询排班，可按 departmentId(department_no)/dateFrom/dateTo 过滤 */
     PageResult<ScheduleDTO.ListItem> list(int page, int pageSize, String departmentId,

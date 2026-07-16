@@ -203,10 +203,10 @@ export const createScheduleApi = (data) => {
   return request({ url: '/schedules', method: 'post', data })
 }
 
-// 管理员：更新排班（后端无 PUT /schedules/{id}，用 PATCH status 兜底）
+// 管理员：更新排班（对齐后端 PUT /schedules/{scheduleId}，#17 全量更新）
 export const updateScheduleApi = (data) => {
   if (USE_MOCK) return Promise.resolve(mockUpdateSchedule(data))
-  return request({ url: `/schedules/${data.id}/status`, method: 'patch', data })
+  return request({ url: `/schedules/${data.id}`, method: 'put', data })
 }
 
 // 管理员：删除排班（后端无删除端点，占位）
