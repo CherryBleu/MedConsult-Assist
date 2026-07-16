@@ -148,6 +148,7 @@ public class AiController {
     }
 
     @Operation(summary = "病历摘要确认/修正")
+    @Permission(code = "ai:summary:confirm", dataScope = DataScope.ALL, roles = {"DOCTOR", "HOSPITAL_ADMIN"})
     @PutMapping("/api/v1/ai/summary/{summaryId}/confirm")
     public Result<SummaryConfirmResponse> confirmSummary(
             @PathVariable("summaryId") String summaryId,

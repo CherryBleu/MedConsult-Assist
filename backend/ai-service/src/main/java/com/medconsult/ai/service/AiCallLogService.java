@@ -10,6 +10,10 @@ import com.medconsult.ai.persistence.mapper.AiCallLogMapper;
 import com.medconsult.ai.security.AiHeaders;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.mq.MqConstants;
 import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -56,12 +60,16 @@ public class AiCallLogService {
     }
 
     public PageResult<CallLogItem> list(String patientId, String type, int page, int pageSize) {
+        // 越权防护（IDOR，架构 §4.3 SELF）：PATIENT 身份时强制限定为本人 patientId，
+        // 忽略入参 patientId——调用日志含 requestSummary（患者症状/用药文本等敏感医疗数据），
+        // 不得让患者随意拉取他人日志。DOCTOR/管理员可按入参或全量查询。
+        Long scopedPatientId = resolvePatientScope(patientId);
         // 分页参数上下界校验，防止 pageSize 传极大值拖垮查询
         int safePage = page < 1 ? 1 : page;
         int safeSize = pageSize < 1 ? 10 : Math.min(pageSize, 100);
         LambdaQueryWrapper<AiCallLogEntity> wrapper = new LambdaQueryWrapper<AiCallLogEntity>()
                 .eq(type != null && !type.isBlank(), AiCallLogEntity::getCallType, type)
-                .eq(patientId != null && !patientId.isBlank(), AiCallLogEntity::getPatientId, BusinessIds.numericId(patientId))
+                .eq(scopedPatientId != null, AiCallLogEntity::getPatientId, scopedPatientId)
                 .orderByDesc(AiCallLogEntity::getCreatedAt);
         Page<AiCallLogEntity> result = callLogMapper.selectPage(Page.of(safePage, safeSize), wrapper);
         return PageResult.of(
@@ -91,6 +99,33 @@ public class AiCallLogService {
                         ))
                         .toList()
         );
+    }
+
+    /**
+     * 调用日志的 patient 作用域解析（IDOR 防护，对齐 ImagingDetectionService）：
+     * PATIENT 身份强制限定为本人 patientId（忽略入参）；DOCTOR/管理员按入参或全量；匿名拒绝。
+     * 调用日志含 requestSummary（患者症状/用药文本等敏感数据），不得越权读取他人日志。
+     */
+    private Long resolvePatientScope(String patientId) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询调用日志");
+            }
+            return selfPatientId;
+        }
+        return StringUtils.hasText(patientId) ? BusinessIds.numericId(patientId) : null;
+    }
+
+    /** 是否 PATIENT 主角色 */
+    private static boolean isPatient(JwtPayload p) {
+        if (p == null) return false;
+        if ("PATIENT".equals(p.primaryRole())) return true;
+        return p.roles() != null && p.roles().contains("PATIENT");
     }
 
     private void enqueueOrSave(AiCallLogMessage message) {
