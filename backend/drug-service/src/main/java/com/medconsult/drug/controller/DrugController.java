@@ -26,8 +26,9 @@ public class DrugController {
 
     private final DrugService drugService;
 
-    /** §2.7.1 创建药品（current_stock 初始 0） */
+    /** §2.7.1 创建药品（current_stock 初始 0）—— 仅药房管理员（§2.3「药品 增删改=PHARMACY_ADMIN」） */
     @PostMapping
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "创建药品")
     public Result<DrugDTO.DrugSummary> create(@Valid @RequestBody DrugDTO.CreateDrugRequest req) {
         return Result.ok(drugService.createDrug(req));
@@ -43,16 +44,18 @@ public class DrugController {
         return Result.ok(drugService.listDrugs(page, pageSize, keyword));
     }
 
-    /** §2.7.3 药品入库（Redis 锁内事务） */
+    /** §2.7.3 药品入库（Redis 锁内事务）—— 仅药房管理员（§2.3「库存 入库出库=PHARMACY_ADMIN」） */
     @PostMapping("/{drugId}/stock/inbound")
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "药品入库")
     public Result<DrugDTO.InboundResponse> inbound(@Parameter(description = "药品编号", required = true) @PathVariable String drugId,
                                                     @Valid @RequestBody DrugDTO.InboundRequest req) {
         return Result.ok(drugService.inbound(drugId, req));
     }
 
-    /** §2.7.4 药品出库（Redis 锁内 FEFO 选批扣减） */
+    /** §2.7.4 药品出库（Redis 锁内 FEFO 选批扣减）—— 仅药房管理员（§2.3「库存 入库出库=PHARMACY_ADMIN」） */
     @PostMapping("/{drugId}/stock/outbound")
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "药品出库")
     public Result<DrugDTO.OutboundResponse> outbound(@Parameter(description = "药品编号", required = true) @PathVariable String drugId,
                                                       @Valid @RequestBody DrugDTO.OutboundRequest req) {

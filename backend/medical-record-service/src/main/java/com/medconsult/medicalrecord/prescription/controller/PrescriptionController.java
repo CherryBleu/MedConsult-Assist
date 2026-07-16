@@ -2,6 +2,7 @@ package com.medconsult.medicalrecord.prescription.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.Permission;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.service.PrescriptionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,15 +29,17 @@ public class PrescriptionController {
 
     private final PrescriptionService prescriptionService;
 
-    /** 开方（初始 DRAFT，写主表 + 明细） */
+    /** 开方（初始 DRAFT，写主表 + 明细）—— 仅医生可开方（§2.3 权限矩阵「处方 开方=DOCTOR」） */
     @PostMapping
+    @Permission(roles = {"DOCTOR"})
     @Operation(summary = "创建处方")
     public Result<PrescriptionDTO.CreateResponse> create(@Valid @RequestBody PrescriptionDTO.CreateRequest req) {
         return Result.ok(prescriptionService.create(req));
     }
 
-    /** 处方列表（可按 status 过滤，药师审方工作台） */
+    /** 处方列表（可按 status 过滤，药师审方工作台）—— 医生看自己开的，药师/管理员看全部（§2.3） */
     @GetMapping
+    @Permission(roles = {"DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
     @Operation(summary = "分页查询处方")
     public Result<PageResult<PrescriptionDTO.ListItem>> list(
             @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
@@ -45,22 +48,25 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.list(page, pageSize, status));
     }
 
-    /** 处方详情（含明细） */
+    /** 处方详情（含明细）—— 医生/药师/管理员可查（§2.3；PATIENT 查自己处方的 SELF 校验见 service） */
     @GetMapping("/{prescriptionId}")
+    @Permission(roles = {"DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
     @Operation(summary = "查询处方详情")
     public Result<PrescriptionDTO.DetailResponse> detail(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.detail(prescriptionId));
     }
 
-    /** 提交审方（DRAFT → PENDING_REVIEW） */
+    /** 提交审方（DRAFT → PENDING_REVIEW）—— 仅开方医生提交（§2.3「处方 开方=DOCTOR」） */
     @PostMapping("/{prescriptionId}/submit")
+    @Permission(roles = {"DOCTOR"})
     @Operation(summary = "提交处方（草稿→待审）")
     public Result<PrescriptionDTO.SubmitResponse> submit(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.submit(prescriptionId));
     }
 
-    /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发） */
+    /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发）—— 仅药师审方（§2.3「处方 审核=PHARMACY_ADMIN」） */
     @PostMapping("/{prescriptionId}/review")
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "药师审方（待审→已通过/已驳回）")
     public Result<PrescriptionDTO.ReviewResponse> review(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
@@ -68,8 +74,9 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.review(prescriptionId, req));
     }
 
-    /** 缴费（APPROVED → PAID） */
+    /** 缴费（APPROVED → PAID）—— 仅患者缴费（§2.3「处方 缴费=PATIENT」） */
     @PostMapping("/{prescriptionId}/pay")
+    @Permission(roles = {"PATIENT"})
     @Operation(summary = "处方缴费（已通过→已缴费）")
     public Result<PrescriptionDTO.PayResponse> pay(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
@@ -78,10 +85,11 @@ public class PrescriptionController {
     }
 
     /**
-     * 调剂发药（APPROVED/PAID → DISPENSED，同步 Feign 调 drug-service FEFO 出库）。
+     * 调剂发药（APPROVED/PAID → DISPENSED，同步 Feign 调 drug-service FEFO 出库）—— 仅药师（§2.3「处方 调剂发药=PHARMACY_ADMIN」）。
      * <p>架构文档 §6.2 原写 MQ 异步，本批务实采用同步 Feign（MQ 化为后续待办）。
      */
     @PostMapping("/{prescriptionId}/dispense")
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "调剂发药（已缴费→已调配）")
     public Result<PrescriptionDTO.DispenseResponse> dispense(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,
@@ -89,15 +97,17 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.dispense(prescriptionId, req));
     }
 
-    /** 完成（DISPENSED → COMPLETED） */
+    /** 完成（DISPENSED → COMPLETED）—— 仅药师（§2.3「处方 调剂发药=PHARMACY_ADMIN」） */
     @PostMapping("/{prescriptionId}/complete")
+    @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "发药完成（已调配→已完成）")
     public Result<PrescriptionDTO.CompleteResponse> complete(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.complete(prescriptionId));
     }
 
-    /** 退方（APPROVED/PAID → CANCELLED） */
+    /** 退方（APPROVED/PAID → CANCELLED）—— 医生/药师可退（§2.3） */
     @PostMapping("/{prescriptionId}/cancel")
+    @Permission(roles = {"DOCTOR", "PHARMACY_ADMIN"})
     @Operation(summary = "取消处方")
     public Result<PrescriptionDTO.CancelResponse> cancel(
             @Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId,

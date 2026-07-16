@@ -23,21 +23,13 @@
           <el-input v-model="form.phone" placeholder="请输入手机号" maxlength="11" />
         </el-form-item>
         <el-form-item label="身份证号" prop="idCard">
-          <el-input v-model="form.idCard" placeholder="请输入身份证号" maxlength="18" />
+          <el-input v-model="form.idCard" placeholder="请输入身份证号（用于自动建档）" maxlength="18" />
         </el-form-item>
-        <el-form-item label="注册身份" prop="role">
-          <el-radio-group v-model="form.role" @change="onRoleChange">
-            <el-radio value="PATIENT">患者</el-radio>
-            <el-radio value="DOCTOR">医生</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
         <el-alert
-          v-if="form.role === 'DOCTOR'"
           type="info"
           :closable="false"
           style="margin-bottom: 18px"
-          title="医生账号注册后，科室/职称/擅长等档案信息由管理员在「医生管理」中维护。"
+          title="公开注册仅开通患者账号；医生/药师/管理员账号请由医院管理员在「用户管理」中创建。"
         />
 
         <el-form-item>

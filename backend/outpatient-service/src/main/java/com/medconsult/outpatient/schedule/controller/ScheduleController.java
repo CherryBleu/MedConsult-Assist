@@ -69,8 +69,9 @@ public class ScheduleController {
         return Result.ok(scheduleService.available(departmentId, doctorId, date));
     }
 
-    /** §2.4.4 更新排班状态 */
+    /** §2.4.4 更新排班状态（停诊/恢复）—— 仅医院管理员（§2.3「排班 创建/变更=HOSPITAL_ADMIN」） */
     @PatchMapping("/{scheduleId}/status")
+    @Permission(roles = {"HOSPITAL_ADMIN"})
     @Operation(summary = "更新排班状态")
     public Result<ScheduleDTO.StatusResponse> updateStatus(@Parameter(description = "排班编号", required = true) @PathVariable String scheduleId,
                                                             @Valid @RequestBody ScheduleDTO.StatusUpdateRequest req) {

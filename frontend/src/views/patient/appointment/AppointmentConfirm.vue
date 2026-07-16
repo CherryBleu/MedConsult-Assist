@@ -71,7 +71,6 @@ const submitAppointment = async () => {
     await createAppointmentApi({
       patientId: String(patientId),
       scheduleId: formData.scheduleId,
-      doctorId: formData.doctorId,
       visitReason: '',
       source: 'MOBILE_APP'
     })
