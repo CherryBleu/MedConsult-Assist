@@ -274,8 +274,9 @@ const getList = async () => {
   try {
     const params = { ...queryParams }
     if (dateRange.value && dateRange.value.length === 2) {
-      params.startDate = dateRange.value[0]
-      params.endDate = dateRange.value[1]
+      // 后端 ScheduleController 接收 dateFrom/dateTo（非 startDate/endDate）
+      params.dateFrom = dateRange.value[0]
+      params.dateTo = dateRange.value[1]
     }
     const res = await getScheduleManageListApi(params)
     tableData.value = res.data.records

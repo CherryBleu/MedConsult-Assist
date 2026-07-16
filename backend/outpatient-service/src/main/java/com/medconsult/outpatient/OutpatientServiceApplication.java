@@ -4,6 +4,7 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 /**
  * 门诊服务启动入口（架构文档 §1.1 outpatient-service）。
@@ -24,6 +25,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 @SpringBootApplication(scanBasePackages = {"com.medconsult.outpatient", "com.medconsult.common.web"})
 @EnableDiscoveryClient
+@EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
 @MapperScan("com.medconsult.outpatient.**.mapper")
 public class OutpatientServiceApplication {
     public static void main(String[] args) {
