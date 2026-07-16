@@ -90,20 +90,89 @@
         <el-button type="success" :loading="aiLoading" @click="generateSummary">
           AI生成摘要
         </el-button>
+        <el-button type="warning" :loading="medAnalysisLoading" @click="openMedAnalysis">
+          AI用药分析
+        </el-button>
       </div>
     </div>
+
+    <!-- 用药分析抽屉 -->
+    <el-drawer
+      v-model="medAnalysisVisible"
+      title="AI用药安全分析"
+      size="600px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="medAnalysisResult" class="med-analysis-content">
+        <!-- 整体风险 -->
+        <div class="risk-overview" :class="medRiskLevel.toLowerCase()">
+          <div class="risk-label">整体风险等级</div>
+          <div class="risk-value">{{ medRiskLabel }}</div>
+        </div>
+
+        <!-- 禁忌风险 -->
+        <div class="analysis-block">
+          <h3 class="block-title">禁忌风险</h3>
+          <div v-if="!medAnalysisResult.contraindicationRisks || medAnalysisResult.contraindicationRisks.length === 0" class="safe-tip">
+            <el-icon color="#52c41a"><CircleCheck /></el-icon>
+            <span>未检测到禁忌风险</span>
+          </div>
+          <div v-else class="risk-list">
+            <div v-for="(item, index) in medAnalysisResult.contraindicationRisks" :key="index" class="risk-item danger">
+              {{ typeof item === 'string' ? item : (item.description || item.risk || '—') }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 药物相互作用 -->
+        <div class="analysis-block">
+          <h3 class="block-title">药物相互作用</h3>
+          <div v-if="!medAnalysisResult.interactionRisks || medAnalysisResult.interactionRisks.length === 0" class="safe-tip">
+            <el-icon color="#52c41a"><CircleCheck /></el-icon>
+            <span>未检测到相互作用风险</span>
+          </div>
+          <div v-else class="interaction-list">
+            <div
+              v-for="(item, index) in medAnalysisResult.interactionRisks"
+              :key="index"
+              class="interaction-item"
+              :class="(item.level || 'LOW').toLowerCase()"
+            >
+              <div class="drug-pair">{{ item.drugA || item.drug_a || '?' }} + {{ item.drugB || item.drug_b || '?' }}</div>
+              <div class="risk-level">风险等级：{{ item.level === 'LOW' ? '低' : item.level === 'MEDIUM' ? '中' : item.level === 'HIGH' ? '高' : (item.level || '低') }}</div>
+              <div class="risk-desc">{{ item.desc || item.description || item.effect || '' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 用药提醒 -->
+        <div class="analysis-block">
+          <h3 class="block-title">用药提醒</h3>
+          <div v-if="!medAnalysisResult.reminders || medAnalysisResult.reminders.length === 0" class="safe-tip">
+            <el-icon color="#52c41a"><CircleCheck /></el-icon>
+            <span>暂无用药提醒</span>
+          </div>
+          <ul v-else class="reminder-list">
+            <li v-for="(item, index) in medAnalysisResult.reminders" :key="index">
+              {{ typeof item === 'string' ? item : ((item.drugName ? item.drugName + '：' : '') + (item.reminder || item.content || item.message || '—')) }}
+            </li>
+          </ul>
+        </div>
+      </div>
+      <el-empty v-else description="正在分析，请稍候..." />
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { createRecordApi, updateRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
-import { generateSummaryByTextApi } from '@/api/ai'
+import { generateSummaryByTextApi, medicationAnalysisApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
@@ -118,6 +187,19 @@ const currentRecordId = ref(route.query.recordId || null)
 const archiving = ref(false)
 const aiLoading = ref(false)
 const currentDate = ref(dayjs().format('YYYY-MM-DD HH:mm'))
+
+// 用药分析相关
+const medAnalysisVisible = ref(false)
+const medAnalysisLoading = ref(false)
+const medAnalysisResult = ref(null)
+
+const medRiskLevel = computed(() => {
+  return medAnalysisResult.value?.overallRiskLevel || 'LOW'
+})
+const medRiskLabel = computed(() => {
+  const map = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险' }
+  return map[medRiskLevel.value] || '低风险'
+})
 
 const form = reactive({
   appointmentId: '',
@@ -222,18 +304,43 @@ const generateSummary = async () => {
   try {
     const text = `主诉：${form.chiefComplaint}\n现病史：${form.presentIllness}\n既往史：${form.pastHistory}\n体格检查：${form.physicalExam}`
     const res = await generateSummaryByTextApi(text)
-    // 后端 MedicalRecordSummaryTextResponse.summary 是 Map，key 对齐 SummaryService：
-    // chiefComplaint / diagnosis(List) / treatmentPlan / medications(List) / followUpAdvice
     const content = res.data?.summary || {}
-    // diagnosis 是数组，前端 initialDiagnosis 是逗号分隔串，需 join
     const diagnosis = Array.isArray(content.diagnosis) ? content.diagnosis.join('，') : (content.diagnosis || '')
     if (diagnosis) form.initialDiagnosis = diagnosis
-    // 后端 key 是 followUpAdvice（非 advice）+ treatmentPlan，合并到医嘱
     const adviceParts = [content.treatmentPlan, content.followUpAdvice].filter(Boolean)
     if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
     ElMessage.success('AI摘要已填充，可继续编辑')
   } finally {
     aiLoading.value = false
+  }
+}
+
+const openMedAnalysis = async () => {
+  if (!form.prescriptionsText?.trim()) {
+    ElMessage.warning('请先填写处方信息（药品名称及用法）')
+    return
+  }
+  medAnalysisVisible.value = true
+  medAnalysisResult.value = null
+  medAnalysisLoading.value = true
+  try {
+    // 从处方文本中解析药品列表，或者直接发文本让后端处理
+    const drugs = form.prescriptionsText
+      .split(/[，,；;\n]/)
+      .map(s => s.trim())
+      .filter(s => s.length > 1)
+      .map(name => ({ drugName: name }))
+    const payload = {
+      recordId: currentRecordId.value || null,
+      prescriptions: drugs.length ? drugs : [{ drugName: form.prescriptionsText }],
+      patientContext: null
+    }
+    const res = await medicationAnalysisApi(payload)
+    medAnalysisResult.value = res.data
+  } catch (e) {
+    // 错误由拦截器统一提示
+  } finally {
+    medAnalysisLoading.value = false
   }
 }
 
@@ -302,5 +409,103 @@ onMounted(async () => {
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
   margin-top: 20px;
+}
+
+/* 用药分析抽屉 */
+.med-analysis-content {
+  padding: 0 8px;
+}
+.risk-overview {
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.risk-overview.low { background: #f6ffed; border: 1px solid #b7eb8f; }
+.risk-overview.medium { background: #fff7e6; border: 1px solid #ffd591; }
+.risk-overview.high { background: #fff1f0; border: 1px solid #ffa39e; }
+.risk-label { font-size: 14px; color: var(--text-regular); }
+.risk-value { font-size: 20px; font-weight: 600; }
+.low .risk-value { color: #52c41a; }
+.medium .risk-value { color: #faad14; }
+.high .risk-value { color: #ff4d4f; }
+.analysis-block {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+.analysis-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.block-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+.safe-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #52c41a;
+  font-size: 14px;
+}
+.risk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.risk-item.danger {
+  padding: 10px 14px;
+  background: #fff1f0;
+  border-left: 3px solid #ff4d4f;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #cf1322;
+}
+.interaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.interaction-item {
+  padding: 14px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+.interaction-item.low {
+  background: #f6ffed;
+  border-left-color: #52c41a;
+}
+.interaction-item.medium {
+  background: #fff7e6;
+  border-left-color: #faad14;
+}
+.interaction-item.high {
+  background: #fff1f0;
+  border-left-color: #ff4d4f;
+}
+.drug-pair {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.risk-level {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.risk-desc {
+  font-size: 13px;
+  color: var(--text-regular);
+}
+.reminder-list {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 2;
+  font-size: 14px;
+  color: var(--text-regular);
 }
 </style>

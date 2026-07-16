@@ -1,7 +1,8 @@
 import dayjs from 'dayjs'
 
 let mockAppointments = [
-  { id: 1, appointmentNo: 'APT20260710001', patientId: 1001, patientName: '测试患者', gender: 'MALE', age: 36, doctorId: 1, departmentId: 1, doctorName: '张明', deptName: '心血管内科', scheduleId: 1, scheduleDate: dayjs().format('YYYY-MM-DD'), period: 'MORNING', queueNo: 3, fee: 50, paymentStatus: 'PAID', appointmentStatus: 'PAID', visitReason: '胸闷气短一周，活动后加重', createdAt: '2026-07-09 10:20:00' },
+  { id: 1, appointmentNo: 'APT20260710001', patientId: 1001, patientName: '测试患者', gender: 'MALE', age: 36, doctorId: 1, departmentId: 1, doctorName: '张明', deptName: '心血管内科', scheduleId: 1, scheduleDate: dayjs().format('YYYY-MM-DD'), period: 'MORNING', queueNo: 3, fee: 50, paymentStatus: 'PAID', appointmentStatus: 'BOOKED', visitReason: '胸闷气短一周，活动后加重', createdAt: '2026-07-09 10:20:00' },
+  { id: 10, appointmentNo: 'APT20260715010', patientId: 1001, patientName: '测试患者', gender: 'MALE', age: 36, doctorId: 2, departmentId: 2, doctorName: '李华', deptName: '呼吸内科', scheduleId: 10, scheduleDate: dayjs().add(1, 'day').format('YYYY-MM-DD'), period: 'AFTERNOON', queueNo: 0, fee: 35, paymentStatus: 'UNPAID', appointmentStatus: 'BOOKED', visitReason: '', createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss') },
   { id: 2, appointmentNo: 'APT20260710002', patientId: 1002, patientName: '李患者', gender: 'FEMALE', age: 28, doctorId: 1, departmentId: 1, doctorName: '张明', deptName: '心血管内科', scheduleId: 1, scheduleDate: dayjs().format('YYYY-MM-DD'), period: 'MORNING', queueNo: 5, fee: 50, paymentStatus: 'PAID', appointmentStatus: 'CHECKED_IN', visitReason: '反复咳嗽、咳痰3天', createdAt: '2026-07-09 14:30:00' },
   { id: 3, appointmentNo: 'APT20260710003', patientId: 1003, patientName: '王患者', gender: 'MALE', age: 45, doctorId: 1, departmentId: 1, doctorName: '张明', deptName: '心血管内科', scheduleId: 2, scheduleDate: dayjs().format('YYYY-MM-DD'), period: 'AFTERNOON', queueNo: 2, fee: 50, paymentStatus: 'PAID', appointmentStatus: 'IN_PROGRESS', visitReason: '高血压复查，头晕2天', createdAt: '2026-07-08 09:10:00' },
   { id: 4, appointmentNo: 'APT20260709004', patientId: 1004, patientName: '赵患者', gender: 'FEMALE', age: 52, doctorId: 1, departmentId: 1, doctorName: '张明', deptName: '心血管内科', scheduleId: 3, scheduleDate: dayjs().subtract(1, 'day').format('YYYY-MM-DD'), period: 'MORNING', queueNo: 1, fee: 50, paymentStatus: 'PAID', appointmentStatus: 'COMPLETED', visitReason: '冠心病常规复诊', createdAt: '2026-07-07 16:00:00' },
@@ -118,7 +119,7 @@ export const mockAppointmentDetail = (id) => {
 
 export const mockCheckInAppointment = (id) => {
   const apt = mockAppointments.find(a => a.id === Number(id))
-  if (apt && apt.appointmentStatus === 'PAID') {
+  if (apt && apt.appointmentStatus === 'BOOKED' && apt.paymentStatus === 'PAID') {
     apt.appointmentStatus = 'CHECKED_IN'
     apt.checkinTime = dayjs().format('YYYY-MM-DD HH:mm:ss')
     apt.queueNo = Math.floor(Math.random() * 10) + 1

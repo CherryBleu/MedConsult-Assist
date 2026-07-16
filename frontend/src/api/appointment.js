@@ -168,9 +168,12 @@ export const getAdminAppointmentListApi = (params) => {
 // 前端 ScheduleManage 期望: scheduleNo/doctorName/deptName/scheduleDate/period/startTime/endTime
 //                          /totalQuota/bookedQuota/registrationFee/status
 const mapAdminSchedule = (s) => ({
+  id: s.scheduleId ?? s.id,
   scheduleNo: s.scheduleId ?? s.scheduleNo,
   scheduleId: s.scheduleId,
+  doctorId: s.doctorId,
   doctorName: s.doctorName,
+  departmentId: s.departmentId,
   deptName: s.departmentName ?? s.deptName,
   departmentName: s.departmentName,
   scheduleDate: s.scheduleDate,

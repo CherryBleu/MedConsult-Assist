@@ -31,8 +31,8 @@
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑科室' : '新增科室'" width="500px">
       <el-form :model="form" label-width="100px">
-        <el-form-item label="科室编号">
-          <el-input v-model="form.departmentNo" placeholder="请输入科室编号" />
+        <el-form-item label="科室编号" v-if="isEdit">
+          <el-input v-model="form.departmentNo" disabled />
         </el-form-item>
         <el-form-item label="科室名称">
           <el-input v-model="form.name" placeholder="请输入科室名称" />

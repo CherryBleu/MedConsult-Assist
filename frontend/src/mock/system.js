@@ -62,11 +62,13 @@ export const mockDeptList = () => {
 }
 
 // 新增科室
+let deptAutoIncrement = 100
 export const mockAddDept = (data) => {
+  const newDeptNo = `DEP_${String(deptAutoIncrement++).padStart(3, '0')}`
   return {
     code: 0,
     message: '新增成功',
-    data: { id: Date.now(), ...data, enabled: 1, doctorCount: 0, createdAt: dayjs().format('YYYY-MM-DD') }
+    data: { id: Date.now(), departmentNo: newDeptNo, ...data, enabled: 1, doctorCount: 0, createdAt: dayjs().format('YYYY-MM-DD') }
   }
 }
 
@@ -128,5 +130,31 @@ export const mockDeleteDoctor = (id) => {
     code: 0,
     message: '删除成功',
     data: { id }
+  }
+}
+
+// 修改密码
+export const mockChangePassword = (data) => {
+  if (!data.oldPassword || !data.newPassword) {
+    return {
+      code: -1,
+      message: '请输入原密码和新密码'
+    }
+  }
+  if (data.oldPassword === data.newPassword) {
+    return {
+      code: -1,
+      message: '新密码不能与原密码相同'
+    }
+  }
+  if (data.newPassword.length < 6) {
+    return {
+      code: -1,
+      message: '新密码长度不能少于6位'
+    }
+  }
+  return {
+    code: 0,
+    message: '密码修改成功'
   }
 }

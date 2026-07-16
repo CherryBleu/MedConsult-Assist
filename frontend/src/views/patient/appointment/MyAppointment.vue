@@ -10,6 +10,7 @@
 
       <el-tabs v-model="activeTab" class="appointment-tabs" @tab-change="fetchList">
         <el-tab-pane label="全部" name="all" />
+        <el-tab-pane label="待支付" name="UNPAID" />
         <el-tab-pane label="待就诊" name="BOOKED" />
         <el-tab-pane label="已签到" name="CHECKED_IN" />
         <el-tab-pane label="就诊中" name="IN_PROGRESS" />
@@ -146,10 +147,22 @@ const fetchList = async () => {
   loading.value = true
   try {
     const params = { page: pageNum.value, pageSize: pageSize.value }
-    if (activeTab.value !== 'all') params.status = activeTab.value
+    // 待支付：BOOKED + UNPAID；待就诊：BOOKED + PAID；其他直接按状态过滤
+    if (activeTab.value === 'UNPAID') {
+      params.status = 'BOOKED'
+    } else if (activeTab.value !== 'all') {
+      params.status = activeTab.value
+    }
     const res = await getAppointmentListApi(params)
-    list.value = res.data.records || res.data || []
-    total.value = res.data.total || list.value.length
+    let records = res.data.records || res.data || []
+    // 前端再按支付状态过滤
+    if (activeTab.value === 'UNPAID') {
+      records = records.filter(r => r.paymentStatus === 'UNPAID')
+    } else if (activeTab.value === 'BOOKED') {
+      records = records.filter(r => r.paymentStatus === 'PAID')
+    }
+    list.value = records
+    total.value = res.data.total || records.length
   } finally {
     loading.value = false
   }

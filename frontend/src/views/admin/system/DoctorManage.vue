@@ -37,15 +37,15 @@
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑医生' : '新增医生'" width="520px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="工号">
-          <el-input v-model="form.doctorNo" placeholder="请输入医生工号" />
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
+        <el-form-item label="工号" prop="doctorNo">
+          <el-input v-model="form.doctorNo" placeholder="请输入医生工号" :disabled="isEdit" />
         </el-form-item>
-        <el-form-item label="姓名">
+        <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
         <el-form-item label="性别">
-          <el-radio-group v-model="form.gender">
+          <el-radio-group v-model="form.gender" :disabled="isEdit">
             <el-radio value="MALE">男</el-radio>
             <el-radio value="FEMALE">女</el-radio>
           </el-radio-group>
@@ -71,11 +71,19 @@
         <el-form-item label="擅长领域">
           <el-input v-model="form.specialties" type="textarea" :rows="2" placeholder="请输入擅长领域" />
         </el-form-item>
-        <el-form-item label="联系电话">
-          <el-input v-model="form.phone" placeholder="请输入手机号" />
+        <el-form-item label="联系电话" prop="phone">
+          <el-input v-model="form.phone" placeholder="请输入11位手机号" />
         </el-form-item>
         <el-form-item label="挂号费">
           <el-input-number v-model="form.registrationFee" :min="0" :precision="0" />
+        </el-form-item>
+        <el-form-item label="默认密码" prop="password" v-if="!isEdit">
+          <el-input v-model="form.password" type="password" placeholder="请输入初始密码" />
+          <div class="form-tip">
+            <el-alert type="info" :closable="false" show-icon :title="''" class="tip-alert">
+              <template #default>设置初始密码后，用户首次登录可自行修改</template>
+            </el-alert>
+          </div>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -105,6 +113,7 @@ const submitting = ref(false)
 const doctorList = ref([])
 const deptList = ref([])
 const currentId = ref(null)
+const formRef = ref(null)
 
 const form = reactive({
   doctorNo: '',
@@ -114,9 +123,23 @@ const form = reactive({
   departmentId: '',
   specialties: '',
   phone: '',
+  password: '',
   registrationFee: 20,
   status: 'ACTIVE'
 })
+
+const rules = {
+  doctorNo: [{ required: true, message: '请输入工号', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  phone: [
+    { required: true, message: '请输入手机号', trigger: 'blur' },
+    { pattern: /^\d{11}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
+  ],
+  password: [
+    { required: true, message: '请输入初始密码', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/, message: '密码须8-64位且至少含字母和数字', trigger: 'blur' }
+  ]
+}
 
 const getDoctorList = async () => {
   loading.value = true
@@ -138,7 +161,7 @@ const openAddDialog = () => {
   currentId.value = null
   Object.assign(form, {
     doctorNo: '', name: '', gender: 'MALE', title: '主治医师',
-    departmentId: '', specialties: '', phone: '', registrationFee: 20, status: 'ACTIVE'
+    departmentId: '', specialties: '', phone: '', password: '', registrationFee: 20, status: 'ACTIVE'
   })
   dialogVisible.value = true
 }
@@ -146,11 +169,17 @@ const openAddDialog = () => {
 const handleEdit = (row) => {
   isEdit.value = true
   currentId.value = row.id
-  Object.assign(form, row)
+  Object.assign(form, {
+    doctorNo: row.doctorNo, name: row.name, gender: row.gender, title: row.title,
+    departmentId: row.departmentId, specialties: row.specialties, phone: row.phone, 
+    password: '', registrationFee: row.registrationFee, status: row.status
+  })
   dialogVisible.value = true
 }
 
 const submitForm = async () => {
+  if (!formRef.value) return
+  await formRef.value.validate()
   submitting.value = true
   try {
     if (isEdit.value) {
@@ -197,5 +226,11 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+}
+.form-tip {
+  margin-top: 8px;
+}
+.tip-alert {
+  padding: 8px 12px;
 }
 </style>

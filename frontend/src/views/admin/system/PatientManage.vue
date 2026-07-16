@@ -17,7 +17,6 @@
           <el-button type="primary" @click="handleSearch">搜索</el-button>
           <el-button @click="handleReset">重置</el-button>
         </div>
-        <el-button type="primary" @click="openAddDialog">新增患者</el-button>
       </div>
 
       <el-table :data="patientList" v-loading="loading" border stripe>
@@ -65,33 +64,6 @@
       </div>
     </div>
 
-    <el-dialog v-model="addDialogVisible" title="新增患者" width="520px">
-      <el-form :model="addForm" :rules="addFormRules" ref="addFormRef" label-width="100px">
-        <el-form-item label="姓名" prop="name">
-          <el-input v-model="addForm.name" placeholder="请输入姓名" />
-        </el-form-item>
-        <el-form-item label="性别" prop="gender">
-          <el-radio-group v-model="addForm.gender">
-            <el-radio value="MALE">男</el-radio>
-            <el-radio value="FEMALE">女</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="年龄" prop="age">
-          <el-input-number v-model="addForm.age" :min="0" :max="150" />
-        </el-form-item>
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="addForm.phone" placeholder="请输入手机号" />
-        </el-form-item>
-        <el-form-item label="身份证号" prop="idCard">
-          <el-input v-model="addForm.idCard" placeholder="请输入身份证号" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="addDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitAddForm">确定</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="detailDialogVisible" title="患者详情" width="650px">
       <div v-if="detailData" class="detail-content">
         <el-descriptions title="基本信息" :column="2" border>
@@ -131,44 +103,19 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminPatientListApi, getPatientDetailApi, updatePatientStatusApi, addPatientApi } from '@/api/patient'
+import { getAdminPatientListApi, getPatientDetailApi, updatePatientStatusApi } from '@/api/patient'
 
 const loading = ref(false)
-const submitting = ref(false)
 const searchKeyword = ref('')
 const patientList = ref([])
-const addDialogVisible = ref(false)
 const detailDialogVisible = ref(false)
 const detailData = ref(null)
-const addFormRef = ref(null)
 
 const pagination = reactive({
   pageNum: 1,
   pageSize: 10,
   total: 0
 })
-
-const addForm = reactive({
-  name: '',
-  gender: 'MALE',
-  age: null,
-  phone: '',
-  idCard: ''
-})
-
-const addFormRules = {
-  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
-  age: [{ required: true, message: '请输入年龄', trigger: 'blur' }],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }
-  ],
-  idCard: [
-    { required: true, message: '请输入身份证号', trigger: 'blur' },
-    { pattern: /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/, message: '身份证号格式不正确', trigger: 'blur' }
-  ]
-}
 
 const getList = async () => {
   loading.value = true
@@ -194,34 +141,6 @@ const handleReset = () => {
   searchKeyword.value = ''
   pagination.pageNum = 1
   getList()
-}
-
-const openAddDialog = () => {
-  Object.assign(addForm, {
-    name: '',
-    gender: 'MALE',
-    age: null,
-    phone: '',
-    idCard: ''
-  })
-  addDialogVisible.value = true
-}
-
-const submitAddForm = async () => {
-  if (!addFormRef.value) return
-  await addFormRef.value.validate(async (valid) => {
-    if (valid) {
-      submitting.value = true
-      try {
-        await addPatientApi(addForm)
-        ElMessage.success('新增成功')
-        addDialogVisible.value = false
-        getList()
-      } finally {
-        submitting.value = false
-      }
-    }
-  })
 }
 
 const handleView = async (row) => {

@@ -51,7 +51,7 @@ export const deleteUserApi = (id) => {
 // ===== 科室管理 =====
 
 // 科室列表（对齐后端 GET /departments）
-// 后端返回 PageResult {items,total}；提取数组并映射字段（departmentId→id, departmentName→name）
+// 后端返回 PageResult {items,total}；提取数组并映射字段（departmentId→id/departmentNo, departmentName→name）
 export const getDeptListApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDeptList())
@@ -61,6 +61,7 @@ export const getDeptListApi = async (params) => {
   res.data = list.map(d => ({
     id: d.departmentId ?? d.id,
     departmentId: d.departmentId,
+    departmentNo: d.departmentId ?? d.departmentNo,
     name: d.departmentName ?? d.name,
     departmentName: d.departmentName,
     location: d.location,
@@ -148,4 +149,14 @@ export const deleteDoctorApi = (id) => {
     return Promise.resolve(mockDeleteDoctor(id))
   }
   return Promise.resolve({ code: 0, message: 'success', data: null })
+}
+
+// ===== 修改密码 =====
+
+// 修改密码（对齐后端 POST /auth/change-password）
+export const changePasswordApi = (data) => {
+  if (USE_MOCK) {
+    return Promise.resolve(mockChangePassword(data))
+  }
+  return request({ url: '/auth/change-password', method: 'post', data })
 }

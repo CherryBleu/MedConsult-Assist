@@ -6,13 +6,30 @@
       <div class="select-section">
         <el-form label-width="100px">
           <el-form-item label="选择病历">
-            <el-select v-model="selectedRecord" placeholder="请选择要生成摘要的病历" style="width: 400px">
+            <el-select
+              v-model="selectedRecord"
+              placeholder="请选择要生成摘要的病历"
+              style="width: 500px"
+              filterable
+            >
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} - ${item.patientName || '未知患者'} - ${item.chiefComplaint || '无主诉'}`"
+                :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
                 :value="item.recordNo"
-              />
+              >
+                <div class="record-option">
+                  <div class="option-main">
+                    <span class="option-no">{{ item.recordNo }}</span>
+                    <span class="option-patient">{{ item.patientName || '未知患者' }}</span>
+                    <el-tag v-if="item.deptName" size="small" type="info">{{ item.deptName }}</el-tag>
+                    <el-tag :type="getStatusType(MEDICAL_RECORD_STATUS, item.status)" size="small">
+                      {{ getStatusLabel(MEDICAL_RECORD_STATUS, item.status) }}
+                    </el-tag>
+                  </div>
+                  <div class="option-complaint">{{ item.chiefComplaint || '无主诉' }}</div>
+                </div>
+              </el-option>
             </el-select>
             <el-button type="primary" :loading="generating" @click="generateSummary" style="margin-left: 12px">
               生成摘要
@@ -86,6 +103,7 @@ defineOptions({ name: 'RecordSummary' })
 
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
 import { generateSummaryByRecordApi } from '@/api/ai'
 
@@ -204,5 +222,33 @@ onMounted(() => {
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--border-light);
+}
+
+/* 病历下拉选项 */
+.record-option {
+  line-height: 1.4;
+}
+.option-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.option-no {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+.option-patient {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.option-complaint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

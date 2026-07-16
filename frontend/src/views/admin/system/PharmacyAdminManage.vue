@@ -2,8 +2,8 @@
   <div class="page-container">
     <div class="card-box">
       <div class="page-header">
-        <h2 class="page-title">医院管理员管理</h2>
-        <el-button type="primary" @click="openAddDialog">新增医院管理员</el-button>
+        <h2 class="page-title">药房管理员管理</h2>
+        <el-button type="primary" @click="openAddDialog">新增药房管理员</el-button>
       </div>
 
       <el-table :data="userList" v-loading="loading" border stripe>
@@ -33,7 +33,7 @@
     </div>
 
     <!-- 新增弹窗 -->
-    <el-dialog v-model="dialogVisible" title="新增医院管理员" width="500px">
+    <el-dialog v-model="dialogVisible" title="新增药房管理员" width="500px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="账号" prop="account">
           <el-input v-model="form.account" placeholder="请输入账号" />
@@ -80,7 +80,7 @@ const allUserList = ref([])
 const formRef = ref(null)
 
 const userList = computed(() => {
-  return allUserList.value.filter(i => i.role === 'HOSPITAL_ADMIN')
+  return allUserList.value.filter(i => i.role === 'PHARMACY_ADMIN')
 })
 
 const form = reactive({
@@ -88,7 +88,7 @@ const form = reactive({
   name: '',
   phone: '',
   password: '',
-  role: 'HOSPITAL_ADMIN',
+  role: 'PHARMACY_ADMIN',
   status: 'ACTIVE'
 })
 
@@ -116,7 +116,7 @@ const getUserList = async () => {
 }
 
 const openAddDialog = () => {
-  Object.assign(form, { account: '', name: '', phone: '', password: '', role: 'HOSPITAL_ADMIN', status: 'ACTIVE' })
+  Object.assign(form, { account: '', name: '', phone: '', password: '', role: 'PHARMACY_ADMIN', status: 'ACTIVE' })
   dialogVisible.value = true
 }
 
@@ -135,7 +135,7 @@ const submitForm = async () => {
 }
 
 const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除医院管理员「${row.name}」吗？`, '提示', {
+  ElMessageBox.confirm(`确定要删除药房管理员「${row.name}」吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'

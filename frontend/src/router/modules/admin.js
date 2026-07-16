@@ -12,7 +12,13 @@ const adminRoutes = [
         path: 'user',
         name: 'UserManage',
         component: () => import('@/views/admin/system/UserManage.vue'),
-        meta: { title: '用户管理' }
+        meta: { title: '医院管理员管理' }
+      },
+      {
+        path: 'pharmacy-admin',
+        name: 'PharmacyAdminManage',
+        component: () => import('@/views/admin/system/PharmacyAdminManage.vue'),
+        meta: { title: '药房管理员管理' }
       },
       {
         path: 'patient',
@@ -77,6 +83,13 @@ const adminRoutes = [
         name: 'AuditLog',
         component: () => import('@/views/admin/audit/AuditLog.vue'),
         meta: { title: '审计日志' }
+      },
+      // 个人中心
+      {
+        path: 'profile',
+        name: 'AdminProfile',
+        component: () => import('@/views/admin/profile/UserInfo.vue'),
+        meta: { title: '个人中心' }
       }
     ]
   }
