@@ -9,6 +9,16 @@ import request from '@/utils/request'
 //                  ↓ 驳回               ↓ 退方
 //                REJECTED             CANCELLED
 
+// 开方（创建处方，初始 DRAFT，写主表 + 明细）
+// 对齐 POST /prescriptions。请求体 CreateRequest：
+//   { recordId, patientId, doctorId, departmentId?, source?, items: [{ drugNo?, drugName,
+//     specification?, dosage?, frequency?, route?, days(>=1), quantity(>0), unit?, unitPrice? }] }
+// recordId/patientId/doctorId 均为业务编号（record_no/patient_no/doctor_no）。
+// 响应 { prescriptionId, status: 'DRAFT', totalFee }（本批不传 unitPrice，totalFee 按 0 计）。
+export const createPrescriptionApi = (data) => {
+  return request({ url: '/prescriptions', method: 'post', data })
+}
+
 // 处方列表（对齐 GET /prescriptions，可按 status 过滤——药师审方工作台）
 export const getPrescriptionListApi = (params) => {
   return request({ url: '/prescriptions', method: 'get', params })
