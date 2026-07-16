@@ -76,6 +76,22 @@ public class AuthDTO {
         private String doctorId;
     }
 
+    /** §2.1.6 修改密码请求（#19）。 */
+    @Data
+    @Schema(description = "修改密码请求")
+    public static class ChangePasswordRequest {
+        @Schema(description = "原密码")
+        @NotBlank(message = "原密码不能为空")
+        private String oldPassword;
+
+        /** 新密码：8-64 位，至少含字母和数字（与注册同强度） */
+        @Schema(description = "新密码：8-64 位，至少含字母和数字")
+        @NotBlank(message = "新密码不能为空")
+        @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).{8,64}$",
+                message = "密码须 8-64 位且至少含字母和数字")
+        private String newPassword;
+    }
+
     @Data
     @Schema(description = "登录请求")
     public static class LoginRequest {

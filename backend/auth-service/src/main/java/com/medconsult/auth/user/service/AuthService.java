@@ -27,6 +27,17 @@ public interface AuthService {
     AuthDTO.MeResponse me(Long userId);
 
     /**
+     * 修改当前登录用户密码（#19）。
+     *
+     * <p>校验原密码正确后用 BCrypt 重新编码新密码；改密后旧 access token 仍有效至过期
+     * （当前无服务端 access token 失效机制，前端应提示用户重新登录）。
+     *
+     * @param userId 当前登录用户 ID
+     * @param req    原/新密码
+     */
+    void changePassword(Long userId, AuthDTO.ChangePasswordRequest req);
+
+    /**
      * 绑定患者档案到当前登录用户（补建档场景）。
      *
      * <p>用于历史脏账号（sys_user.patient_id 为 NULL）补全患者档案关联。

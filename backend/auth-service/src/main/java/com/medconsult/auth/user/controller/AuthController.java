@@ -70,6 +70,19 @@ public class AuthController {
     }
 
     /**
+     * §2.1.6 修改密码（#19）。
+     * <p>当前登录用户修改自己的密码，校验原密码后更新。无需管理员权限。
+     * 改密后旧 access token 仍有效至过期，前端应提示重新登录。
+     */
+    @PostMapping("/change-password")
+    @Operation(summary = "修改密码")
+    public Result<Void> changePassword(@Valid @RequestBody AuthDTO.ChangePasswordRequest req) {
+        Long userId = SecurityContext.requireUser().userId();
+        authService.changePassword(userId, req);
+        return Result.ok(null);
+    }
+
+    /**
      * 绑定患者档案到当前登录用户（补建档场景）。
      *
      * <p>用于历史脏账号（sys_user.patient_id 为 NULL，绕过"注册即建档"流程）补全档案关联。

@@ -289,6 +289,28 @@ public class AuthServiceImpl implements AuthService {
                 u.getStatus());
     }
 
+    // ===== 修改密码（#19）=====
+
+    @Override
+    @Transactional
+    public void changePassword(Long userId, AuthDTO.ChangePasswordRequest req) {
+        SysUser u = userMapper.selectById(userId);
+        if (u == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+        // 校验原密码（BCrypt matches，防时序攻击用常量时间比较）
+        if (!passwordEncoder.matches(req.getOldPassword(), u.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "原密码不正确");
+        }
+        // 新旧密码不可相同
+        if (passwordEncoder.matches(req.getNewPassword(), u.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "新密码不可与原密码相同");
+        }
+        u.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
+        userMapper.updateById(u);
+        log.info("用户修改密码成功: userId={} account={}", userId, u.getAccount());
+    }
+
     // ===== 绑定患者档案（补建档）=====
 
     @Override
