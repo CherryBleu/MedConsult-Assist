@@ -70,7 +70,7 @@
         <div 
           v-for="item in departmentList" 
           :key="item.id" 
-          class="dept-card"
+          class="dept-card interactive-card"
           @click="selectDepartment(item)"
         >
           <div class="dept-card-header">
@@ -298,15 +298,13 @@ onMounted(() => {
 
 .dept-card {
   padding: 20px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-base);
+  border: 1px solid var(--border-lighter);
+  border-radius: 18px;
   cursor: pointer;
-  transition: all 0.2s;
+  background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(248,251,255,.90));
 }
 .dept-card:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.1);
-  transform: translateY(-2px);
+  border-color: rgba(22, 119, 255, .42);
 }
 
 .dept-card-header {

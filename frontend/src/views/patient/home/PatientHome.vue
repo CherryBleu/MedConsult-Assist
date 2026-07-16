@@ -3,11 +3,18 @@
     <!-- 顶部欢迎横幅 -->
     <div class="banner-card">
       <div class="banner-left">
+        <span class="eyebrow">MEDCONSULT ASSIST</span>
         <h2>您好，{{ userStore.userInfo.name || '用户' }}</h2>
-        <p>欢迎使用智慧医疗系统，祝您身体健康</p>
+        <p>今天也可以从智能分诊、快速挂号和病历追踪开始管理健康。</p>
+        <div class="hero-actions">
+          <el-button type="primary" round @click="$router.push('/patient/ai-consult')">AI 问诊</el-button>
+          <el-button round @click="$router.push('/patient/appointment/department')">立即挂号</el-button>
+        </div>
       </div>
       <div class="banner-right">
-        <el-icon :size="48" color="#fff"><FirstAidKit /></el-icon>
+        <div class="health-orbit">
+          <el-icon :size="48" color="#fff"><FirstAidKit /></el-icon>
+        </div>
       </div>
     </div>
 
@@ -15,25 +22,25 @@
     <div class="card-box mb-20">
       <h3 class="section-title">常用功能</h3>
       <div class="quick-grid">
-        <div class="quick-item" @click="$router.push('/patient/appointment')">
+        <div class="quick-item interactive-card" @click="$router.push('/patient/appointment')">
           <div class="quick-icon icon-blue">
             <el-icon :size="28"><Calendar /></el-icon>
           </div>
           <span>预约挂号</span>
         </div>
-        <div class="quick-item" @click="$router.push('/patient/triage')">
+        <div class="quick-item interactive-card" @click="$router.push('/patient/triage')">
           <div class="quick-icon icon-green">
             <el-icon :size="28"><Cpu /></el-icon>
           </div>
           <span>智能分诊</span>
         </div>
-        <div class="quick-item" @click="$router.push('/patient/records')">
+        <div class="quick-item interactive-card" @click="$router.push('/patient/records')">
           <div class="quick-icon icon-orange">
             <el-icon :size="28"><Document /></el-icon>
           </div>
           <span>我的病历</span>
         </div>
-        <div class="quick-item" @click="$router.push('/patient/profile')">
+        <div class="quick-item interactive-card" @click="$router.push('/patient/profile')">
           <div class="quick-icon icon-purple">
             <el-icon :size="28"><User /></el-icon>
           </div>
@@ -150,22 +157,66 @@ onMounted(() => {
 <style scoped>
 /* 横幅 */
 .banner-card {
-  background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+  position: relative;
+  overflow: hidden;
+  background: var(--gradient-primary);
   color: #fff;
-  border-radius: var(--radius-lg);
-  padding: 24px;
+  border-radius: 24px;
+  padding: 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  box-shadow: 0 24px 60px rgba(22, 119, 255, .22);
+}
+.banner-card::after {
+  content: '';
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  right: -70px;
+  top: -80px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.18);
+}
+.banner-left {
+  position: relative;
+  z-index: 1;
+}
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  font-size: 11px;
+  letter-spacing: .12em;
 }
 .banner-left h2 {
-  font-size: 22px;
+  font-size: 28px;
   margin-bottom: 8px;
 }
 .banner-left p {
-  opacity: 0.9;
+  opacity: 0.92;
   font-size: 14px;
+}
+.hero-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.health-orbit {
+  position: relative;
+  z-index: 1;
+  width: 104px;
+  height: 104px;
+  border-radius: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.28);
+  backdrop-filter: blur(6px);
 }
 
 /* 板块标题 */
@@ -193,12 +244,10 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   cursor: pointer;
-  padding: 16px 0;
-  border-radius: var(--radius-base);
-  transition: all 0.2s;
-}
-.quick-item:hover {
-  background: var(--bg-hover);
+  padding: 18px 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,251,255,.92));
+  border: 1px solid var(--border-lighter);
 }
 .quick-icon {
   width: 56px;

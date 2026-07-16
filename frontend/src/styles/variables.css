@@ -1,8 +1,12 @@
 :root {
-  /* 主题色 - 医疗蓝 */
+  /* 主题色 - 医疗蓝 + 智能青紫渐变 */
   --primary-color: #1677ff;
   --primary-light: #4096ff;
   --primary-dark: #0958d9;
+  --accent-cyan: #14c9c9;
+  --accent-violet: #7c3aed;
+  --gradient-primary: linear-gradient(135deg, #1677ff 0%, #14c9c9 52%, #7c3aed 100%);
+  --gradient-soft: radial-gradient(circle at 12% 12%, rgba(22,119,255,.16), transparent 34%), radial-gradient(circle at 88% 18%, rgba(20,201,201,.14), transparent 28%), #f7fbff;
 
   /* 功能状态色 */
   --success-color: #52c41a;
@@ -20,10 +24,16 @@
   --bg-page: #f5f7fa;
   --bg-card: #ffffff;
   --bg-hover: #f5f7fa;
+  --bg-glass: rgba(255, 255, 255, 0.78);
 
   /* 边框色 */
   --border-color: #dcdfe6;
   --border-light: #e4e7ed;
+  --border-lighter: #eef2f7;
+
+  /* 阴影 */
+  --shadow-card: 0 16px 40px rgba(15, 35, 95, 0.08);
+  --shadow-hover: 0 22px 54px rgba(22, 119, 255, 0.14);
 
   /* 字号 */
   --font-xs: 12px;

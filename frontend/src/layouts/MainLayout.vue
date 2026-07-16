@@ -11,8 +11,8 @@
         :collapse="isCollapse"
         :collapse-transition="false"
         router
-        background-color="#001529"
-        text-color="#ffffffa6"
+        background-color="transparent"
+        text-color="rgba(255, 255, 255, 0.72)"
         active-text-color="#ffffff"
         class="side-menu"
       >
@@ -324,40 +324,66 @@ const handleCommand = (command) => {
 
 /* 侧边栏 */
 .layout-aside {
-  background-color: #001529;
+  position: relative;
+  background: linear-gradient(180deg, #07182f 0%, #09254b 52%, #102a5e 100%);
   transition: width 0.2s;
   overflow: hidden;
 }
+.layout-aside::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 10%, rgba(20, 201, 201, .24), transparent 30%),
+    radial-gradient(circle at 80% 36%, rgba(124, 58, 237, .20), transparent 28%);
+  pointer-events: none;
+}
 
 .logo-box {
-  height: 60px;
+  position: relative;
+  z-index: 1;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   font-size: 18px;
-  font-weight: 600;
-  border-bottom: 1px solid #ffffff1a;
+  font-weight: 700;
+  letter-spacing: .06em;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
 }
 
 .side-menu {
+  position: relative;
+  z-index: 1;
   border-right: none;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 64px);
+  padding: 10px;
 }
 
 :deep(.el-menu) {
   border-right: none;
 }
+:deep(.el-menu-item),
+:deep(.el-sub-menu__title) {
+  border-radius: 12px;
+  margin: 4px 0;
+}
+:deep(.el-menu-item.is-active) {
+  background: rgba(255, 255, 255, .16) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
 
 /* 顶部栏 */
 .layout-header {
-  background: #fff;
-  border-bottom: 1px solid var(--border-light);
+  background: rgba(255, 255, 255, .84);
+  border-bottom: 1px solid rgba(228, 231, 237, .72);
+  box-shadow: 0 10px 28px rgba(15, 35, 95, .06);
+  backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  height: 60px !important;
+  padding: 0 24px;
+  height: 64px !important;
 }
 
 .header-left {
@@ -476,8 +502,8 @@ const handleCommand = (command) => {
 
 /* 主内容区 */
 .layout-main {
-  background: var(--bg-page);
-  padding: 20px;
+  background: var(--gradient-soft);
+  padding: 0;
   overflow-y: auto;
 }
 

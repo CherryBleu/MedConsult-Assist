@@ -4,10 +4,13 @@
       <!-- 头部 -->
       <div class="chat-header">
         <div class="header-left">
-          <el-icon :size="24" color="#1677ff"><Cpu /></el-icon>
-          <span class="header-title">AI智能问诊</span>
+          <div class="ai-logo"><el-icon :size="22"><Cpu /></el-icon></div>
+          <div>
+            <span class="header-title">AI智能问诊</span>
+            <p class="header-subtitle">RAG 知识检索 · 风险规则 · 科室建议</p>
+          </div>
         </div>
-        <el-tag size="small" type="info">仅供参考</el-tag>
+        <el-tag size="small" type="info" effect="plain">仅供参考，不替代诊断</el-tag>
       </div>
 
       <!-- 消息区域 -->
@@ -162,35 +165,56 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-radius: var(--radius-base);
+  background: rgba(255, 255, 255, .86);
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 24px;
   overflow: hidden;
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px);
 }
 
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-light);
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-lighter);
+  background: linear-gradient(135deg, rgba(255,255,255,.94), rgba(240,247,255,.88));
 }
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+.ai-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--gradient-primary);
+  box-shadow: 0 10px 24px rgba(22, 119, 255, .24);
 }
 .header-title {
-  font-size: 16px;
-  font-weight: 600;
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
   color: var(--text-primary);
+}
+.header-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* 消息区 */
 .chat-messages {
   flex: 1;
-  padding: 20px;
+  padding: 24px;
   overflow-y: auto;
-  background: var(--bg-page);
+  background: radial-gradient(circle at 8% 12%, rgba(22,119,255,.08), transparent 24%), #f7fbff;
 }
 
 .message-item {
@@ -213,13 +237,16 @@ onMounted(async () => {
 }
 .ai-bubble {
   background: #fff;
+  border: 1px solid var(--border-lighter);
   border-top-left-radius: 4px;
   color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(15, 35, 95, .06);
 }
 .user-bubble {
-  background: var(--primary-color);
+  background: var(--gradient-primary);
   color: #fff;
   border-top-right-radius: 4px;
+  box-shadow: 0 8px 24px rgba(22,119,255,.18);
 }
 
 .ai-avatar {
