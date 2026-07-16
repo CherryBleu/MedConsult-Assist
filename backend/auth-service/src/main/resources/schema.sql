@@ -85,3 +85,58 @@ CREATE TABLE IF NOT EXISTS login_log (
     KEY idx_login_log_user_id (user_id),
     KEY idx_login_log_login_at (login_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='登录日志表';
+
+-- ========== RBAC 五表（sys_user 已存在，此处补 4 张） ==========
+
+CREATE TABLE IF NOT EXISTS sys_role (
+    id           BIGINT       NOT NULL                 COMMENT '主键（雪花 ID）',
+    role_code    VARCHAR(32)  NOT NULL                 COMMENT '角色编码：PATIENT/DOCTOR/PHARMACY_ADMIN/HOSPITAL_ADMIN',
+    role_name    VARCHAR(50)  NOT NULL                 COMMENT '角色名称',
+    description  VARCHAR(200)                          COMMENT '描述',
+    enabled      TINYINT      NOT NULL DEFAULT 1       COMMENT '是否启用：0 否 1 是',
+    created_at   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted      TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_role_code (role_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='RBAC 角色表';
+
+CREATE TABLE IF NOT EXISTS sys_permission (
+    id               BIGINT       NOT NULL             COMMENT '主键',
+    permission_code  VARCHAR(64)  NOT NULL             COMMENT '权限编码，如 patient:read',
+    permission_name  VARCHAR(100) NOT NULL             COMMENT '权限名称',
+    resource_type    VARCHAR(50)                       COMMENT '资源类型',
+    action           VARCHAR(20)                       COMMENT '操作：read/write/audit/export',
+    description      VARCHAR(200)                      COMMENT '描述',
+    created_at       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted          TINYINT      NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_permission_code (permission_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='RBAC 权限点表';
+
+CREATE TABLE IF NOT EXISTS sys_role_permission (
+    id            BIGINT      NOT NULL                 COMMENT '主键',
+    role_id       BIGINT      NOT NULL                 COMMENT '角色 ID',
+    permission_id BIGINT      NOT NULL                 COMMENT '权限点 ID',
+    data_scope    VARCHAR(20) NOT NULL DEFAULT 'ALL'   COMMENT '数据范围：ALL/DEPT/SELF/ASSIGNED',
+    created_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted       TINYINT     NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_role_permission (role_id, permission_id),
+    KEY idx_srp_role (role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色-权限关联表';
+
+CREATE TABLE IF NOT EXISTS sys_user_role (
+    id         BIGINT      NOT NULL                    COMMENT '主键',
+    user_id    BIGINT      NOT NULL                    COMMENT '用户 ID',
+    role_id    BIGINT      NOT NULL                    COMMENT '角色 ID',
+    is_primary TINYINT     NOT NULL DEFAULT 1          COMMENT '是否主角色：0 否 1 是',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted    TINYINT     NOT NULL DEFAULT 0,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_sys_user_role (user_id, role_id),
+    KEY idx_sur_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户-角色关联表（支持一人多角色）';
