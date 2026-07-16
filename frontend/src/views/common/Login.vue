@@ -29,16 +29,16 @@
         <template v-if="!selectedEntry">
           <h2 class="login-title">请选择登录入口</h2>
           <div class="entry-selector">
-            <div class="entry-card patient-entry" @click="selectEntry('patient')">
+            <button type="button" class="entry-card patient-entry" @click="selectEntry('patient')">
               <el-icon :size="48" class="entry-icon"><User /></el-icon>
-              <div class="entry-name">患者入口</div>
-              <div class="entry-desc">预约挂号 · 在线问诊 · 健康档案</div>
-            </div>
-            <div class="entry-card staff-entry" @click="selectEntry('staff')">
+              <span class="entry-name">患者入口</span>
+              <span class="entry-desc">预约挂号 · 在线问诊 · 健康档案</span>
+            </button>
+            <button type="button" class="entry-card staff-entry" @click="selectEntry('staff')">
               <el-icon :size="48" class="entry-icon"><Suitcase /></el-icon>
-              <div class="entry-name">工作人员入口</div>
-              <div class="entry-desc">医生 · 管理员 · 药房管理员</div>
-            </div>
+              <span class="entry-name">工作人员入口</span>
+              <span class="entry-desc">医生 · 管理员 · 药房管理员</span>
+            </button>
           </div>
         </template>
 
@@ -141,19 +141,19 @@ const loginForm = reactive({
   account: '',
   password: '',
   remember: false,
-  entry: null      // 登录入口：'PATIENT'/'STAFF'，由 selectedEntry 映射大写后上送后端 clientType
+  clientType: null      // 登录入口：'PATIENT'/'STAFF'，与后端 clientType 契约一致
 })
 
 const selectEntry = (entry) => {
   selectedEntry.value = entry
-  loginForm.entry = entry.toUpperCase()   // patient→PATIENT, staff→STAFF（与后端 clientType 契约一致）
+  loginForm.clientType = entry.toUpperCase()   // patient→PATIENT, staff→STAFF
 }
 
 const backToEntrySelect = () => {
   selectedEntry.value = null
   loginForm.account = ''
   loginForm.password = ''
-  loginForm.entry = null
+  loginForm.clientType = null
 }
 
 const loginRules = {
@@ -360,6 +360,7 @@ const handleLogin = async () => {
 }
 
 .entry-card {
+  width: 100%;
   padding: 24px;
   border: 2px solid var(--border-light);
   border-radius: 12px;
@@ -367,6 +368,7 @@ const handleLogin = async () => {
   transition: all 0.25s ease;
   text-align: center;
   background: #fff;
+  font: inherit;
 }
 
 .entry-card:hover {
@@ -399,6 +401,7 @@ const handleLogin = async () => {
 }
 
 .entry-name {
+  display: block;
   font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
@@ -406,6 +409,7 @@ const handleLogin = async () => {
 }
 
 .entry-desc {
+  display: block;
   font-size: 13px;
   color: var(--text-secondary);
 }
