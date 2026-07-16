@@ -285,8 +285,8 @@ export const mockTriageResult = (symptoms) => {
       duration: '3天',
       severity: 'MEDIUM',
       recommendations: [
-        { departmentId: 2, departmentName: '呼吸内科', confidence: 85, reason: '咳嗽、咳痰、低热为呼吸系统典型症状' },
-        { departmentId: 1, departmentName: '心血管内科', confidence: 40, reason: '胸闷症状需排除心血管疾病' }
+        { departmentId: 2, departmentName: '呼吸内科', confidence: 0.85, reason: '咳嗽、咳痰、低热为呼吸系统典型症状' },
+        { departmentId: 1, departmentName: '心血管内科', confidence: 0.40, reason: '胸闷症状需排除心血管疾病' }
       ],
       emergencyRecommended: 0,
       riskLevel: 'LOW',
