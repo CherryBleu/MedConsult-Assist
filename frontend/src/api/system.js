@@ -71,28 +71,28 @@ export const getDeptListApi = async (params) => {
   return res
 }
 
-// 新增科室（后端暂无科室创建接口，占位）
+// 新增科室（对齐后端 POST /departments，#15。departmentNo 后端自动生成）
 export const addDeptApi = (data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockAddDept(data))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return request({ url: '/departments', method: 'post', data })
 }
 
-// 更新科室（后端暂无科室更新接口，占位）
+// 更新科室（对齐后端 PATCH /departments/{departmentId}，#15。部分字段）
 export const updateDeptApi = (id, data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockUpdateDept(id, data))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return request({ url: `/departments/${id}`, method: 'patch', data })
 }
 
-// 删除科室（后端暂无科室删除接口，占位）
+// 删除科室（对齐后端 DELETE /departments/{departmentId}，#15。被引用时后端拒绝）
 export const deleteDeptApi = (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDeleteDept(id))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return request({ url: `/departments/${id}`, method: 'delete' })
 }
 
 // ===== 医生管理 =====
