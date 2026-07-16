@@ -146,4 +146,52 @@ class AuthFlowTest {
         mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(bad))
                 .andExpect(jsonPath("$.code").value(400001));
     }
+
+    @Test
+    void login_patientAccountFromStaffEntry_rejected() throws Exception {
+        // mock 建档：返回固定 patientId（患者账号 patient_id 非空，doctor/pharmacist 空）
+        when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
+                .thenReturn(Result.ok(EntityIdDTO.of(9002L)));
+
+        // 注册一个纯患者账号（账号须 4-32 位字母/数字/下划线，故用 bobby）
+        String regBody = """
+                {"account":"bobby","password":"P@ssw0rd","phone":"13900000888","name":"鲍勃","role":"PATIENT","idCard":"110101199003081234"}""";
+        mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(regBody))
+                .andExpect(jsonPath("$.code").value(0));
+
+        // 患者账号从工作人员入口（clientType=STAFF）登录 → 应被拒（403）
+        String staffLogin = """
+                {"account":"bobby","password":"P@ssw0rd","clientType":"STAFF"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(staffLogin))
+                .andExpect(jsonPath("$.code").value(403001));
+
+        // 同一患者账号从患者入口（clientType=PATIENT）登录 → 应成功
+        String patientLogin = """
+                {"account":"bobby","password":"P@ssw0rd","clientType":"PATIENT"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(patientLogin))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists());
+
+        // 不传 clientType（向后兼容）→ 应成功
+        String noCt = """
+                {"account":"bobby","password":"P@ssw0rd"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(noCt))
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void login_clientType_caseInsensitive() throws Exception {
+        when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
+                .thenReturn(Result.ok(EntityIdDTO.of(9003L)));
+        String regBody = """
+                {"account":"carol","password":"P@ssw0rd","phone":"13900000777","name":"卡罗尔","role":"PATIENT","idCard":"110101199003091234"}""";
+        mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(regBody))
+                .andExpect(jsonPath("$.code").value(0));
+
+        // 小写 staff 也应被识别并拒绝（后端 toUpperCase 容错）
+        String lowerStaff = """
+                {"account":"carol","password":"P@ssw0rd","clientType":"staff"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(lowerStaff))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
 }
