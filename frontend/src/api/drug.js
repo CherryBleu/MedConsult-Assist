@@ -133,3 +133,14 @@ export const getStockFlowApi = async (drugId, params) => {
   res.data = list.map(mapStockFlow)
   return res
 }
+
+// 管理员端库存流水列表（查看所有流水，无需按药品筛选）
+export const getStockFlowListApi = async (params) => {
+  if (USE_MOCK) {
+    return Promise.resolve(mockStockFlowList(params))
+  }
+  const res = await request({ url: '/drugs/stock/flows', method: 'get', params })
+  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  res.data = list.map(mapStockFlow)
+  return res
+}

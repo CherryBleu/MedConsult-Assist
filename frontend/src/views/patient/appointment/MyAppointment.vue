@@ -146,20 +146,23 @@ const currentDetail = ref(null)
 const fetchList = async () => {
   loading.value = true
   try {
-    // "待支付"标签：后端 list 接口不支持 paymentStatus 过滤，
-    // 拉全量后前端按 paymentStatus==='UNPAID' 本地过滤（患者预约量小，可接受）
-    if (activeTab.value === 'UNPAID') {
-      const res = await getAppointmentListApi({ page: 1, pageSize: 1000 })
-      const all = res.data.records || res.data || []
-      list.value = all.filter(i => i.paymentStatus === 'UNPAID' && i.appointmentStatus !== 'CANCELLED')
-      total.value = list.value.length
-      return
-    }
     const params = { page: pageNum.value, pageSize: pageSize.value }
-    if (activeTab.value !== 'all') params.status = activeTab.value
+    // 待支付：BOOKED + UNPAID；待就诊：BOOKED + PAID；其他直接按状态过滤
+    if (activeTab.value === 'UNPAID') {
+      params.status = 'BOOKED'
+    } else if (activeTab.value !== 'all') {
+      params.status = activeTab.value
+    }
     const res = await getAppointmentListApi(params)
-    list.value = res.data.records || res.data || []
-    total.value = res.data.total || list.value.length
+    let records = res.data.records || res.data || []
+    // 前端再按支付状态过滤
+    if (activeTab.value === 'UNPAID') {
+      records = records.filter(r => r.paymentStatus === 'UNPAID')
+    } else if (activeTab.value === 'BOOKED') {
+      records = records.filter(r => r.paymentStatus === 'PAID')
+    }
+    list.value = records
+    total.value = res.data.total || records.length
   } finally {
     loading.value = false
   }

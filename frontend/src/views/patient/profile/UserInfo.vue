@@ -84,7 +84,60 @@
           </el-form-item>
         </el-form>
 
-        <!-- 编辑模式：仅可编辑后端 UpdateRequest 允许的字段 -->
+        <!-- 健康档案 -->
+        <div v-if="!editing" class="health-archive-section">
+          <div class="section-divider">
+            <span class="divider-text">健康档案</span>
+          </div>
+
+          <!-- 过敏史 -->
+          <div class="archive-item">
+            <div class="archive-label">
+              <el-icon :size="16" color="#ff4d4f"><Warning /></el-icon>
+              <span>过敏史</span>
+            </div>
+            <div class="archive-value">
+              <el-tag v-for="(item, index) in allergyList" :key="index" type="danger" effect="light" size="small">
+                {{ item }}
+              </el-tag>
+              <span v-if="!allergyList.length" class="empty-text">暂无记录</span>
+            </div>
+          </div>
+
+          <!-- 既往病史 -->
+          <div class="archive-item">
+            <div class="archive-label">
+              <el-icon :size="16" color="#faad14"><Document /></el-icon>
+              <span>既往病史</span>
+            </div>
+            <div class="archive-value">{{ formatList(patientInfo.pastMedicalHistory) }}</div>
+          </div>
+
+          <!-- 家族病史 -->
+          <div class="archive-item">
+            <div class="archive-label">
+              <el-icon :size="16" color="#1677ff"><UserFilled /></el-icon>
+              <span>家族病史</span>
+            </div>
+            <div class="archive-value">{{ formatList(patientInfo.familyHistory) }}</div>
+          </div>
+
+          <!-- 紧急联系人 -->
+          <div class="archive-item">
+            <div class="archive-label">
+              <el-icon :size="16" color="#52c41a"><Phone /></el-icon>
+              <span>紧急联系人</span>
+            </div>
+            <div class="archive-value">
+              <template v-if="patientInfo.emergencyContact?.name">
+                姓名：{{ patientInfo.emergencyContact.name }}　关系：{{ patientInfo.emergencyContact.relation }}　电话：{{ patientInfo.emergencyContact.phone }}
+              </template>
+              <span v-else class="empty-text">暂无记录</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 编辑模式：仅可编辑后端 UpdateRequest 允许且 DetailResponse 返回的字段 -->
         <el-form v-else ref="editFormRef" :model="editForm" label-width="100px" class="info-form">
           <el-form-item label="手机号">
             <el-input v-model="editForm.phone" placeholder="如需修改请输入新手机号，留空则保持原号" maxlength="11" />
@@ -113,7 +166,6 @@
         <div class="action-bar">
           <template v-if="!editing">
             <el-button type="primary" @click="startEdit">编辑档案</el-button>
-            <el-button @click="goToHealthArchive">查看完整健康档案</el-button>
           </template>
           <template v-else>
             <el-button type="primary" :loading="saving" @click="saveEdit">保存</el-button>
@@ -121,18 +173,40 @@
           </template>
         </div>
       </div>
+
+      <!-- 修改密码 -->
+      <div class="card-box mt-20">
+        <div class="section-header">
+          <el-icon><Lock /></el-icon>
+          <span class="section-title">修改密码</span>
+        </div>
+        <el-form :model="passwordForm" :rules="passwordRules" ref="passwordFormRef" label-width="100px" class="password-form">
+          <el-form-item label="原密码" prop="oldPassword">
+            <el-input v-model="passwordForm.oldPassword" type="password" placeholder="请输入原密码" />
+          </el-form-item>
+          <el-form-item label="新密码" prop="newPassword">
+            <el-input v-model="passwordForm.newPassword" type="password" placeholder="请输入新密码（至少6位）" />
+          </el-form-item>
+          <el-form-item label="确认密码" prop="confirmPassword">
+            <el-input v-model="passwordForm.confirmPassword" type="password" placeholder="请再次输入新密码" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="passwordLoading" @click="submitChangePassword">修改密码</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { Warning, Document, UserFilled, Phone, Lock } from '@element-plus/icons-vue'
 import { getPatientInfoApi, updatePatientInfoApi } from '@/api/patient'
 import { useUserStore } from '@/store/modules/user'
+import { changePasswordApi } from '@/api/system'
 
-const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
 const saving = ref(false)
@@ -140,11 +214,46 @@ const editing = ref(false)
 const patientInfo = ref({})
 const editFormRef = ref(null)
 const archiveFormRef = ref(null)
+const passwordLoading = ref(false)
+const passwordFormRef = ref(null)
+
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
+
+const passwordRules = {
+  oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '新密码长度不能少于6位', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { validator: (rule, value, callback) => {
+      if (value !== passwordForm.newPassword) {
+        callback(new Error('两次输入的密码不一致'))
+      } else {
+        callback()
+      }
+    }, trigger: 'blur' }
+  ]
+}
 
 // 是否已关联患者档案（patientId 为 null/空 → 未关联，需补建档）
 const hasPatientId = computed(() => !!userStore.userInfo?.patientId)
 
-// 编辑表单（对齐后端 PatientDTO.UpdateRequest 可更新字段）
+// 过敏史列表（兼容数组和字符串）
+const allergyList = computed(() => {
+  const a = patientInfo.value.allergies
+  if (!a) return []
+  if (Array.isArray(a)) return a.filter(i => i && String(i).trim())
+  if (typeof a === 'string') return a.split(/[,、]/).filter(i => i.trim())
+  return []
+})
+
+// 编辑表单（仅包含后端 DetailResponse 返回且 UpdateRequest 可更新的字段）
 const editForm = ref({
   phone: '',
   address: '',
@@ -208,13 +317,10 @@ const getPatientInfo = async () => {
 // 进入编辑模式：把 List 字段转成文本填入表单
 const startEdit = () => {
   editForm.value = {
-    // phone 后端返回的是脱敏值（如 139****0001），不能回填编辑框——
-    // 用户若不改动直接保存会把脱敏串写回 DB 损坏真实手机号。
-    // 编辑框留空，placeholder 提示"如需修改请输入新手机号"；不填则提交 null（后端保持原值）。
     phone: '',
     address: patientInfo.value.address || '',
-    allergiesText: Array.isArray(patientInfo.value.allergies) ? patientInfo.value.allergies.join('、') : '',
-    pastMedicalHistoryText: Array.isArray(patientInfo.value.pastMedicalHistory) ? patientInfo.value.pastMedicalHistory.join('、') : ''
+    allergiesText: Array.isArray(patientInfo.value.allergies) ? patientInfo.value.allergies.join('、') : (patientInfo.value.allergies || ''),
+    pastMedicalHistoryText: Array.isArray(patientInfo.value.pastMedicalHistory) ? patientInfo.value.pastMedicalHistory.join('、') : (patientInfo.value.pastMedicalHistory || '')
   }
   editing.value = true
 }
@@ -268,8 +374,26 @@ const submitArchive = async () => {
   })
 }
 
-const goToHealthArchive = () => {
-  router.push('/patient/health-archive')
+const submitChangePassword = async () => {
+  if (!passwordFormRef.value) return
+  await passwordFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    passwordLoading.value = true
+    try {
+      await changePasswordApi({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword
+      })
+      ElMessage.success('密码修改成功')
+      passwordForm.oldPassword = ''
+      passwordForm.newPassword = ''
+      passwordForm.confirmPassword = ''
+    } catch (e) {
+      // 错误提示由拦截器统一处理
+    } finally {
+      passwordLoading.value = false
+    }
+  })
 }
 
 onMounted(() => {
@@ -330,5 +454,80 @@ onMounted(() => {
   margin-top: 20px;
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
+}
+
+/* 健康档案 */
+.health-archive-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+}
+.section-divider {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.divider-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding-right: 12px;
+  background: #fff;
+  position: relative;
+  z-index: 1;
+}
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-light);
+  margin-left: -100px;
+}
+.archive-item {
+  display: flex;
+  margin-bottom: 16px;
+}
+.archive-label {
+  width: 100px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.archive-value {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.archive-value .el-tag + .el-tag {
+  margin-left: 8px;
+}
+.empty-text {
+  color: var(--text-secondary);
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.password-form {
+  max-width: 400px;
 }
 </style>

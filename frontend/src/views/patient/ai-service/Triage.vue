@@ -21,7 +21,7 @@
               show-word-limit
             />
           </el-form-item>
-          <el-form-item label="症状持续时长">
+          <el-form-item label="症状持续时间">
             <el-radio-group v-model="duration">
               <el-radio value="1天以内">1天以内</el-radio>
               <el-radio value="1-3天">1-3天</el-radio>

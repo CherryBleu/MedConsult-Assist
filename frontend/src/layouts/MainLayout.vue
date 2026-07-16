@@ -207,7 +207,8 @@ const allMenuList = {
       title: '系统管理',
       icon: 'Setting',
       children: [
-        { path: '/admin/user', title: '用户管理' },
+        { path: '/admin/user', title: '医院管理员管理' },
+        { path: '/admin/pharmacy-admin', title: '药房管理员管理' },
         { path: '/admin/patient', title: '患者管理' },
         { path: '/admin/doctor', title: '医生管理' },
         { path: '/admin/department', title: '科室管理' }
@@ -225,8 +226,7 @@ const allMenuList = {
       children: [
         { path: '/admin/drug', title: '药品管理' },
         { path: '/admin/stock', title: '库存管理' },
-        { path: '/admin/stock-warning', title: '库存预警' },
-        { path: '/admin/stock-flow', title: '库存流水' }
+        { path: '/admin/stock-warning', title: '库存预警' }
       ]
     },
     {
@@ -295,6 +295,10 @@ const handleCommand = (command) => {
     const role = userStore.role
     if (role === ROLE_ENUM.PATIENT.value) {
       router.push('/patient/profile')
+    } else if (role === ROLE_ENUM.DOCTOR.value) {
+      router.push('/doctor/profile')
+    } else if (role === ROLE_ENUM.HOSPITAL_ADMIN.value || role === ROLE_ENUM.PHARMACY_ADMIN.value) {
+      router.push('/admin/profile')
     } else {
       ElMessage.info('个人中心功能开发中')
     }

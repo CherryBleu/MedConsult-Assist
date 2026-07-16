@@ -60,6 +60,12 @@ const doctorRoutes = [
         name: 'ImagingAssist',
         component: () => import('@/views/doctor/ai-tool/ImagingAssist.vue'),
         meta: { title: '影像辅助' }
+      },
+      {
+        path: 'profile',
+        name: 'DoctorProfile',
+        component: () => import('@/views/doctor/profile/UserInfo.vue'),
+        meta: { title: '个人中心' }
       }
     ]
   }

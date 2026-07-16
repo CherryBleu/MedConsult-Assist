@@ -27,13 +27,16 @@ const router = createRouter({
 // 全局前置守卫
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
-  const hasToken = userStore.token
+  let hasToken = userStore.token
 
   const whiteList = ['/login', '/register', '/404']
 
   if (hasToken) {
     if (to.path === '/login') {
-      next('/home')
+      // 访问登录页时清除已有登录状态，确保能看到完整登录流程（方便测试）
+      userStore.logout()
+      hasToken = false
+      next('/login')
     } else {
       if (!userStore.role) {
         try {

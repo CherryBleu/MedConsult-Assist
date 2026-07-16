@@ -16,6 +16,14 @@ export const mockPatientInfo = () => {
       phone: '13800138000',
       address: '湖北省武汉市洪山区XX街道XX小区',
       status: 'ACTIVE',
+      allergies: ['青霉素过敏', '海鲜过敏'],
+      pastMedicalHistory: ['急性支气管炎（2026年）', '腰肌劳损（2026年）'],
+      familyHistory: ['父亲高血压', '母亲糖尿病'],
+      emergencyContact: {
+        name: '张三',
+        relation: '配偶',
+        phone: '13900139000'
+      },
       createdAt: '2026-07-06 10:00:00'
     }
   }
@@ -41,6 +49,14 @@ export const mockHealthArchive = () => {
 
 // 更新患者信息
 export const mockUpdatePatientInfo = (data) => {
+  // 同步更新 mockPatientInfo 的数据
+  const mock = mockPatientInfo()
+  if (data.phone) mock.data.phone = data.phone
+  if (data.address !== undefined) mock.data.address = data.address
+  if (data.allergies) mock.data.allergies = data.allergies
+  if (data.pastMedicalHistory) mock.data.pastMedicalHistory = data.pastMedicalHistory
+  if (data.familyHistory) mock.data.familyHistory = data.familyHistory
+  if (data.emergencyContact !== undefined) mock.data.emergencyContact = data.emergencyContact
   return {
     code: 0,
     message: '更新成功',

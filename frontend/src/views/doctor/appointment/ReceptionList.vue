@@ -36,9 +36,12 @@
 
       <el-table v-loading="loading" :data="tableData" border stripe style="width: 100%; margin-top: 16px">
         <el-table-column type="index" label="序号" width="60" align="center" :index="indexMethod" />
-        <el-table-column label="患者姓名" width="120" align="center">
+        <el-table-column label="患者信息" width="160" align="center">
           <template #default="{ row }">
-            {{ row.patientName || row.patientNo || '-' }}
+            <div class="patient-cell">
+              <div class="patient-name">{{ row.patientName || row.name || row.patientNo || '未知' }}</div>
+              <div class="patient-no" v-if="row.patientNo && row.patientName">{{ row.patientNo }}</div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column prop="gender" label="性别" width="70" align="center">
@@ -98,7 +101,7 @@
               </el-button>
             </template>
             <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
-              <el-button type="primary" size="small" @click="handleEndVisit(row.id)">
+              <el-button type="primary" size="small" @click="handleEndVisit(row.id, row)">
                 完成接诊
               </el-button>
               <el-button size="small" @click="goWriteRecord(row)">
@@ -135,7 +138,6 @@ import {
   endVisitApi,
   markNoShowApi
 } from '@/api/appointment'
-import { getRecordListApi } from '@/api/record'
 
 const router = useRouter()
 const loading = ref(false)
@@ -151,7 +153,7 @@ const pagination = reactive({
 
 const stats = computed(() => {
   const today = dayjs().format('YYYY-MM-DD')
-  const todayList = allData.value.filter(i => i.scheduleDate === today)
+  const todayList = allData.value.filter(i => i.scheduleDate === today && i.appointmentStatus !== 'CANCELLED')
   return {
     pending: todayList.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus)).length,
     inProgress: todayList.filter(i => i.appointmentStatus === 'IN_PROGRESS').length,
@@ -160,11 +162,13 @@ const stats = computed(() => {
 })
 
 const filteredData = computed(() => {
-  if (activeStatus.value === 'ALL') return allData.value
+  // 已取消的预约不展示在医生接诊列表中
+  let list = allData.value.filter(i => i.appointmentStatus !== 'CANCELLED')
+  if (activeStatus.value === 'ALL') return list
   if (activeStatus.value === 'PENDING') {
-    return allData.value.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus))
+    return list.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus))
   }
-  return allData.value.filter(i => i.appointmentStatus === activeStatus.value)
+  return list.filter(i => i.appointmentStatus === activeStatus.value)
 })
 
 watch(filteredData, (list) => {
@@ -204,8 +208,7 @@ const getList = async () => {
   loading.value = true
   try {
     const res = await getReceptionListApi({ pageNum: 1, pageSize: 1000 })
-    // 过滤掉患者已取消的预约——医生接诊列表不应再显示已取消的记录
-    allData.value = (res.data.records || []).filter(i => i.appointmentStatus !== 'CANCELLED')
+    allData.value = res.data.records || []
   } finally {
     loading.value = false
   }
@@ -230,24 +233,21 @@ const handleStartVisit = async (id) => {
   } catch (e) {}
 }
 
-const handleEndVisit = async (id) => {
+const handleEndVisit = async (id, row) => {
   try {
-    await ElMessageBox.confirm('确定完成本次接诊吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'info'
-    })
-    // 校验该预约是否已有病历记录——未写病历不允许完成就诊（医疗文书合规）
-    try {
-      const recordRes = await getRecordListApi({ appointmentId: id, page: 1, pageSize: 1 })
-      const records = recordRes.data?.records || recordRes.data?.items || []
-      if (records.length === 0) {
-        ElMessage.warning('该预约尚未书写病历，请先完成病历书写再结束就诊')
-        return
-      }
-    } catch (e) {
-      // 病历查询失败不阻断完成就诊，但提示医生
-      console.warn('病历查询失败，跳过校验', e)
+    const action = await ElMessageBox({
+      title: '完成接诊确认',
+      message: '完成接诊前请确保已完成病历书写并归档。未写病历将无法在病历列表中查询到本次就诊记录。',
+      confirmButtonText: '已写病历，完成接诊',
+      cancelButtonText: '去写病历',
+      distinguishCancelAndClose: true,
+      type: 'warning',
+      showClose: false
+    }).catch(e => e)
+    if (action === 'cancel') {
+      // 用户点击"去写病历" → 跳转到写病历页
+      goWriteRecord(row)
+      return
     }
     await endVisitApi(id)
     ElMessage.success('接诊已完成')
@@ -336,5 +336,19 @@ onMounted(() => {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+.patient-cell {
+  text-align: center;
+}
+.patient-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.patient-no {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 </style>

@@ -6,13 +6,30 @@
       <div class="select-section">
         <el-form label-width="100px">
           <el-form-item label="选择病历">
-            <el-select v-model="selectedRecord" placeholder="请选择要分析的病历" style="width: 400px" filterable>
+            <el-select
+              v-model="selectedRecord"
+              placeholder="请选择要分析的病历"
+              style="width: 500px"
+              filterable
+            >
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} - ${item.patientName || '未知患者'} - ${item.chiefComplaint || '无主诉'}`"
+                :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
                 :value="item.id"
-              />
+              >
+                <div class="record-option">
+                  <div class="option-main">
+                    <span class="option-no">{{ item.recordNo }}</span>
+                    <span class="option-patient">{{ item.patientName || '未知患者' }}</span>
+                    <el-tag v-if="item.deptName" size="small" type="info">{{ item.deptName }}</el-tag>
+                    <el-tag :type="getStatusType(MEDICAL_RECORD_STATUS, item.status)" size="small">
+                      {{ getStatusLabel(MEDICAL_RECORD_STATUS, item.status) }}
+                    </el-tag>
+                  </div>
+                  <div class="option-complaint">{{ item.chiefComplaint || '无主诉' }}</div>
+                </div>
+              </el-option>
             </el-select>
             <el-button type="primary" :loading="analyzing" @click="doAnalysis" style="margin-left: 12px">
               开始分析
@@ -76,11 +93,6 @@
             </li>
           </ul>
         </div>
-
-        <!-- #10：用药分析与写病历联动 -->
-        <div class="action-bar">
-          <el-button type="primary" @click="goWriteRecord">去写病历</el-button>
-        </div>
       </div>
 
       <el-empty v-else description="选择病历后点击分析，AI将自动检测用药安全风险" />
@@ -93,13 +105,11 @@
 defineOptions({ name: 'MedicationAnalysis' })
 
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck } from '@element-plus/icons-vue'
+import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
 import { medicationAnalysisApi } from '@/api/ai'
-
-const router = useRouter()
 
 const selectedRecord = ref('')
 const analyzing = ref(false)
@@ -141,15 +151,6 @@ const doAnalysis = async () => {
 onMounted(() => {
   getRecordList()
 })
-
-// #10：用药分析与写病历功能联动
-const goWriteRecord = () => {
-  const record = recordList.value.find(r => r.id === selectedRecord.value)
-  router.push({
-    path: '/doctor/record/write',
-    query: { recordId: selectedRecord.value, patientId: record?.patientId, patientName: record?.patientName }
-  })
-}
 </script>
 
 <style scoped>
@@ -259,11 +260,31 @@ const goWriteRecord = () => {
   color: var(--text-regular);
 }
 
-.action-bar {
+/* 病历下拉选项 */
+.record-option {
+  line-height: 1.4;
+}
+.option-main {
   display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-light);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.option-no {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+.option-patient {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.option-complaint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

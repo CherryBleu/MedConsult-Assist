@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <!-- 左侧品牌介绍区 -->
-    <div class="login-left">
+    <div class="login-left" :class="{ 'patient-theme': selectedEntry === 'patient', 'staff-theme': selectedEntry === 'staff' }">
       <div class="brand-box">
         <h1 class="brand-title">智慧医疗系统</h1>
         <p class="brand-desc">智能分诊 · 电子病历 · AI辅助诊疗</p>
@@ -25,67 +25,97 @@
     <!-- 右侧登录表单区 -->
     <div class="login-right">
       <div class="login-card">
-        <h2 class="login-title">账号登录</h2>
-        <el-form
-          ref="loginFormRef"
-          :model="loginForm"
-          :rules="loginRules"
-          class="login-form"
-          @keyup.enter="handleLogin"
-        >
-          <el-form-item prop="account">
-            <el-input
-              v-model="loginForm.account"
-              placeholder="请输入登录账号"
-              size="large"
-              :prefix-icon="User"
-            />
-          </el-form-item>
-
-          <el-form-item prop="password">
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              placeholder="请输入登录密码"
-              size="large"
-              :prefix-icon="Lock"
-              show-password
-            />
-          </el-form-item>
-
-          <el-form-item>
-            <div class="login-options">
-              <el-checkbox v-model="loginForm.remember">记住账号</el-checkbox>
+        <!-- 入口选择界面 -->
+        <template v-if="!selectedEntry">
+          <h2 class="login-title">请选择登录入口</h2>
+          <div class="entry-selector">
+            <div class="entry-card patient-entry" @click="selectEntry('patient')">
+              <el-icon :size="48" class="entry-icon"><User /></el-icon>
+              <div class="entry-name">患者入口</div>
+              <div class="entry-desc">预约挂号 · 在线问诊 · 健康档案</div>
             </div>
-          </el-form-item>
-
-          <el-form-item>
-            <el-button
-              type="primary"
-              size="large"
-              class="login-btn"
-              :loading="loading"
-              @click="handleLogin"
-            >
-              登 录
-            </el-button>
-          </el-form-item>
-        </el-form>
-
-        <div class="login-tip">
-          <span>还没有账号？</span>
-          <router-link to="/register" class="register-link">立即注册</router-link>
-        </div>
-
-        <div class="demo-accounts">
-          <div class="demo-title">演示账号（密码任意6位以上）：</div>
-          <div class="demo-list">
-            <span class="demo-tag" @click="fillAccount('patient')">患者/patient</span>
-            <span class="demo-tag" @click="fillAccount('doctor')">医生/doctor</span>
-            <span class="demo-tag" @click="fillAccount('admin')">管理员/admin</span>
-            <span class="demo-tag" @click="fillAccount('pharmacy')">药房/pharmacy</span>
+            <div class="entry-card staff-entry" @click="selectEntry('staff')">
+              <el-icon :size="48" class="entry-icon"><Suitcase /></el-icon>
+              <div class="entry-name">工作人员入口</div>
+              <div class="entry-desc">医生 · 管理员 · 药房管理员</div>
+            </div>
           </div>
-        </div>
+        </template>
+
+        <!-- 登录表单界面 -->
+        <template v-else>
+          <div class="back-entry" @click="backToEntrySelect">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回选择</span>
+          </div>
+          <h2 class="login-title">
+            {{ selectedEntry === 'patient' ? '患者登录' : '工作人员登录' }}
+          </h2>
+          <el-form
+            ref="loginFormRef"
+            :model="loginForm"
+            :rules="loginRules"
+            class="login-form"
+            @keyup.enter="handleLogin"
+          >
+            <el-form-item prop="account">
+              <el-input
+                v-model="loginForm.account"
+                :placeholder="selectedEntry === 'patient' ? '请输入患者账号' : '请输入工号/账号'"
+                size="large"
+                :prefix-icon="User"
+              />
+            </el-form-item>
+
+            <el-form-item prop="password">
+              <el-input
+                v-model="loginForm.password"
+                type="password"
+                placeholder="请输入登录密码"
+                size="large"
+                :prefix-icon="Lock"
+                show-password
+              />
+            </el-form-item>
+
+            <el-form-item>
+              <div class="login-options">
+                <el-checkbox v-model="loginForm.remember">记住账号</el-checkbox>
+              </div>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button
+                :type="selectedEntry === 'patient' ? 'primary' : 'warning'"
+                size="large"
+                class="login-btn"
+                :loading="loading"
+                @click="handleLogin"
+              >
+                登 录
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <div class="login-tip" v-if="selectedEntry === 'patient'">
+            <span>还没有账号？</span>
+            <router-link to="/register" class="register-link">立即注册</router-link>
+          </div>
+
+          <div class="demo-accounts" v-if="isMockMode">
+            <div class="demo-title">演示账号（密码任意6位以上）：</div>
+            <div class="demo-list">
+              <template v-if="selectedEntry === 'patient'">
+                <span class="demo-tag" @click="fillAccount('patient')">患者/patient</span>
+              </template>
+              <template v-else>
+                <span class="demo-tag" @click="fillAccount('doctor')">医生/doctor</span>
+                <span class="demo-tag" @click="fillAccount('admin')">管理员/admin</span>
+                <span class="demo-tag" @click="fillAccount('pharmacy')">药房/pharmacy</span>
+              </template>
+            </div>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -95,21 +125,33 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Document, Cpu } from '@element-plus/icons-vue'
+import { User, Lock, Document, Cpu, Suitcase, ArrowLeft } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
+const selectedEntry = ref(null)
 const loginFormRef = ref(null)
 const loading = ref(false)
+const isMockMode = import.meta.env.VITE_USE_MOCK === 'true'
 
 const loginForm = reactive({
   account: '',
   password: '',
   remember: false
 })
+
+const selectEntry = (entry) => {
+  selectedEntry.value = entry
+}
+
+const backToEntrySelect = () => {
+  selectedEntry.value = null
+  loginForm.account = ''
+  loginForm.password = ''
+}
 
 const loginRules = {
   account: [
@@ -186,6 +228,15 @@ const handleLogin = async () => {
   align-items: center;
   justify-content: center;
   color: #fff;
+  transition: background 0.3s ease;
+}
+
+.login-left.patient-theme {
+  background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+}
+
+.login-left.staff-theme {
+  background: linear-gradient(135deg, #fa8c16 0%, #d46b08 100%);
 }
 
 .brand-box {
@@ -295,5 +346,81 @@ const handleLogin = async () => {
 }
 .demo-tag:hover {
   background: rgba(22, 119, 255, 0.1);
+}
+
+/* 入口选择界面 */
+.entry-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.entry-card {
+  padding: 24px;
+  border: 2px solid var(--border-light);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: center;
+  background: #fff;
+}
+
+.entry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.patient-entry:hover {
+  border-color: var(--primary-color);
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.patient-entry:hover .entry-icon {
+  color: var(--primary-color);
+}
+
+.staff-entry:hover {
+  border-color: #fa8c16;
+  background: rgba(250, 140, 22, 0.04);
+}
+
+.staff-entry:hover .entry-icon {
+  color: #fa8c16;
+}
+
+.entry-icon {
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  transition: color 0.25s ease;
+}
+
+.entry-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.entry-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 返回选择 */
+.back-entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-bottom: 8px;
+  width: fit-content;
+  transition: color 0.2s;
+}
+
+.back-entry:hover {
+  color: var(--primary-color);
 }
 </style>

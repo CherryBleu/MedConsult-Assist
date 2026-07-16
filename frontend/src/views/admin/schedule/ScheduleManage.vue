@@ -71,10 +71,10 @@
             <el-tag v-else type="danger" size="small">已停诊</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <!-- 编辑/删除已移除：后端仅 PATCH /schedules/{id}/status，docs §2.4 无 PUT/DELETE，
-                 排班字段编辑静默不生效、删除为假成功占位。如需排班失效请用「停诊」。 -->
+            <!-- #17：后端 PUT /schedules/{id} 全量更新已实现，编辑排班字段生效 -->
+            <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
             <el-button
               v-if="row.status !== 'STOPPED'"
               size="small"
@@ -105,7 +105,7 @@
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新增排班" width="560px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="560px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
           <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" @change="handleDoctorChange">
@@ -219,7 +219,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getScheduleManageListApi, createScheduleApi, toggleScheduleStatusApi } from '@/api/appointment'
+import { getScheduleManageListApi, createScheduleApi, updateScheduleApi, toggleScheduleStatusApi } from '@/api/appointment'
 import { getDepartmentListApi } from '@/api/department'
 import { getDoctorListApi } from '@/api/doctor'
 import dayjs from 'dayjs'
@@ -227,6 +227,9 @@ import dayjs from 'dayjs'
 const loading = ref(false)
 const dialogVisible = ref(false)
 const submitting = ref(false)
+// 编辑模式标识（#17：后端 PUT /schedules/{id} 全量更新接口落地后，排班字段编辑生效）
+const isEdit = ref(false)
+const currentId = ref(null)
 const tableData = ref([])
 const total = ref(0)
 const deptList = ref([])
@@ -325,6 +328,8 @@ const handleReset = () => {
 }
 
 const openAddDialog = () => {
+  isEdit.value = false
+  currentId.value = null
   Object.assign(form, {
     doctorId: '',
     scheduleDate: '',
@@ -337,13 +342,34 @@ const openAddDialog = () => {
   dialogVisible.value = true
 }
 
+// #17：编辑排班，回填列表行字段（需后端 GET /schedules ListItem 返回 doctorId/departmentId 等字段）
+const handleEdit = (row) => {
+  isEdit.value = true
+  currentId.value = row.id
+  Object.assign(form, {
+    doctorId: row.doctorId,
+    scheduleDate: row.scheduleDate,
+    period: row.period,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    totalQuota: row.totalQuota,
+    registrationFee: row.registrationFee
+  })
+  dialogVisible.value = true
+}
+
 const submitForm = async () => {
   if (!formRef.value) return
   await formRef.value.validate()
   submitting.value = true
   try {
-    await createScheduleApi(form)
-    ElMessage.success('新增成功')
+    if (isEdit.value) {
+      await updateScheduleApi({ id: currentId.value, ...form })
+      ElMessage.success('更新成功')
+    } else {
+      await createScheduleApi(form)
+      ElMessage.success('新增成功')
+    }
     dialogVisible.value = false
     getList()
   } finally {

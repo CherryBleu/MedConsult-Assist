@@ -19,22 +19,12 @@
         <el-form-item label="挂号费用">
           <span class="fee-text">¥{{ formData.fee }}</span>
         </el-form-item>
-        <el-form-item label="就诊原因">
-          <el-input
-            v-model="visitReason"
-            type="textarea"
-            :rows="3"
-            placeholder="请简要描述您的症状或就诊原因"
-            maxlength="200"
-            show-word-limit
-          />
-        </el-form-item>
       </el-form>
 
       <div class="confirm-footer">
         <el-button @click="$router.back()">返回修改</el-button>
         <el-button type="primary" :loading="submitting" @click="submitAppointment">
-          提交预约
+          确认预约
         </el-button>
       </div>
     </div>
@@ -53,7 +43,6 @@ const router = useRouter()
 const userStore = useUserStore()
 
 const submitting = ref(false)
-const visitReason = ref('')
 
 const formData = reactive({
   scheduleId: '',
@@ -83,10 +72,10 @@ const submitAppointment = async () => {
       patientId: String(patientId),
       scheduleId: formData.scheduleId,
       doctorId: formData.doctorId,
-      visitReason: visitReason.value || undefined,
+      visitReason: '',
       source: 'MOBILE_APP'
     })
-    ElMessage.success('预约成功，请按时就诊')
+    ElMessage.success('预约成功，请前往"我的预约"完成支付')
     router.replace('/patient/appointment')
   } finally {
     submitting.value = false
