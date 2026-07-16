@@ -32,20 +32,20 @@ export const addUserApi = (data) => {
   })
 }
 
-// 更新用户（后端暂无用户更新接口，占位）
+// 更新用户（后端暂无用户更新接口；明确拒绝，避免「改了不生效」误导。后端接口待补）
 export const updateUserApi = (id, data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockUpdateUser(id, data))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return Promise.reject(new Error('用户更新功能暂未提供（后端接口待补）'))
 }
 
-// 删除用户（后端暂无用户删除接口，占位）
+// 删除用户（后端暂无用户删除接口；明确拒绝，避免「删了又回来」误导。后端接口待补）
 export const deleteUserApi = (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDeleteUser(id))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return Promise.reject(new Error('用户删除功能暂未提供（后端接口待补）'))
 }
 
 // ===== 科室管理 =====
@@ -127,28 +127,28 @@ export const getDoctorListApi = async (params) => {
   return res
 }
 
-// 新增医生（后端暂无医生创建接口，占位）
+// 新增医生（后端暂无医生创建接口；明确拒绝，避免「新增不生效」误导。后端接口待补）
 export const addDoctorApi = (data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockAddDoctor(data))
   }
-  return Promise.resolve({ code: 0, 'message': 'success', data: null })
+  return Promise.reject(new Error('医生新增功能暂未提供（后端接口待补）'))
 }
 
-// 更新医生（后端暂无医生更新接口，占位）
+// 更新医生（后端暂无医生更新接口；明确拒绝，避免「改了不生效」误导。后端接口待补）
 export const updateDoctorApi = (id, data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockUpdateDoctor(id, data))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return Promise.reject(new Error('医生更新功能暂未提供（后端接口待补）'))
 }
 
-// 删除医生（后端暂无医生删除接口，占位）
+// 删除医生（后端暂无医生删除接口；明确拒绝，避免「删了又回来」误导。后端接口待补）
 export const deleteDoctorApi = (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDeleteDoctor(id))
   }
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return Promise.reject(new Error('医生删除功能暂未提供（后端接口待补）'))
 }
 
 // ===== 修改密码 =====

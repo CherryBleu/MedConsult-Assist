@@ -191,21 +191,30 @@ const submitForm = async () => {
     }
     dialogVisible.value = false
     getDoctorList()
+  } catch (e) {
+    ElMessage.error(e?.message || '操作失败')
   } finally {
     submitting.value = false
   }
 }
 
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除医生「${row.name}」吗？`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除医生「${row.name}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
     await deleteDoctorApi(row.id)
     ElMessage.success('删除成功')
     getDoctorList()
-  }).catch(() => {})
+  } catch (e) {
+    ElMessage.error(e?.message || '删除失败')
+  }
 }
 
 onMounted(() => {

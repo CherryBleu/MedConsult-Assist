@@ -134,16 +134,23 @@ const submitForm = async () => {
   }
 }
 
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除药房管理员「${row.name}」吗？`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除药房管理员「${row.name}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return // 用户取消
+  }
+  try {
     await deleteUserApi(row.id)
     ElMessage.success('删除成功')
     getUserList()
-  }).catch(() => {})
+  } catch (e) {
+    ElMessage.error(e?.message || '删除失败')
+  }
 }
 
 getUserList()
