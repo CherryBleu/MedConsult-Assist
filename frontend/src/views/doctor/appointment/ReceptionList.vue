@@ -5,26 +5,20 @@
         <span class="page-title">接诊管理</span>
       </template>
 
-      <el-row :gutter="16" class="stat-row">
-        <el-col :span="8">
-          <div class="stat-card stat-pending">
-            <div class="stat-num">{{ stats.pending }}</div>
-            <div class="stat-label">今日待诊</div>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="stat-card stat-in-progress">
-            <div class="stat-num">{{ stats.inProgress }}</div>
-            <div class="stat-label">就诊中</div>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="stat-card stat-completed">
-            <div class="stat-num">{{ stats.completed }}</div>
-            <div class="stat-label">已完成</div>
-          </div>
-        </el-col>
-      </el-row>
+      <div class="stat-grid">
+        <div class="stat-card stat-pending">
+          <div class="stat-num">{{ stats.pending }}</div>
+          <div class="stat-label">今日待诊</div>
+        </div>
+        <div class="stat-card stat-in-progress">
+          <div class="stat-num">{{ stats.inProgress }}</div>
+          <div class="stat-label">就诊中</div>
+        </div>
+        <div class="stat-card stat-completed">
+          <div class="stat-num">{{ stats.completed }}</div>
+          <div class="stat-label">已完成</div>
+        </div>
+      </div>
 
       <el-radio-group v-model="activeStatus" class="status-filter" @change="handleStatusChange">
         <el-radio-button value="ALL">全部</el-radio-button>
@@ -34,85 +28,156 @@
         <el-radio-button value="NO_SHOW">爽约</el-radio-button>
       </el-radio-group>
 
-      <el-table v-loading="loading" :data="tableData" border stripe style="width: 100%; margin-top: 16px">
-        <el-table-column type="index" label="序号" width="60" align="center" :index="indexMethod" />
-        <el-table-column label="患者信息" width="160" align="center">
-          <template #default="{ row }">
-            <div class="patient-cell">
-              <div class="patient-name">{{ row.patientName || row.name || row.patientNo || '未知' }}</div>
-              <div class="patient-no" v-if="row.patientNo && row.patientName">{{ row.patientNo }}</div>
-            </div>
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="tableData.length === 0"
+        empty-text="暂无接诊记录"
+        @retry="getList"
+      >
+        <ResponsiveTable aria-label="接诊管理列表">
+          <template #table>
+            <el-table :data="tableData" border stripe class="reception-table">
+              <el-table-column type="index" label="序号" width="60" align="center" :index="indexMethod" />
+              <el-table-column label="患者信息" width="160" align="center">
+                <template #default="{ row }">
+                  <div class="patient-cell">
+                    <div class="patient-name">{{ patientDisplayName(row) }}</div>
+                    <div class="patient-no" v-if="row.patientNo && row.patientName">{{ row.patientNo }}</div>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="gender" label="性别" width="70" align="center">
+                <template #default="{ row }">{{ genderLabel(row.gender) }}</template>
+              </el-table-column>
+              <el-table-column label="年龄" width="70" align="center">
+                <template #default="{ row }">{{ row.age ?? '-' }}</template>
+              </el-table-column>
+              <el-table-column label="预约时段" width="180" align="center">
+                <template #default="{ row }">{{ row.scheduleDate }} {{ periodLabel(row.period) }}</template>
+              </el-table-column>
+              <el-table-column prop="queueNo" label="队列号" width="80" align="center" />
+              <el-table-column prop="fee" label="挂号费" width="90" align="center">
+                <template #default="{ row }">¥{{ row.fee }}</template>
+              </el-table-column>
+              <el-table-column label="支付状态" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="getPaymentTagType(row.paymentStatus)" size="small">
+                    {{ getPaymentLabel(row.paymentStatus) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="预约状态" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="getStatusType(APPOINTMENT_STATUS, row.appointmentStatus)" size="small">
+                    {{ getStatusLabel(APPOINTMENT_STATUS, row.appointmentStatus) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="visitReason" label="主诉" min-width="150" show-overflow-tooltip />
+              <el-table-column label="操作" width="220" align="center" fixed="right">
+                <template #default="{ row }">
+                  <template v-if="canStartOrMarkNoShow(row)">
+                    <el-button
+                      v-if="!isExpired(row)"
+                      type="success"
+                      size="small"
+                      @click="handleStartVisit(row.id)"
+                    >
+                      开始就诊
+                    </el-button>
+                    <el-button
+                      v-else
+                      type="danger"
+                      size="small"
+                      @click="handleMarkNoShow(row.id)"
+                    >
+                      标记爽约
+                    </el-button>
+                  </template>
+                  <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
+                    <el-button type="primary" size="small" @click="handleEndVisit(row.id, row)">
+                      完成接诊
+                    </el-button>
+                    <el-button size="small" @click="goWriteRecord(row)">
+                      写病历
+                    </el-button>
+                  </template>
+                </template>
+              </el-table-column>
+            </el-table>
           </template>
-        </el-table-column>
-        <el-table-column prop="gender" label="性别" width="70" align="center">
-          <template #default="{ row }">
-            {{ row.gender === 'MALE' ? '男' : (row.gender === 'FEMALE' ? '女' : '-') }}
+
+          <template #card>
+            <article
+              v-for="row in tableData"
+              :key="row.id || row.appointmentNo"
+              class="reception-card"
+              data-testid="responsive-reception-card"
+            >
+              <div class="reception-card__header">
+                <div>
+                  <p class="reception-card__name">{{ patientDisplayName(row) }}</p>
+                  <p class="reception-card__meta">{{ row.patientNo || row.appointmentNo || '-' }}</p>
+                </div>
+                <el-tag :type="getStatusType(APPOINTMENT_STATUS, row.appointmentStatus)" size="small">
+                  {{ getStatusLabel(APPOINTMENT_STATUS, row.appointmentStatus) }}
+                </el-tag>
+              </div>
+
+              <dl class="reception-card__fields">
+                <div>
+                  <dt>性别/年龄</dt>
+                  <dd>{{ genderLabel(row.gender) }} · {{ row.age ?? '-' }}岁</dd>
+                </div>
+                <div>
+                  <dt>预约时段</dt>
+                  <dd>{{ row.scheduleDate }} {{ periodLabel(row.period) }}</dd>
+                </div>
+                <div>
+                  <dt>队列/费用</dt>
+                  <dd>{{ row.queueNo || '-' }}号 · ¥{{ row.fee }}</dd>
+                </div>
+                <div>
+                  <dt>支付状态</dt>
+                  <dd>{{ getPaymentLabel(row.paymentStatus) }}</dd>
+                </div>
+              </dl>
+
+              <p v-if="row.visitReason" class="reception-card__reason">主诉：{{ row.visitReason }}</p>
+
+              <div class="reception-card__actions">
+                <template v-if="canStartOrMarkNoShow(row)">
+                  <el-button
+                    v-if="!isExpired(row)"
+                    type="success"
+                    plain
+                    @click="handleStartVisit(row.id)"
+                  >
+                    开始就诊
+                  </el-button>
+                  <el-button
+                    v-else
+                    type="danger"
+                    plain
+                    @click="handleMarkNoShow(row.id)"
+                  >
+                    标记爽约
+                  </el-button>
+                </template>
+                <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
+                  <el-button type="primary" plain @click="handleEndVisit(row.id, row)">完成接诊</el-button>
+                  <el-button plain @click="goWriteRecord(row)">写病历</el-button>
+                </template>
+                <span v-else class="reception-card__no-action">暂无可执行操作</span>
+              </div>
+            </article>
           </template>
-        </el-table-column>
-        <el-table-column label="年龄" width="70" align="center">
-          <template #default="{ row }">
-            {{ row.age ?? '-' }}
-          </template>
-        </el-table-column>
-        <el-table-column label="预约时段" width="180" align="center">
-          <template #default="{ row }">
-            {{ row.scheduleDate }} {{ row.period === 'MORNING' ? '上午' : '下午' }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="queueNo" label="队列号" width="80" align="center" />
-        <el-table-column prop="fee" label="挂号费" width="90" align="center">
-          <template #default="{ row }">
-            ¥{{ row.fee }}
-          </template>
-        </el-table-column>
-        <el-table-column label="支付状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="getPaymentTagType(row.paymentStatus)" size="small">
-              {{ getPaymentLabel(row.paymentStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="预约状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(APPOINTMENT_STATUS, row.appointmentStatus)" size="small">
-              {{ getStatusLabel(APPOINTMENT_STATUS, row.appointmentStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="visitReason" label="主诉" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" width="220" align="center" fixed="right">
-          <template #default="{ row }">
-            <template v-if="['PAID', 'CHECKED_IN'].includes(row.appointmentStatus)">
-              <el-button
-                v-if="!isExpired(row)"
-                type="success"
-                size="small"
-                @click="handleStartVisit(row.id)"
-              >
-                开始就诊
-              </el-button>
-              <el-button
-                v-else
-                type="danger"
-                size="small"
-                @click="handleMarkNoShow(row.id)"
-              >
-                标记爽约
-              </el-button>
-            </template>
-            <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
-              <el-button type="primary" size="small" @click="handleEndVisit(row.id, row)">
-                完成接诊
-              </el-button>
-              <el-button size="small" @click="goWriteRecord(row)">
-                写病历
-              </el-button>
-            </template>
-          </template>
-        </el-table-column>
-      </el-table>
+        </ResponsiveTable>
+      </PageState>
 
       <el-pagination
+        v-if="pagination.total > 0 && !loading && !errorMessage"
         v-model:current-page="pagination.pageNum"
         v-model:page-size="pagination.pageSize"
         :page-sizes="[10, 20, 50]"
@@ -132,6 +197,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { APPOINTMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 import {
   getReceptionListApi,
   startVisitApi,
@@ -141,6 +208,7 @@ import {
 
 const router = useRouter()
 const loading = ref(false)
+const errorMessage = ref('')
 const allData = ref([])
 
 const activeStatus = ref('ALL')
@@ -195,8 +263,19 @@ const getPaymentTagType = (status) => {
   return map[status] || 'info'
 }
 
+const genderLabel = (gender) => gender === 'MALE' ? '男' : (gender === 'FEMALE' ? '女' : '-')
+
+const periodLabel = (period) => {
+  const map = { MORNING: '上午', AFTERNOON: '下午', EVENING: '晚上' }
+  return map[period] || period || '-'
+}
+
+const patientDisplayName = (row) => row.patientName || row.name || row.patientNo || '未知'
+
+const canStartOrMarkNoShow = (row) => ['PAID', 'CHECKED_IN'].includes(row.appointmentStatus)
+
 const isExpired = (row) => {
-  if (!['PAID', 'CHECKED_IN'].includes(row.appointmentStatus)) return false
+  if (!canStartOrMarkNoShow(row)) return false
   return dayjs(row.scheduleDate).isBefore(dayjs(), 'day')
 }
 
@@ -206,9 +285,12 @@ const indexMethod = (index) => {
 
 const getList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const res = await getReceptionListApi({ pageNum: 1, pageSize: 1000 })
     allData.value = res.data.records || []
+  } catch (error) {
+    errorMessage.value = error?.message || '接诊列表加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -230,7 +312,9 @@ const handleStartVisit = async (id) => {
     await startVisitApi(id)
     ElMessage.success('已开始就诊')
     getList()
-  } catch (e) {}
+  } catch (e) {
+    ElMessage.error(e?.message || '开始就诊失败')
+  }
 }
 
 const handleEndVisit = async (id, row) => {
@@ -252,7 +336,11 @@ const handleEndVisit = async (id, row) => {
     await endVisitApi(id)
     ElMessage.success('接诊已完成')
     getList()
-  } catch (e) {}
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e?.message || '完成接诊失败')
+    }
+  }
 }
 
 const handleMarkNoShow = async (id) => {
@@ -265,7 +353,11 @@ const handleMarkNoShow = async (id) => {
     await markNoShowApi(id)
     ElMessage.success('已标记为爽约')
     getList()
-  } catch (e) {}
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error(e?.message || '标记爽约失败')
+    }
+  }
 }
 
 const goWriteRecord = (row) => {
@@ -293,7 +385,10 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
-.stat-row {
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -330,12 +425,28 @@ onMounted(() => {
 
 .status-filter {
   margin-bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+:deep(.status-filter .el-radio-button__inner) {
+  min-height: var(--touch-target);
+  border-left: 1px solid var(--el-border-color);
+  border-radius: var(--radius-base);
+  display: inline-flex;
+  align-items: center;
 }
 
 .pagination {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+.reception-table {
+  width: 100%;
+  margin-top: 16px;
 }
 
 .patient-cell {
@@ -350,5 +461,131 @@ onMounted(() => {
 .patient-no {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.reception-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(59, 130, 246, .18);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(145deg, rgba(239, 246, 255, .88), rgba(255, 255, 255, .96));
+  box-shadow: 0 14px 32px rgba(30, 64, 175, .08);
+}
+
+.reception-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reception-card__name,
+.reception-card__meta,
+.reception-card__reason {
+  margin: 0;
+}
+
+.reception-card__name {
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.reception-card__meta {
+  margin-top: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.reception-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.reception-card__fields div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(59, 130, 246, .12);
+}
+
+.reception-card__fields dt,
+.reception-card__fields dd {
+  margin: 0;
+}
+
+.reception-card__fields dt {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.reception-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.reception-card__reason {
+  padding: 10px 12px;
+  border-radius: var(--radius-base);
+  background: rgba(255, 255, 255, .72);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.reception-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.reception-card__actions .el-button {
+  min-height: var(--touch-target);
+  margin-left: 0;
+}
+
+.reception-card__no-action {
+  grid-column: 1 / -1;
+  min-height: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .status-filter {
+    width: 100%;
+  }
+
+  :deep(.status-filter .el-radio-button) {
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  :deep(.status-filter .el-radio-button__inner) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .pagination {
+    justify-content: center;
+    overflow-x: auto;
+  }
 }
 </style>

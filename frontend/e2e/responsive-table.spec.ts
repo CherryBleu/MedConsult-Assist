@@ -35,6 +35,17 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
+  test('doctor reception list switches to cards on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'doctor')
+
+    await page.goto('/doctor/reception')
+
+    await expect(page.locator('[data-testid="responsive-reception-card"]').first()).toBeVisible()
+    await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await expectNoHorizontalOverflow(page)
+  })
+
   test('audit log switches to cards on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.route('**/api/v1/audit-logs**', async (route) => {

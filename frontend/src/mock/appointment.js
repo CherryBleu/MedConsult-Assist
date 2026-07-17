@@ -207,6 +207,9 @@ export const mockMarkNoShow = (id) => {
 }
 
 export const mockReceptionList = (params = {}) => {
+  if (consumeFailOnce('mock_reception_list_fail_once')) {
+    return Promise.reject(new Error('接诊列表加载失败，请重试'))
+  }
   let list = mockAppointments.filter(a => a.doctorId === 1)
   if (params.status && params.status !== 'ALL') list = list.filter(a => a.appointmentStatus === params.status)
   return { code: 0, message: 'success', data: { records: list, total: list.length, pageNum: params.pageNum || 1, pageSize: params.pageSize || 10 } }
