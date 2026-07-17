@@ -106,11 +106,13 @@ public class AppointmentDTO {
     @Data
     @Schema(description = "更新支付状态请求")
     public static class PaymentUpdateRequest {
-        /** UNPAID / PAID / REFUNDING / REFUNDED */
+        /** 普通支付接口仅允许 UNPAID / PAID；退款状态放行到 service 层返回明确业务错误。 */
         @NotBlank(message = "支付状态不能为空")
         @Pattern(regexp = "^(UNPAID|PAID|REFUNDING|REFUNDED)$",
-                message = "支付状态须为 UNPAID / PAID / REFUNDING / REFUNDED")
-        @Schema(description = "支付状态：UNPAID / PAID / REFUNDING / REFUNDED") private String paymentStatus;
+                message = "支付状态须为 UNPAID / PAID；退款状态请走退款流程")
+        @Schema(description = "支付状态：普通支付接口仅允许 UNPAID / PAID；REFUNDING / REFUNDED 由退款流程写入",
+                allowableValues = {"UNPAID", "PAID"})
+        private String paymentStatus;
         @Schema(description = "支付流水号") private String paymentNo;
         @Schema(description = "支付金额") private BigDecimal paidAmount;
     }

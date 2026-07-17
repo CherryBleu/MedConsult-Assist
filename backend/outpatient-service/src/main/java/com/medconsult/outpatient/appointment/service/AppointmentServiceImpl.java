@@ -82,7 +82,7 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     /** 允许的支付状态白名单（§5） */
     private static final Set<String> ALLOWED_PAYMENT_STATUS =
-            Set.of("UNPAID", "PAID", "REFUNDING", "REFUNDED");
+            Set.of("UNPAID", "PAID");
 
     /** 允许的预约状态白名单（§5） */
     private static final Set<String> ALLOWED_APPOINTMENT_STATUS =
@@ -246,6 +246,9 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能支付本人预约
         enforceAppointmentOwnership(a);
+        if ("REFUNDING".equals(req.getPaymentStatus()) || "REFUNDED".equals(req.getPaymentStatus())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "退款状态只能通过退款流程更新");
+        }
         if (!ALLOWED_PAYMENT_STATUS.contains(req.getPaymentStatus())) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法支付状态: " + req.getPaymentStatus());
         }

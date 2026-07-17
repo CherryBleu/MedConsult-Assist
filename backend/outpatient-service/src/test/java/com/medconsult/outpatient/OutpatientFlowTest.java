@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import javax.sql.DataSource;
 
@@ -74,11 +75,11 @@ class OutpatientFlowTest {
     void seedBaseData() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         // 预置科室
-        departmentId = 1001L;
+        departmentId = 91001L;
         jdbc.update("INSERT INTO department(id, department_no, name, description, location, enabled, deleted) " +
                 "VALUES (?,?,?,?,?,1,0)", departmentId, DEPT_NO, "测试科", "测试科室", "测试楼 1 层");
         // 预置医生（department_id 关联上面科室主键）
-        doctorId = 2001L;
+        doctorId = 92001L;
         jdbc.update("INSERT INTO doctor(id, doctor_no, name, department_id, title, specialties, introduction, enabled, deleted) " +
                 "VALUES (?,?,?,?,?,?,?,?,0)", doctorId, DOCTOR_NO, "测试医生", departmentId,
                 "主任医师", "[\"高血压\",\"心律失常\"]", "测试简介", 1);
@@ -115,7 +116,7 @@ class OutpatientFlowTest {
                 {"doctorId":"%s","departmentId":"%s","scheduleDate":"2026-07-15",
                  "period":"MORNING","startTime":"08:00","endTime":"12:00",
                  "totalQuota":30,"registrationFee":50.00}""".formatted(DOCTOR_NO, DEPT_NO);
-        MvcResult createResult = mvc.perform(post("/api/v1/schedules")
+        MvcResult createResult = mvc.perform(withAdmin(post("/api/v1/schedules"))
                         .contentType("application/json").content(createBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -127,7 +128,7 @@ class OutpatientFlowTest {
                 .at("/data/scheduleId").asText();
 
         // 同医生同日期同时段重复排班 → 409
-        mvc.perform(post("/api/v1/schedules").contentType("application/json").content(createBody))
+        mvc.perform(withAdmin(post("/api/v1/schedules")).contentType("application/json").content(createBody))
                 .andExpect(jsonPath("$.code").value(409001))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已存在排班")));
 
@@ -159,7 +160,7 @@ class OutpatientFlowTest {
         // 创建预约（patientId 用纯数字，service 层解析为 Long 主键）
         String createBody = """
                 {"patientId":"9001","scheduleId":"%s","visitReason":"胸闷心悸","source":"MOBILE_APP"}""".formatted(scheduleNo);
-        MvcResult createResult = mvc.perform(post("/api/v1/appointments")
+        MvcResult createResult = mvc.perform(withPatient(post("/api/v1/appointments"), "9001")
                         .contentType("application/json").content(createBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -178,12 +179,12 @@ class OutpatientFlowTest {
                 .andExpect(jsonPath("$.data.items[0].remainingQuota").value(4));
 
         // 重复预约（同 patient + 同 schedule 未取消）→ 409
-        mvc.perform(post("/api/v1/appointments").contentType("application/json").content(createBody))
+        mvc.perform(withPatient(post("/api/v1/appointments"), "9001").contentType("application/json").content(createBody))
                 .andExpect(jsonPath("$.code").value(409001))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已有未取消预约")));
 
         // 查询预约详情
-        mvc.perform(get("/api/v1/appointments/" + appointmentNo))
+        mvc.perform(withPatient(get("/api/v1/appointments/" + appointmentNo), "9001"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.appointmentId").value(appointmentNo))
                 .andExpect(jsonPath("$.data.doctorName").value("测试医生"))
@@ -195,7 +196,7 @@ class OutpatientFlowTest {
                 .andExpect(jsonPath("$.data.appointmentStatus").value("BOOKED"));
 
         // 分页查询预约
-        mvc.perform(get("/api/v1/appointments").param("patientId", "9001").param("status", "BOOKED"))
+        mvc.perform(withPatient(get("/api/v1/appointments"), "9001").param("patientId", "9001").param("status", "BOOKED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].appointmentId").value(appointmentNo))
@@ -215,7 +216,7 @@ class OutpatientFlowTest {
         // 取消预约
         String cancelBody = """
                 {"cancelReason":"时间冲突","operatorType":"PATIENT"}""";
-        mvc.perform(post("/api/v1/appointments/" + appointmentNo + "/cancel")
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/cancel"), "9002")
                         .contentType("application/json").content(cancelBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -235,29 +236,29 @@ class OutpatientFlowTest {
         String appointmentNo = createAppointment(scheduleNo, "9003");
 
         // BOOKED → CHECKED_IN
-        mvc.perform(patch("/api/v1/appointments/" + appointmentNo + "/status")
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
                         .contentType("application/json").content("{\"appointmentStatus\":\"CHECKED_IN\",\"remark\":\"签到\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.appointmentStatus").value("CHECKED_IN"));
 
         // CHECKED_IN → IN_PROGRESS
-        mvc.perform(patch("/api/v1/appointments/" + appointmentNo + "/status")
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
                         .contentType("application/json").content("{\"appointmentStatus\":\"IN_PROGRESS\"}"))
                 .andExpect(jsonPath("$.data.appointmentStatus").value("IN_PROGRESS"));
 
         // IN_PROGRESS → COMPLETED
-        mvc.perform(patch("/api/v1/appointments/" + appointmentNo + "/status")
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
                         .contentType("application/json").content("{\"appointmentStatus\":\"COMPLETED\"}"))
                 .andExpect(jsonPath("$.data.appointmentStatus").value("COMPLETED"));
 
         // 已 COMPLETED 不可取消 → 业务冲突 409
-        mvc.perform(post("/api/v1/appointments/" + appointmentNo + "/cancel")
+        mvc.perform(withDoctor(post("/api/v1/appointments/" + appointmentNo + "/cancel"))
                         .contentType("application/json").content("{\"cancelReason\":\"x\"}"))
                 .andExpect(jsonPath("$.code").value(409001))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("不可取消")));
 
         // 非法状态流转 COMPLETED → CHECKED_IN → 409
-        mvc.perform(patch("/api/v1/appointments/" + appointmentNo + "/status")
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
                         .contentType("application/json").content("{\"appointmentStatus\":\"CHECKED_IN\"}"))
                 .andExpect(jsonPath("$.code").value(409001))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("非法状态流转")));
@@ -271,14 +272,14 @@ class OutpatientFlowTest {
         // 更新支付状态 UNPAID → PAID
         String payBody = """
                 {"paymentStatus":"PAID","paymentNo":"PAY001","paidAmount":50.00}""";
-        mvc.perform(patch("/api/v1/appointments/" + appointmentNo + "/payment")
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/payment"), "9004")
                         .contentType("application/json").content(payBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.appointmentId").value(appointmentNo))
                 .andExpect(jsonPath("$.data.paymentStatus").value("PAID"));
 
         // 排班停诊 → notifiedAppointments=1（有 1 个未完成预约）
-        mvc.perform(patch("/api/v1/schedules/" + scheduleNo + "/status")
+        mvc.perform(withAdmin(patch("/api/v1/schedules/" + scheduleNo + "/status"))
                         .contentType("application/json").content("{\"status\":\"SUSPENDED\",\"reason\":\"医生停诊\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.scheduleId").value(scheduleNo))
@@ -294,7 +295,7 @@ class OutpatientFlowTest {
                 {"doctorId":"%s","departmentId":"%s","scheduleDate":"2026-07-15",
                  "period":"MORNING","startTime":"08:00","endTime":"12:00",
                  "totalQuota":%d,"registrationFee":50.00}""".formatted(DOCTOR_NO, DEPT_NO, quota);
-        MvcResult r = mvc.perform(post("/api/v1/schedules").contentType("application/json").content(createBody))
+        MvcResult r = mvc.perform(withAdmin(post("/api/v1/schedules")).contentType("application/json").content(createBody))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/scheduleId").asText();
@@ -304,9 +305,29 @@ class OutpatientFlowTest {
     private String createAppointment(String scheduleNo, String patientId) throws Exception {
         String createBody = """
                 {"patientId":"%s","scheduleId":"%s","visitReason":"就诊","source":"MOBILE_APP"}""".formatted(patientId, scheduleNo);
-        MvcResult r = mvc.perform(post("/api/v1/appointments").contentType("application/json").content(createBody))
+        MvcResult r = mvc.perform(withPatient(post("/api/v1/appointments"), patientId).contentType("application/json").content(createBody))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/appointmentId").asText();
+    }
+
+    private MockHttpServletRequestBuilder withAdmin(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "1")
+                .header("X-User-Primary-Role", "HOSPITAL_ADMIN")
+                .header("X-User-Roles", "HOSPITAL_ADMIN");
+    }
+
+    private MockHttpServletRequestBuilder withPatient(MockHttpServletRequestBuilder builder, String patientId) {
+        return builder.header("X-User-Id", "6" + patientId)
+                .header("X-User-Primary-Role", "PATIENT")
+                .header("X-User-Roles", "PATIENT")
+                .header("X-User-Patient-Id", patientId);
+    }
+
+    private MockHttpServletRequestBuilder withDoctor(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "5001")
+                .header("X-User-Primary-Role", "DOCTOR")
+                .header("X-User-Roles", "DOCTOR")
+                .header("X-User-Doctor-Id", String.valueOf(doctorId));
     }
 }

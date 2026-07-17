@@ -98,6 +98,33 @@ CREATE TABLE IF NOT EXISTS appointment (
     KEY idx_appointment_patient_schedule (patient_no, schedule_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预约挂号表';
 
+-- refund_order 退款单表（挂号费退款，任务 11：退款状态机与幂等）
+CREATE TABLE IF NOT EXISTS refund_order (
+    id              BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    refund_no       VARCHAR(32)   NOT NULL                 COMMENT '退款单号（业务可读，如 Rxxxxx）',
+    appointment_id  BIGINT        NOT NULL                 COMMENT '预约 ID',
+    appointment_no  VARCHAR(32)   NOT NULL                 COMMENT '预约编号',
+    patient_id      BIGINT        NOT NULL                 COMMENT '患者 ID',
+    refund_amount   DECIMAL(10,2) NOT NULL                 COMMENT '退款金额',
+    provider        VARCHAR(20)   NOT NULL                 COMMENT '退款渠道提供方：MOCK/WECHAT/ALIPAY',
+    channel         VARCHAR(20)   NOT NULL                 COMMENT '退款方式：ORIGINAL/MANUAL',
+    idempotency_key VARCHAR(128)                           COMMENT '客户端幂等键',
+    reason          VARCHAR(255)                           COMMENT '退款原因',
+    failure_reason  VARCHAR(255)                           COMMENT '失败原因',
+    status          VARCHAR(20)   NOT NULL                 COMMENT '退款状态：PROCESSING/SUCCEEDED/FAILED',
+    requested_at    DATETIME(3)   NOT NULL                 COMMENT '发起时间',
+    processed_at    DATETIME(3)                            COMMENT '处理时间',
+    succeeded_at    DATETIME(3)                            COMMENT '成功时间',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted         TINYINT       NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_refund_no (refund_no),
+    UNIQUE KEY uk_refund_appointment (appointment_id),
+    KEY idx_refund_appointment_no (appointment_no),
+    KEY idx_refund_patient (patient_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='退款单表';
+
 -- ============================================================
 -- 种子数据（冒烟/演示用；固定主键保证跨服务引用一致）
 -- 科室 department_no 严格对齐 ai-service TriageService.departmentIdOf 的硬编码常量，
@@ -124,7 +151,7 @@ INSERT IGNORE INTO doctor (id, doctor_no, name, department_id, title, specialtie
 -- 排班（主键 4001-4003；未来 7 天各一位医生上午出诊）
 -- schedule_no 用固定常量；日期用 CURDATE() + INTERVAL 保证始终未来日期
 INSERT IGNORE INTO doctor_schedule (id, schedule_no, doctor_id, department_id, schedule_date, period, start_time, end_time, total_quota, booked_quota, registration_fee, status)
-SELECT id, schedule_no, doctor_id, department_id, DATE_ADD(CURDATE(), INTERVAL day_offset DAY), period, start_time, end_time, total_quota, booked_quota, registration_fee, status
+SELECT id, schedule_no, doctor_id, department_id, TIMESTAMPADD(DAY, day_offset, CURRENT_DATE), period, start_time, end_time, total_quota, booked_quota, registration_fee, status
 FROM (
     SELECT 4001 AS id, 'S40001' AS schedule_no, 2001 AS doctor_id, 1001 AS department_id, 1 AS day_offset, 'MORNING' AS period, '08:00:00' AS start_time, '12:00:00' AS end_time, 20 AS total_quota, 0 AS booked_quota, 50.00 AS registration_fee, 'AVAILABLE' AS status
     UNION ALL SELECT 4002, 'S40002', 2002, 1002, 2, 'MORNING', '08:00:00', '12:00:00', 20, 0, 40.00, 'AVAILABLE'

@@ -3,7 +3,8 @@ import {
   mockScheduleList, mockCreateAppointment, mockMyAppointmentList, mockCancelAppointment,
   mockAppointmentDetail, mockCheckInAppointment, mockPayAppointment, mockMarkNoShow,
   mockReceptionList, mockStartVisit, mockEndVisit, mockAdminAppointmentList,
-  mockScheduleManageList, mockCreateSchedule, mockUpdateSchedule, mockDeleteSchedule, mockToggleScheduleStatus
+  mockScheduleManageList, mockCreateSchedule, mockUpdateSchedule, mockDeleteSchedule, mockToggleScheduleStatus,
+  mockRefundAppointment
 } from '@/mock/appointment'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
@@ -31,6 +32,8 @@ const mapAppointment = (a) => ({
   queueNo: a.queueNo,
   visitReason: a.visitReason,
   cancelReason: a.cancelReason,
+  refundNo: a.refundNo,
+  refundStatus: a.refundStatus,
   createdAt: a.createdAt
 })
 
@@ -120,6 +123,16 @@ export const payAppointmentApi = (id, payload = {}) => {
       paymentNo: payload.paymentNo,
       paidAmount: payload.paidAmount
     }
+  })
+}
+
+// 申请退款（对齐后端 POST /appointments/{appointmentId}/refund）
+export const refundAppointmentApi = (id, payload = {}) => {
+  if (USE_MOCK) return Promise.resolve(mockRefundAppointment(id, payload))
+  return request({
+    url: `/appointments/${id}/refund`,
+    method: 'post',
+    data: payload
   })
 }
 

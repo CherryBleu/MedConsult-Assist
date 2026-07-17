@@ -26,8 +26,8 @@
               <el-tag :type="getStatusType(APPOINTMENT_STATUS, item.appointmentStatus)" size="small">
                 {{ getStatusLabel(APPOINTMENT_STATUS, item.appointmentStatus) }}
               </el-tag>
-              <el-tag v-if="item.paymentStatus !== 'PAID' && item.appointmentStatus !== 'CANCELLED'" type="warning" size="small">
-                待支付
+              <el-tag v-if="shouldShowPaymentTag(item)" :type="getPaymentTagType(item)" size="small">
+                {{ getPaymentTagLabel(item) }}
               </el-tag>
             </div>
             <span class="fee">挂号费：¥{{ item.fee }}</span>
@@ -69,6 +69,18 @@
                 签到
               </el-button>
               <el-button
+                v-if="canApplyRefund(item)"
+                size="small"
+                type="danger"
+                plain
+                :loading="refundLoadingId === appointmentKey(item)"
+                :disabled="refundLoadingId !== null && refundLoadingId !== appointmentKey(item)"
+                aria-label="申请退款"
+                @click="refundAppointment(item)"
+              >
+                申请退款
+              </el-button>
+              <el-button
                 v-if="['BOOKED', 'CHECKED_IN'].includes(item.appointmentStatus)"
                 size="small"
                 type="danger"
@@ -107,8 +119,8 @@
         <el-descriptions-item label="序号" v-if="currentDetail.queueNo">第{{ currentDetail.queueNo }}号</el-descriptions-item>
         <el-descriptions-item label="挂号费">¥{{ currentDetail.fee }}</el-descriptions-item>
         <el-descriptions-item label="支付状态">
-          <el-tag :type="getStatusType(PAYMENT_STATUS, currentDetail.paymentStatus)" size="small">
-            {{ getStatusLabel(PAYMENT_STATUS, currentDetail.paymentStatus) }}
+          <el-tag :type="getPaymentTagType(currentDetail)" size="small">
+            {{ getPaymentTagLabel(currentDetail) }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="预约状态" :span="2">
@@ -117,6 +129,7 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="主诉" :span="2">{{ currentDetail.visitReason || '无' }}</el-descriptions-item>
+        <el-descriptions-item v-if="currentDetail.refundNo" label="退款单号" :span="2">{{ currentDetail.refundNo }}</el-descriptions-item>
         <el-descriptions-item v-if="currentDetail.cancelReason" label="取消原因" :span="2">{{ currentDetail.cancelReason }}</el-descriptions-item>
         <el-descriptions-item label="预约时间" :span="2">{{ currentDetail.createdAt }}</el-descriptions-item>
       </el-descriptions>
@@ -131,7 +144,7 @@ import { Calendar } from '@element-plus/icons-vue'
 import { APPOINTMENT_STATUS, PAYMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import {
   getAppointmentListApi, cancelAppointmentApi, payAppointmentApi,
-  checkInAppointmentApi, getAppointmentDetailApi
+  checkInAppointmentApi, getAppointmentDetailApi, refundAppointmentApi
 } from '@/api/appointment'
 
 const activeTab = ref('all')
@@ -142,6 +155,7 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 const detailVisible = ref(false)
 const currentDetail = ref(null)
+const refundLoadingId = ref(null)
 
 const fetchList = async () => {
   loading.value = true
@@ -170,10 +184,26 @@ const fetchList = async () => {
 
 const showDetail = async (item) => {
   try {
-    const res = await getAppointmentDetailApi(item.id)
+    const res = await getAppointmentDetailApi(appointmentKey(item))
     currentDetail.value = res.data
     detailVisible.value = true
   } catch (e) {}
+}
+
+const appointmentKey = (item) => item?.appointmentNo || item?.appointmentId || item?.id
+
+const canApplyRefund = (item) => item?.paymentStatus === 'PAID'
+
+const shouldShowPaymentTag = (item) => item?.paymentStatus && item.paymentStatus !== 'PAID'
+
+const getPaymentTagLabel = (item) => {
+  if (item?.refundStatus === 'FAILED') return '退款失败'
+  return getStatusLabel(PAYMENT_STATUS, item?.paymentStatus)
+}
+
+const getPaymentTagType = (item) => {
+  if (item?.refundStatus === 'FAILED') return 'danger'
+  return getStatusType(PAYMENT_STATUS, item?.paymentStatus)
 }
 
 const payAppointment = (item) => {
@@ -201,8 +231,33 @@ const checkIn = (item) => {
   }).catch(() => {})
 }
 
+const refundAppointment = (item) => {
+  ElMessageBox.confirm('退款申请将提交处理，结果以支付渠道实际到账为准。是否继续？', '申请退款', {
+    confirmButtonText: '确认申请',
+    cancelButtonText: '再想想',
+    type: 'warning'
+  }).then(async () => {
+    const key = appointmentKey(item)
+    if (refundLoadingId.value) return
+    refundLoadingId.value = key
+    try {
+      const res = await refundAppointmentApi(key, {
+        reason: '患者主动申请退款',
+        idempotencyKey: `patient-refund-${key}`
+      })
+      item.paymentStatus = res.data?.paymentStatus || 'REFUNDED'
+      item.refundStatus = res.data?.refundStatus || 'SUCCEEDED'
+      item.refundNo = res.data?.refundNo
+      ElMessage.success('退款申请已提交')
+      fetchList()
+    } finally {
+      refundLoadingId.value = null
+    }
+  }).catch(() => {})
+}
+
 const cancelAppointment = (item) => {
-  ElMessageBox.confirm('确定要取消该预约吗？' + (item.paymentStatus === 'PAID' ? '已支付费用将原路退回。' : ''), '提示', {
+  ElMessageBox.confirm('确定要取消该预约吗？' + (item.paymentStatus === 'PAID' ? ' 如需退款，请取消后单独提交退款申请。' : ''), '提示', {
     confirmButtonText: '确定取消',
     cancelButtonText: '再想想',
     type: 'warning'

@@ -11,6 +11,19 @@ let mockAppointments = [
 ]
 
 let nextId = 7
+const REFUND_ORDER_KEY = 'mock_refund_orders'
+
+const readRefundOrders = () => {
+  try {
+    return JSON.parse(localStorage.getItem(REFUND_ORDER_KEY) || '[]')
+  } catch (e) {
+    return []
+  }
+}
+
+const writeRefundOrders = (orders) => {
+  localStorage.setItem(REFUND_ORDER_KEY, JSON.stringify(orders))
+}
 
 let mockSchedules = []
 const doctorData = [
@@ -103,17 +116,16 @@ export const mockMyAppointmentList = (params = {}) => {
 }
 
 export const mockCancelAppointment = (id) => {
-  const apt = mockAppointments.find(a => a.id === Number(id))
+  const apt = findAppointment(id)
   if (apt) {
     apt.appointmentStatus = 'CANCELLED'
     apt.cancelReason = '用户主动取消'
-    if (apt.paymentStatus === 'PAID') apt.paymentStatus = 'REFUNDED'
   }
   return { code: 0, message: '取消成功', data: { id } }
 }
 
 export const mockAppointmentDetail = (id) => {
-  const apt = mockAppointments.find(a => a.id === Number(id))
+  const apt = findAppointment(id)
   return { code: 0, message: 'success', data: apt || mockAppointments[0] }
 }
 
@@ -128,7 +140,7 @@ export const mockCheckInAppointment = (id) => {
 }
 
 export const mockPayAppointment = (id) => {
-  const apt = mockAppointments.find(a => a.id === Number(id))
+  const apt = findAppointment(id)
   if (apt && apt.paymentStatus === 'UNPAID') {
     apt.paymentStatus = 'PAID'
     apt.payTime = dayjs().format('YYYY-MM-DD HH:mm:ss')
@@ -137,8 +149,47 @@ export const mockPayAppointment = (id) => {
   return { code: 0, message: '支付成功', data: apt }
 }
 
+export const mockRefundAppointment = (id, payload = {}) => {
+  const apt = findAppointment(id)
+  if (!apt) return { code: 404001, message: '预约不存在', data: null }
+
+  const orders = readRefundOrders()
+  const existing = orders.find(order => order.appointmentNo === apt.appointmentNo || order.appointmentId === apt.id)
+  if (existing) {
+    apt.paymentStatus = 'REFUNDED'
+    apt.refundStatus = 'SUCCEEDED'
+    apt.refundNo = existing.refundNo
+    return { code: 0, message: 'success', data: existing }
+  }
+
+  if (apt.paymentStatus !== 'PAID') {
+    return { code: 409001, message: '仅已支付预约可申请退款', data: null }
+  }
+
+  const refundOrder = {
+    refundNo: 'RF' + Date.now(),
+    appointmentId: apt.id,
+    appointmentNo: apt.appointmentNo,
+    refundStatus: 'SUCCEEDED',
+    paymentStatus: 'REFUNDED',
+    provider: 'MOCK',
+    refundAmount: apt.fee,
+    reason: payload.reason || '患者主动申请退款',
+    idempotencyKey: payload.idempotencyKey || `mock-refund-${apt.appointmentNo}`,
+    createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss')
+  }
+  orders.push(refundOrder)
+  writeRefundOrders(orders)
+
+  apt.paymentStatus = 'REFUNDED'
+  apt.refundStatus = 'SUCCEEDED'
+  apt.refundNo = refundOrder.refundNo
+  apt.refundedAt = refundOrder.createdAt
+  return { code: 0, message: '退款申请已提交', data: refundOrder }
+}
+
 export const mockMarkNoShow = (id) => {
-  const apt = mockAppointments.find(a => a.id === Number(id))
+  const apt = findAppointment(id)
   if (apt) {
     apt.appointmentStatus = 'NO_SHOW'
   }
@@ -266,4 +317,12 @@ export const mockToggleScheduleStatus = (id, status) => {
     schedule.status = status
   }
   return { code: 0, message: status === 'STOPPED' ? '已停诊' : '已恢复', data: { id, status } }
+}
+
+const findAppointment = (id) => {
+  return mockAppointments.find(a =>
+    a.id === Number(id) ||
+    a.appointmentNo === id ||
+    String(a.appointmentNo) === String(id)
+  )
 }
