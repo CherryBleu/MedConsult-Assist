@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -148,5 +149,23 @@ class MedicationToolCallTraceTest {
                 .filter(trace -> "queryDrugRiskInfo".equals(trace.get("toolName")))
                 .count();
         assertEquals(3, riskInfoTraceCount);
+    }
+
+    @Test
+    void toolTraceSchemaShouldWhitelistToolNamesAndStatuses() {
+        Map<String, Object> trace = MedicationFunctionService.toolTrace("queryDrugRiskInfo",
+                "drugId=1,drugName=布洛芬", "SUCCESS", "contraindications=0,interactions=0", null);
+
+        assertEquals("medication-tool-trace-v1", trace.get("schemaVersion"));
+        assertEquals("tool_call", trace.get("type"));
+        assertEquals("queryDrugRiskInfo", trace.get("toolName"));
+        assertEquals("queryDrugRiskInfo", trace.get("functionName"));
+        assertEquals("SUCCESS", trace.get("status"));
+        assertThrows(IllegalArgumentException.class, () -> MedicationFunctionService.toolTrace(
+                "deleteMedicationData", "drugId=1", "SUCCESS", "blocked", null));
+        assertThrows(IllegalArgumentException.class, () -> MedicationFunctionService.toolTrace(
+                "queryDrugRiskInfo", "drugId=1", "OK", "blocked", null));
+        assertThrows(IllegalArgumentException.class, () -> MedicationFunctionService.toolTrace(
+                "queryPatientAllergies", "drugId=1", "SUCCESS", "blocked", null));
     }
 }

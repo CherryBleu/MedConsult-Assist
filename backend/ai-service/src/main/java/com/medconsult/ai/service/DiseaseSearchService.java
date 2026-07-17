@@ -18,22 +18,28 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class DiseaseSearchService {
     private static final Logger log = LoggerFactory.getLogger(DiseaseSearchService.class);
     private static final int DEFAULT_TOP_K = 5;
     private static final int MAX_TOP_K = 10;
+    private static final long DEFAULT_RETRIEVAL_TIMEOUT_MILLIS = 15_000L;
 
     private final OpenAiCompatibleClient llmClient;
     private final MongoDiseaseRepository mongoDiseaseRepository;
     private final MilvusRestClient milvusRestClient;
     private final DiseaseCacheService cacheService;
+    private final long retrievalTimeoutMillis;
 
     public DiseaseSearchService(
             OpenAiCompatibleClient llmClient,
@@ -41,10 +47,21 @@ public class DiseaseSearchService {
             MilvusRestClient milvusRestClient,
             DiseaseCacheService cacheService
     ) {
+        this(llmClient, mongoDiseaseRepository, milvusRestClient, cacheService, DEFAULT_RETRIEVAL_TIMEOUT_MILLIS);
+    }
+
+    DiseaseSearchService(
+            OpenAiCompatibleClient llmClient,
+            MongoDiseaseRepository mongoDiseaseRepository,
+            MilvusRestClient milvusRestClient,
+            DiseaseCacheService cacheService,
+            long retrievalTimeoutMillis
+    ) {
         this.llmClient = llmClient;
         this.mongoDiseaseRepository = mongoDiseaseRepository;
         this.milvusRestClient = milvusRestClient;
         this.cacheService = cacheService;
+        this.retrievalTimeoutMillis = Math.max(1L, retrievalTimeoutMillis);
     }
 
     public DiseaseIntent extractIntent(String userText) {
@@ -61,6 +78,7 @@ public class DiseaseSearchService {
 
     public List<DiseaseKnowledge> search(String userText, DiseaseIntent intent, int topK) {
         long started = System.currentTimeMillis();
+        long deadlineNanos = deadlineFromNow(retrievalTimeoutMillis);
         int limit = normalizeTopK(topK);
         List<DiseaseCandidate> candidates = intent.candidates().stream()
                 .filter(item -> !item.isPlaceholderDiseaseName())
@@ -70,24 +88,36 @@ public class DiseaseSearchService {
             // 纯症状输入兜底：用户未明确提及疾病名时（如只输入"咳嗽""胸闷"），
             // 所有候选都是"待鉴别"占位符被过滤掉。此时不应直接返回空列表短路，
             // 否则 Milvus 语义检索路径永远走不到。改为用症状关键词 + 原始文本做检索兜底。
-            List<DiseaseKnowledge> fallback = searchBySymptomText(userText, intent, limit);
+            List<DiseaseKnowledge> fallback = searchBySymptomText(userText, intent, limit, deadlineNanos);
             log.info("[AI-TIMER] disease.search={}ms candidates=0 fallback=symptom results={}",
                     elapsed(started), fallback.size());
             return fallback;
         }
 
         List<DiseaseKnowledge> results = new ArrayList<>();
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
             List<Callable<DiseaseKnowledge>> tasks = candidates.stream()
                     .<Callable<DiseaseKnowledge>>map(candidate ->
                             () -> standardizeCandidate(userText, intent.metadataQuery(), candidate))
                     .toList();
-            for (Future<DiseaseKnowledge> future : executor.invokeAll(tasks)) {
+            long remainingMillis = remainingMillis(deadlineNanos);
+            if (remainingMillis <= 0) {
+                log.warn("disease candidate search skipped because retrieval budget is exhausted");
+                return List.of();
+            }
+            for (Future<DiseaseKnowledge> future : executor.invokeAll(tasks, remainingMillis, TimeUnit.MILLISECONDS)) {
                 try {
+                    if (future.isCancelled()) {
+                        log.warn("disease candidate search timed out and was skipped");
+                        continue;
+                    }
                     DiseaseKnowledge knowledge = future.get();
                     if (knowledge != null) {
                         results.add(knowledge);
                     }
+                } catch (CancellationException ex) {
+                    log.warn("disease candidate search timed out and was cancelled");
                 } catch (ExecutionException ex) {
                     // 单个候选疾病检索失败（Mongo/Milvus 不可用或无数据）不应中断整个分诊：
                     // 降级为跳过该候选，后续 LLM 仍可基于症状给出建议（RAG 退化为纯 LLM）。
@@ -98,8 +128,10 @@ public class DiseaseSearchService {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Disease search interrupted", ex);
+        } finally {
+            executor.shutdownNow();
         }
-        List<DiseaseKnowledge> deduped = dedupe(results).stream().limit(limit).toList();
+        List<DiseaseKnowledge> deduped = aggregateEvidence(results).stream().limit(limit).toList();
         log.info("[AI-TIMER] disease.search={}ms candidates={} rawResults={} results={} sources={}",
                 elapsed(started), candidates.size(), results.size(), deduped.size(), summarizeSources(deduped));
         return deduped;
@@ -122,7 +154,7 @@ public class DiseaseSearchService {
      * Mongo 命中数量不足 topK 时继续用 Milvus 语义检索补齐，再按疾病名去重；
      * 两条路径都未命中时返回空列表（由上层 generateFinalAnswer 给出兜底提示）。
      */
-    private List<DiseaseKnowledge> searchBySymptomText(String userText, DiseaseIntent intent, int topK) {
+    private List<DiseaseKnowledge> searchBySymptomText(String userText, DiseaseIntent intent, int topK, long deadlineNanos) {
         int limit = normalizeTopK(topK);
 
         List<DiseaseKnowledge> results = new ArrayList<>();
@@ -134,8 +166,10 @@ public class DiseaseSearchService {
                 .distinct()
                 .toList();
         if (!symptoms.isEmpty()) {
-            results.addAll(mongoDiseaseRepository.findBySymptom(symptoms, limit));
-            List<DiseaseKnowledge> mongoMatches = dedupe(results);
+            results.addAll(callWithinBudget("mongodb_symptom",
+                    () -> mongoDiseaseRepository.findBySymptom(symptoms, limit), deadlineNanos)
+                    .orElse(List.of()));
+            List<DiseaseKnowledge> mongoMatches = aggregateEvidence(results);
             if (mongoMatches.size() >= limit) {
                 List<DiseaseKnowledge> matches = mongoMatches.stream().limit(limit).toList();
                 log.info("[AI-TIMER] disease.searchBySymptomText source=mongodb_symptom results={}",
@@ -147,7 +181,7 @@ public class DiseaseSearchService {
 
         // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）。
         // 当 Mongo 症状召回不足 topK 时补齐语义候选，提高纯症状输入的召回质量。
-        int remaining = limit - dedupe(results).size();
+        int remaining = limit - aggregateEvidence(results).size();
         if (remaining <= 0) {
             return results.stream().limit(limit).toList();
         }
@@ -156,11 +190,10 @@ public class DiseaseSearchService {
                 "", symptoms.isEmpty() ? List.of(userText) : symptoms,
                 "纯症状输入，基于原始文本做语义检索兜底。");
         String queryText = QueryExpander.expand(userText, fallbackCandidate);
-        llmClient.embedOne(queryText)
-                .map(vector -> milvusRestClient.search(vector, semanticLimit))
-                .ifPresent(results::addAll);
+        results.addAll(callWithinBudget("milvus_semantic",
+                () -> semanticSearch(queryText, semanticLimit), deadlineNanos).orElse(List.of()));
 
-        List<DiseaseKnowledge> matches = dedupe(results).stream().limit(limit).toList();
+        List<DiseaseKnowledge> matches = aggregateEvidence(results).stream().limit(limit).toList();
         if (!matches.isEmpty()) {
             log.info("[AI-TIMER] disease.searchBySymptomText source=merged_symptom_semantic results={}",
                     matches.size());
@@ -169,6 +202,12 @@ public class DiseaseSearchService {
 
         log.info("[AI-TIMER] disease.searchBySymptomText source=miss results=0");
         return List.of();
+    }
+
+    private List<DiseaseKnowledge> semanticSearch(String queryText, int semanticLimit) {
+        return llmClient.embedOne(queryText)
+                .map(vector -> milvusRestClient.search(vector, semanticLimit))
+                .orElse(List.of());
     }
 
     private DiseaseKnowledge standardizeCandidate(String userText, MetadataQuery metadataQuery, DiseaseCandidate candidate) {
@@ -328,18 +367,113 @@ public class DiseaseSearchService {
         return false;
     }
 
-    private static List<DiseaseKnowledge> dedupe(List<DiseaseKnowledge> results) {
-        LinkedHashSet<String> seen = new LinkedHashSet<>();
-        List<DiseaseKnowledge> deduped = new ArrayList<>();
+    private <T> Optional<T> callWithinBudget(String name, Callable<T> task, long deadlineNanos) {
+        long timeoutMillis = remainingMillis(deadlineNanos);
+        if (timeoutMillis <= 0) {
+            log.warn("disease retrieval step skipped because budget is exhausted, step={}", name);
+            return Optional.empty();
+        }
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        Future<T> future = executor.submit(task);
+        try {
+            return Optional.ofNullable(future.get(timeoutMillis, TimeUnit.MILLISECONDS));
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            log.warn("disease retrieval step timed out and was skipped, step={} budgetMs={}", name, timeoutMillis);
+            return Optional.empty();
+        } catch (ExecutionException ex) {
+            log.warn("disease retrieval step failed and was skipped, step={} error={}", name,
+                    ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage());
+            return Optional.empty();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static List<DiseaseKnowledge> aggregateEvidence(List<DiseaseKnowledge> results) {
+        LinkedHashMap<String, DiseaseKnowledge> aggregated = new LinkedHashMap<>();
         for (DiseaseKnowledge result : results) {
-            String key = result.diseaseName() == null || result.diseaseName().isBlank()
-                    ? result.sourceId()
-                    : result.diseaseName();
-            if (seen.add(key)) {
-                deduped.add(result);
+            if (result == null) {
+                continue;
+            }
+            String key = aggregateKey(result);
+            aggregated.merge(key, result, DiseaseSearchService::mergeEvidence);
+        }
+        return new ArrayList<>(aggregated.values());
+    }
+
+    private static DiseaseKnowledge mergeEvidence(DiseaseKnowledge left, DiseaseKnowledge right) {
+        Map<String, Object> metadata = new LinkedHashMap<>(left.metadata() == null ? Map.of() : left.metadata());
+        if (right.metadata() != null) {
+            right.metadata().forEach(metadata::putIfAbsent);
+        }
+        return new DiseaseKnowledge(
+                firstNonBlank(left.vectorId(), right.vectorId()),
+                firstNonBlank(left.sourceId(), right.sourceId()),
+                firstNonBlank(left.diseaseName(), right.diseaseName()),
+                firstNonBlank(left.desc(), right.desc()),
+                mergeList(left.symptoms(), right.symptoms()),
+                metadata,
+                mergeFieldNames(left.fieldName(), right.fieldName()),
+                mergeChunkText(left.chunkText(), right.chunkText()),
+                Math.max(left.score(), right.score()),
+                left.source() == null ? right.source() : left.source()
+        );
+    }
+
+    private static String aggregateKey(DiseaseKnowledge result) {
+        return firstNonBlank(result.diseaseName(), result.sourceId(), result.vectorId());
+    }
+
+    private static List<String> mergeList(List<String> left, List<String> right) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (left != null) {
+            left.stream().filter(item -> item != null && !item.isBlank()).forEach(merged::add);
+        }
+        if (right != null) {
+            right.stream().filter(item -> item != null && !item.isBlank()).forEach(merged::add);
+        }
+        return new ArrayList<>(merged);
+    }
+
+    private static String mergeFieldNames(String left, String right) {
+        LinkedHashSet<String> fields = new LinkedHashSet<>();
+        splitFieldNames(left).forEach(fields::add);
+        splitFieldNames(right).forEach(fields::add);
+        return String.join(",", fields);
+    }
+
+    private static List<String> splitFieldNames(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return List.of(value.split("[,，;；]")).stream()
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
+    }
+
+    private static String mergeChunkText(String left, String right) {
+        LinkedHashSet<String> chunks = new LinkedHashSet<>();
+        if (left != null && !left.isBlank()) {
+            chunks.add(left);
+        }
+        if (right != null && !right.isBlank()) {
+            chunks.add(right);
+        }
+        return String.join("\n---\n", chunks);
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
             }
         }
-        return deduped;
+        return "";
     }
 
     private static String summarizeSources(List<DiseaseKnowledge> knowledge) {
@@ -353,6 +487,14 @@ public class DiseaseSearchService {
 
     private static long elapsed(long started) {
         return System.currentTimeMillis() - started;
+    }
+
+    private static long deadlineFromNow(long timeoutMillis) {
+        return System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1L, timeoutMillis));
+    }
+
+    private static long remainingMillis(long deadlineNanos) {
+        return TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
     }
 
     private static int normalizeTopK(int topK) {

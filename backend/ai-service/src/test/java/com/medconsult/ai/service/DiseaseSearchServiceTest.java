@@ -10,11 +10,14 @@ import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.MatchSource;
 import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.MetadataQuery;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -132,6 +135,70 @@ class DiseaseSearchServiceTest {
         verify(milvusRestClient).search(anyList(), eq(2));
     }
 
+    @Test
+    void symptomSearchShouldAggregateDuplicateDiseaseEvidenceInsteadOfDroppingFields() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("待鉴别", List.of("咳嗽"), "纯症状输入")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(mongoDiseaseRepository.findBySymptom(List.of("咳嗽"), 2)).thenReturn(List.of(
+                knowledge("mongo-1", "肺炎", 0.90, MatchSource.MONGODB_NAME_EXACT,
+                        "symptom", "症状：咳嗽、咳痰")
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(2))).thenReturn(List.of(
+                knowledge("milvus-dup", "肺炎", 0.95, MatchSource.MILVUS_SEMANTIC,
+                        "cause", "病因：感染、免疫力下降"),
+                knowledge("milvus-2", "急性支气管炎", 0.88, MatchSource.MILVUS_SEMANTIC,
+                        "symptom", "症状：咳嗽伴气促")
+        ));
+
+        List<DiseaseKnowledge> results = service.search("咳嗽三天", intent, 2);
+
+        assertEquals(List.of("肺炎", "急性支气管炎"),
+                results.stream().map(DiseaseKnowledge::diseaseName).toList());
+        DiseaseKnowledge pneumonia = results.getFirst();
+        assertTrue(List.of(pneumonia.fieldName().split(",")).containsAll(List.of("symptom", "cause")));
+        assertTrue(pneumonia.chunkText().contains("症状：咳嗽、咳痰"));
+        assertTrue(pneumonia.chunkText().contains("病因：感染、免疫力下降"));
+        assertEquals(0.95, pneumonia.score(), 0.001);
+    }
+
+    @Test
+    void namedCandidateSearchShouldRespectRetrievalBudgetAndReturnPartialResults() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService, 50);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(
+                        new DiseaseCandidate("快速疾病", List.of("咳嗽"), "快速返回"),
+                        new DiseaseCandidate("慢速疾病", List.of("咳嗽"), "下游阻塞")
+                ),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(mongoDiseaseRepository.findByNameExact("快速疾病"))
+                .thenReturn(Optional.of(knowledge("mongo-fast", "快速疾病", 1.0, MatchSource.MONGODB_NAME_EXACT)));
+        when(mongoDiseaseRepository.findByNameExact("慢速疾病")).thenAnswer(invocation -> {
+            Thread.sleep(500);
+            return Optional.of(knowledge("mongo-slow", "慢速疾病", 1.0, MatchSource.MONGODB_NAME_EXACT));
+        });
+
+        List<DiseaseKnowledge> results = assertTimeoutPreemptively(Duration.ofMillis(500),
+                () -> service.search("咳嗽", intent, 2));
+
+        assertEquals(List.of("快速疾病"), results.stream().map(DiseaseKnowledge::diseaseName).toList());
+    }
+
     private static DiseaseIntent namedIntent(int count) {
         List<DiseaseCandidate> candidates = java.util.stream.IntStream.rangeClosed(1, count)
                 .mapToObj(index -> new DiseaseCandidate("Disease-" + index, List.of("symptom"), "candidate " + index))
@@ -149,6 +216,22 @@ class DiseaseSearchServiceTest {
                 Map.of("cure_department", List.of("呼吸内科")),
                 "name",
                 "疾病名称：" + name + "\n症状：咳嗽\n疾病描述：" + name + "描述",
+                score,
+                source
+        );
+    }
+
+    private static DiseaseKnowledge knowledge(String id, String name, double score, MatchSource source,
+                                              String fieldName, String chunkText) {
+        return new DiseaseKnowledge(
+                id,
+                "DISEASE_JSON:" + name,
+                name,
+                name + "描述",
+                List.of("咳嗽"),
+                Map.of("cure_department", List.of("呼吸内科")),
+                fieldName,
+                chunkText,
                 score,
                 source
         );

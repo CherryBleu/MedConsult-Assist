@@ -371,13 +371,28 @@ public class SymptomChatService {
 
     private List<String> matchedFields(DiseaseKnowledge item) {
         List<String> fields = new ArrayList<>();
-        fields.add(item.fieldName() == null || item.fieldName().isBlank() ? "text" : item.fieldName());
+        List<String> matchedFieldNames = splitFieldNames(item.fieldName());
+        if (matchedFieldNames.isEmpty()) {
+            fields.add("text");
+        } else {
+            fields.addAll(matchedFieldNames);
+        }
         for (String field : KnowledgeFields.STANDARD_METADATA_FIELDS) {
             if (item.metadata().containsKey(field)) {
                 fields.add(field);
             }
         }
         return fields.stream().distinct().toList();
+    }
+
+    private static List<String> splitFieldNames(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return List.of(value.split("[,，;；]")).stream()
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
     }
 
     private List<String> extractDepartments(List<DiseaseKnowledge> knowledge, RiskAssessment risk) {

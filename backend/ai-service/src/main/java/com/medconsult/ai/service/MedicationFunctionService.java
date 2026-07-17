@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 @Service
 public class MedicationFunctionService {
     private static final Logger log = LoggerFactory.getLogger(MedicationFunctionService.class);
+    private static final String TOOL_TRACE_SCHEMA_VERSION = "medication-tool-trace-v1";
 
     private final PatientFeignClient patientClient;
     private final DrugFeignClient drugClient;
@@ -265,19 +266,68 @@ public class MedicationFunctionService {
                 || (StringUtils.hasText(info.genericName()) && prescription.drugName().contains(info.genericName()));
     }
 
-    private static Map<String, Object> toolTrace(String toolName, String inputSummary, String status,
-                                                String resultSummary, String errorCode) {
+    static Map<String, Object> toolTrace(String toolName, String inputSummary, String status,
+                                         String resultSummary, String errorCode) {
+        MedicationTool tool = MedicationTool.require(toolName);
+        ToolStatus normalizedStatus = ToolStatus.require(status);
+        tool.validateInputSummary(inputSummary);
         Map<String, Object> trace = new LinkedHashMap<>();
         trace.put("type", "tool_call");
-        trace.put("toolName", toolName);
-        trace.put("functionName", toolName); // 兼容旧前端/旧文档字段
+        trace.put("schemaVersion", TOOL_TRACE_SCHEMA_VERSION);
+        trace.put("toolName", tool.toolName);
+        trace.put("functionName", tool.toolName); // 兼容旧前端/旧文档字段
         trace.put("inputSummary", inputSummary);
-        trace.put("status", status);
+        trace.put("status", normalizedStatus.name());
         trace.put("resultSummary", resultSummary);
         if (StringUtils.hasText(errorCode)) {
             trace.put("errorCode", errorCode);
         }
         return trace;
+    }
+
+    private enum MedicationTool {
+        QUERY_PATIENT_ALLERGIES("queryPatientAllergies", "patientId="),
+        QUERY_CURRENT_MEDICATIONS("queryCurrentMedications", "patientId="),
+        QUERY_DRUG_RISK_INFO("queryDrugRiskInfo", "drugId="),
+        QUERY_DRUG_CONTRAINDICATIONS("queryDrugContraindications", "drugId="),
+        QUERY_DRUG_INTERACTIONS("queryDrugInteractions", "drugId=");
+
+        private final String toolName;
+        private final String requiredInputPrefix;
+
+        MedicationTool(String toolName, String requiredInputPrefix) {
+            this.toolName = toolName;
+            this.requiredInputPrefix = requiredInputPrefix;
+        }
+
+        static MedicationTool require(String toolName) {
+            for (MedicationTool tool : values()) {
+                if (tool.toolName.equals(toolName)) {
+                    return tool;
+                }
+            }
+            throw new IllegalArgumentException("Unsupported medication tool: " + toolName);
+        }
+
+        void validateInputSummary(String inputSummary) {
+            if (!StringUtils.hasText(inputSummary) || !inputSummary.contains(requiredInputPrefix)) {
+                throw new IllegalArgumentException("Invalid inputSummary for " + toolName);
+            }
+        }
+    }
+
+    private enum ToolStatus {
+        SUCCESS,
+        FAILED,
+        SKIPPED;
+
+        static ToolStatus require(String status) {
+            try {
+                return ToolStatus.valueOf(status);
+            } catch (RuntimeException ex) {
+                throw new IllegalArgumentException("Unsupported medication tool status: " + status, ex);
+            }
+        }
     }
 
     private static String summarizeList(List<String> values) {

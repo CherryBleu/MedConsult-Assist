@@ -11,11 +11,14 @@ import com.medconsult.ai.util.JsonUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 @Service
 public class DiseaseCacheService {
@@ -33,7 +36,7 @@ public class DiseaseCacheService {
             if (normalizedName.isBlank()) {
                 return Optional.empty();
             }
-            String cached = redisTemplate.opsForValue().get(stableDiseaseKey(normalizedName));
+            String cached = redisTemplate.opsForValue().get(diseaseCacheKeyFor(properties, userText, candidate, metadataQuery));
             if (cached == null || cached.isBlank()) {
                 return Optional.empty();
             }
@@ -57,7 +60,8 @@ public class DiseaseCacheService {
             root.put("score", knowledge.score());
             root.set("document", JsonUtils.MAPPER.valueToTree(toDocumentMap(knowledge)));
             Duration ttl = Duration.ofSeconds(Math.max(60, properties.redis().cacheSeconds()));
-            redisTemplate.opsForValue().set(stableDiseaseKey(normalizedName), JsonUtils.toJson(root), ttl);
+            redisTemplate.opsForValue().set(diseaseCacheKeyFor(properties, userText, candidate, metadataQuery),
+                    JsonUtils.toJson(root), ttl);
         } catch (RuntimeException ignored) {
             // Cache failure must not affect medical response generation.
         }
@@ -122,8 +126,23 @@ public class DiseaseCacheService {
         return document;
     }
 
-    private String stableDiseaseKey(String diseaseName) {
-        return properties.redis().keyPrefix() + "disease:" + diseaseName;
+    static String diseaseCacheKeyFor(AiProperties properties, String userText,
+                                     DiseaseCandidate candidate, MetadataQuery metadataQuery) {
+        String normalizedName = normalizeCandidateName(candidate == null ? "" : candidate.diseaseName());
+        Map<String, Object> identity = new LinkedHashMap<>();
+        identity.put("schema", "disease-cache-v2");
+        identity.put("diseaseName", normalizedName);
+        identity.put("userText", normalizeText(userText));
+        identity.put("requestedFields", sortedList(metadataQuery == null ? List.of() : metadataQuery.requestedFields()));
+        identity.put("filters", sortedFilters(metadataQuery == null ? Map.of() : metadataQuery.filters()));
+        identity.put("embeddingModel", embeddingModel(properties));
+        identity.put("mongoDatabase", mongoDatabase(properties));
+        identity.put("mongoCollection", mongoCollection(properties));
+        identity.put("milvusDatabase", milvusDatabase(properties));
+        identity.put("milvusCollection", milvusCollection(properties));
+        identity.put("milvusMetricType", milvusMetricType(properties));
+        return redisKeyPrefix(properties) + "disease:v2:" + normalizedName + ":"
+                + stableHash(JsonUtils.toJson(identity));
     }
 
     private static String normalizeCandidateName(String diseaseName) {
@@ -131,6 +150,77 @@ public class DiseaseCacheService {
                 .replace("待鉴别", "")
                 .replace("可能", "")
                 .trim();
+    }
+
+    private static String normalizeText(String value) {
+        return string(value).replaceAll("\\s+", " ").trim();
+    }
+
+    private static List<String> sortedList(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .map(String::trim)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private static Map<String, List<String>> sortedFilters(Map<String, List<String>> filters) {
+        Map<String, List<String>> sorted = new TreeMap<>();
+        if (filters == null) {
+            return sorted;
+        }
+        filters.forEach((key, value) -> {
+            if (key != null && !key.isBlank()) {
+                sorted.put(key.trim(), sortedList(value));
+            }
+        });
+        return sorted;
+    }
+
+    private static String redisKeyPrefix(AiProperties properties) {
+        return properties != null && properties.redis() != null ? string(properties.redis().keyPrefix()) : "";
+    }
+
+    private static String embeddingModel(AiProperties properties) {
+        return properties != null && properties.embedding() != null ? string(properties.embedding().model()) : "";
+    }
+
+    private static String mongoDatabase(AiProperties properties) {
+        return properties != null && properties.mongo() != null ? string(properties.mongo().database()) : "";
+    }
+
+    private static String mongoCollection(AiProperties properties) {
+        return properties != null && properties.mongo() != null ? string(properties.mongo().collection()) : "";
+    }
+
+    private static String milvusDatabase(AiProperties properties) {
+        return properties != null && properties.milvus() != null ? string(properties.milvus().database()) : "";
+    }
+
+    private static String milvusCollection(AiProperties properties) {
+        return properties != null && properties.milvus() != null ? string(properties.milvus().collection()) : "";
+    }
+
+    private static String milvusMetricType(AiProperties properties) {
+        return properties != null && properties.milvus() != null ? string(properties.milvus().metricType()) : "";
+    }
+
+    private static String stableHash(String json) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(json.getBytes(StandardCharsets.UTF_8));
+            StringBuilder value = new StringBuilder();
+            for (byte item : hash) {
+                value.append(String.format("%02x", item));
+            }
+            return value.substring(0, 32);
+        } catch (RuntimeException | java.security.NoSuchAlgorithmException ex) {
+            return Integer.toHexString(json.hashCode());
+        }
     }
 
     private static String string(Object value) {
