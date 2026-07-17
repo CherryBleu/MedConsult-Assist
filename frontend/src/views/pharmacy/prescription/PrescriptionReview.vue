@@ -4,7 +4,7 @@
       <div class="page-header">
         <h2 class="page-title">处方审核</h2>
         <div class="header-actions">
-          <el-select v-model="statusFilter" placeholder="状态筛选" clearable style="width: 160px" @change="handleFilterChange">
+          <el-select v-model="statusFilter" class="status-filter" placeholder="状态筛选" clearable @change="handleFilterChange">
             <el-option label="待审方" value="PENDING_REVIEW" />
             <el-option label="已通过" value="APPROVED" />
             <el-option label="已驳回" value="REJECTED" />
@@ -17,38 +17,89 @@
         </div>
       </div>
 
-      <el-table :data="prescriptionList" v-loading="loading" border stripe>
-        <el-table-column prop="prescriptionId" label="处方编号" width="170" />
-        <el-table-column label="状态" width="110">
-          <template #default="{ row }">
-            <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
+      <PageState
+        :loading="loading"
+        :error="loadError"
+        :empty="prescriptionList.length === 0"
+        empty-text="暂无处方记录"
+        @retry="fetchList"
+      >
+        <ResponsiveTable aria-label="处方审核列表">
+          <template #table>
+            <el-table :data="prescriptionList" border stripe>
+              <el-table-column prop="prescriptionId" label="处方编号" width="170" />
+              <el-table-column label="状态" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="总金额" width="110" align="right">
+                <template #default="{ row }">
+                  <span v-if="row.totalFee != null">¥ {{ Number(row.totalFee).toFixed(2) }}</span>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="支付状态" width="110">
+                <template #default="{ row }">
+                  <el-tag v-if="row.paymentStatus" size="small" effect="plain" :type="getPayType(row.paymentStatus)">
+                    {{ getPayLabel(row.paymentStatus) }}
+                  </el-tag>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="createdAt" label="创建时间" min-width="170" />
+              <el-table-column label="操作" width="260" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" link type="primary" @click="showDetail(row)">详情</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="success" @click="openReview(row, 'APPROVE')">通过</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="danger" @click="openReview(row, 'REJECT')">驳回</el-button>
+                  <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" size="small" link type="warning" @click="openDispense(row)">发药</el-button>
+                  <el-button v-if="row.status === 'DISPENSED'" size="small" link type="primary" @click="handleComplete(row)">完成</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </template>
-        </el-table-column>
-        <el-table-column label="总金额" width="110" align="right">
-          <template #default="{ row }">
-            <span v-if="row.totalFee != null">¥ {{ Number(row.totalFee).toFixed(2) }}</span>
-            <span v-else>-</span>
+
+          <template #card>
+            <article
+              v-for="row in prescriptionList"
+              :key="row.id || row.prescriptionId"
+              class="prescription-card"
+              data-testid="responsive-prescription-card"
+            >
+              <div class="prescription-card__header">
+                <div>
+                  <p class="prescription-card__title">{{ row.prescriptionId }}</p>
+                  <p class="prescription-card__meta">{{ row.createdAt || '-' }}</p>
+                </div>
+                <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
+              </div>
+              <dl class="prescription-card__fields">
+                <div>
+                  <dt>总金额</dt>
+                  <dd>{{ row.totalFee != null ? `¥ ${Number(row.totalFee).toFixed(2)}` : '-' }}</dd>
+                </div>
+                <div>
+                  <dt>支付状态</dt>
+                  <dd>
+                    <el-tag v-if="row.paymentStatus" size="small" effect="plain" :type="getPayType(row.paymentStatus)">
+                      {{ getPayLabel(row.paymentStatus) }}
+                    </el-tag>
+                    <span v-else>-</span>
+                  </dd>
+                </div>
+              </dl>
+              <div class="prescription-card__actions">
+                <el-button plain @click="showDetail(row)">详情</el-button>
+                <el-button v-if="row.status === 'PENDING_REVIEW'" type="success" plain @click="openReview(row, 'APPROVE')">通过</el-button>
+                <el-button v-if="row.status === 'PENDING_REVIEW'" type="danger" plain @click="openReview(row, 'REJECT')">驳回</el-button>
+                <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" type="warning" plain @click="openDispense(row)">发药</el-button>
+                <el-button v-if="row.status === 'DISPENSED'" type="primary" plain @click="handleComplete(row)">完成</el-button>
+              </div>
+            </article>
           </template>
-        </el-table-column>
-        <el-table-column label="支付状态" width="110">
-          <template #default="{ row }">
-            <el-tag v-if="row.paymentStatus" size="small" effect="plain" :type="getPayType(row.paymentStatus)">
-              {{ getPayLabel(row.paymentStatus) }}
-            </el-tag>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-        <el-table-column label="操作" width="260" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="showDetail(row)">详情</el-button>
-            <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="success" @click="openReview(row, 'APPROVE')">通过</el-button>
-            <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="danger" @click="openReview(row, 'REJECT')">驳回</el-button>
-            <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" size="small" link type="warning" @click="openDispense(row)">发药</el-button>
-            <el-button v-if="row.status === 'DISPENSED'" size="small" link type="primary" @click="handleComplete(row)">完成</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+        </ResponsiveTable>
+      </PageState>
 
       <div class="pagination-wrapper" v-if="total > 0">
         <el-pagination
@@ -64,7 +115,7 @@
     </div>
 
     <!-- 处方详情 -->
-    <el-dialog v-model="detailVisible" title="处方详情" width="720px">
+    <el-dialog v-model="detailVisible" title="处方详情" width="min(720px, calc(100vw - 32px))">
       <div v-loading="detailLoading">
         <el-descriptions :column="2" border v-if="detail">
           <el-descriptions-item label="处方编号">{{ detail.prescriptionId }}</el-descriptions-item>
@@ -80,19 +131,21 @@
         </el-descriptions>
 
         <h4 style="margin: 16px 0 8px">处方明细</h4>
-        <el-table :data="detail?.items || []" border size="small">
-          <el-table-column prop="drugName" label="药品名称" min-width="140" />
-          <el-table-column prop="specification" label="规格" width="110" />
-          <el-table-column prop="dosage" label="用法用量" width="100" />
-          <el-table-column prop="frequency" label="频次" width="100" />
-          <el-table-column prop="days" label="天数" width="70" align="center" />
-          <el-table-column label="数量" width="100" align="right">
-            <template #default="{ row }">{{ row.quantity }} {{ row.unit }}</template>
-          </el-table-column>
-          <el-table-column label="小计" width="90" align="right">
-            <template #default="{ row }">{{ row.subtotal != null ? '¥' + Number(row.subtotal).toFixed(2) : '-' }}</template>
-          </el-table-column>
-        </el-table>
+        <div class="detail-table-wrap">
+          <el-table :data="detail?.items || []" border size="small">
+            <el-table-column prop="drugName" label="药品名称" min-width="140" />
+            <el-table-column prop="specification" label="规格" width="110" />
+            <el-table-column prop="dosage" label="用法用量" width="100" />
+            <el-table-column prop="frequency" label="频次" width="100" />
+            <el-table-column prop="days" label="天数" width="70" align="center" />
+            <el-table-column label="数量" width="100" align="right">
+              <template #default="{ row }">{{ row.quantity }} {{ row.unit }}</template>
+            </el-table-column>
+            <el-table-column label="小计" width="90" align="right">
+              <template #default="{ row }">{{ row.subtotal != null ? '¥' + Number(row.subtotal).toFixed(2) : '-' }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
       </div>
     </el-dialog>
 
@@ -142,6 +195,8 @@ import {
   reviewPrescriptionApi, dispensePrescriptionApi, completePrescriptionApi
 } from '@/api/prescription'
 import { useUserStore } from '@/store/modules/user'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
 const userStore = useUserStore()
 
@@ -149,20 +204,32 @@ const loading = ref(false)
 const prescriptionList = ref([])
 const total = ref(0)
 const statusFilter = ref('PENDING_REVIEW')
+const loadError = ref('')
+let listRequestSeq = 0
 
 const pagination = reactive({ page: 1, pageSize: 10 })
 
 const fetchList = async () => {
+  const requestSeq = ++listRequestSeq
   loading.value = true
+  loadError.value = ''
   try {
     const params = { page: pagination.page, pageSize: pagination.pageSize }
     if (statusFilter.value) params.status = statusFilter.value
     const res = await getPrescriptionListApi(params)
+    if (requestSeq !== listRequestSeq) return
     const data = res.data
     prescriptionList.value = data.items ?? data.records ?? (Array.isArray(data) ? data : [])
     total.value = data.total ?? prescriptionList.value.length
+  } catch (e) {
+    if (requestSeq !== listRequestSeq) return
+    prescriptionList.value = []
+    total.value = 0
+    loadError.value = e?.message || '处方列表加载失败'
   } finally {
-    loading.value = false
+    if (requestSeq === listRequestSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -310,9 +377,110 @@ onMounted(() => {
   display: flex;
   gap: 8px;
 }
+.status-filter {
+  width: 160px;
+}
 .pagination-wrapper {
   display: flex;
   justify-content: center;
   margin-top: 16px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.prescription-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, .84);
+  box-shadow: 0 12px 30px rgba(15, 35, 95, .06);
+}
+.prescription-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.prescription-card__title,
+.prescription-card__meta {
+  margin: 0;
+}
+.prescription-card__title {
+  overflow-wrap: anywhere;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.prescription-card__meta {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+.prescription-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.prescription-card__fields div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+.prescription-card__fields dt,
+.prescription-card__fields dd {
+  margin: 0;
+}
+.prescription-card__fields dt {
+  color: var(--text-secondary);
+}
+.prescription-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  text-align: right;
+}
+.prescription-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.prescription-card__actions .el-button {
+  width: 100%;
+  min-height: var(--touch-target);
+  margin-left: 0;
+}
+.detail-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+@media (max-width: 640px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .header-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .status-filter,
+  .header-actions .el-button {
+    width: 100%;
+    min-height: var(--touch-target);
+  }
+
+  .pagination-wrapper {
+    justify-content: flex-start;
+    padding-bottom: 4px;
+  }
+
+  .pagination-wrapper :deep(.el-pagination) {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 </style>
