@@ -106,6 +106,33 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
+  test('admin AI call log switches to cards on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'admin')
+
+    await page.goto('/admin/ai-call-log')
+
+    await expect(page.locator('[data-testid="responsive-ai-call-log-card"]').first()).toBeVisible()
+    await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('admin AI feedback keeps processing dialog usable on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'admin')
+
+    await page.goto('/admin/ai-feedback')
+
+    const firstFeedbackCard = page.locator('[data-testid="responsive-ai-feedback-card"]').first()
+    await expect(firstFeedbackCard).toBeVisible()
+    await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await firstFeedbackCard.getByTestId('ai-feedback-process-button').click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
   test('prescription review switches to cards on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.route('**/api/v1/prescriptions**', async (route) => {

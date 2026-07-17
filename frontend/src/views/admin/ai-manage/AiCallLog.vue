@@ -2,39 +2,96 @@
   <div class="page-container">
     <div class="card-box">
       <div class="page-header">
-        <h2 class="page-title">AI调用日志</h2>
-        <div class="stat-bar">
+        <div>
+          <p class="eyebrow">AI Operations</p>
+          <h2 class="page-title">AI调用日志</h2>
+        </div>
+        <div class="stat-bar" aria-label="AI调用日志统计">
           <span>累计调用：<b>{{ total }}</b> 次</span>
           <span>本页成功：<b class="success">{{ successCount }}</b></span>
           <span>本页失败：<b class="danger">{{ failCount }}</b></span>
         </div>
       </div>
 
-      <el-table :data="logList" v-loading="loading" border stripe>
-        <el-table-column prop="logNo" label="日志编号" width="180" />
-        <el-table-column prop="serviceType" label="服务类型" width="120" />
-        <el-table-column prop="modelName" label="模型名称" width="180" />
-        <el-table-column prop="userName" label="调用用户" width="120" />
-        <el-table-column label="输入长度" width="100" align="center">
-          <template #default="{ row }">{{ row.inputLength }} 字</template>
-        </el-table-column>
-        <el-table-column label="输出长度" width="100" align="center">
-          <template #default="{ row }">{{ row.outputLength }} 字</template>
-        </el-table-column>
-        <el-table-column label="耗时" width="100" align="center">
-          <template #default="{ row }">{{ row.costTime }} ms</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
-              {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
-            </el-tag>
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="logList.length === 0"
+        empty-text="暂无AI调用日志"
+        @retry="getLogList"
+      >
+        <ResponsiveTable aria-label="AI调用日志列表">
+          <template #table>
+            <el-table :data="logList" border stripe>
+              <el-table-column prop="logNo" label="日志编号" width="180" />
+              <el-table-column prop="serviceType" label="服务类型" width="120" />
+              <el-table-column prop="modelName" label="模型名称" width="180" />
+              <el-table-column prop="userName" label="调用用户" width="120" />
+              <el-table-column label="输入长度" width="100" align="center">
+                <template #default="{ row }">{{ row.inputLength }} 字</template>
+              </el-table-column>
+              <el-table-column label="输出长度" width="100" align="center">
+                <template #default="{ row }">{{ row.outputLength }} 字</template>
+              </el-table-column>
+              <el-table-column label="耗时" width="100" align="center">
+                <template #default="{ row }">{{ row.costTime }} ms</template>
+              </el-table-column>
+              <el-table-column label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
+                    {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="createdAt" label="调用时间" width="180" />
+            </el-table>
           </template>
-        </el-table-column>
-        <el-table-column prop="createdAt" label="调用时间" width="180" />
-      </el-table>
 
-      <div class="pagination-box">
+          <template #card>
+            <article
+              v-for="row in logList"
+              :key="row.id || row.logNo"
+              class="ai-log-card"
+              data-testid="responsive-ai-call-log-card"
+            >
+              <div class="ai-log-card__header">
+                <div>
+                  <p class="ai-log-card__title">{{ row.logNo || '-' }}</p>
+                  <p class="ai-log-card__meta">{{ row.createdAt || '-' }}</p>
+                </div>
+                <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'" size="small">
+                  {{ row.status === 'SUCCESS' ? '成功' : '失败' }}
+                </el-tag>
+              </div>
+
+              <dl class="ai-log-card__fields">
+                <div>
+                  <dt>服务</dt>
+                  <dd>{{ row.serviceType || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>模型</dt>
+                  <dd>{{ row.modelName || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>用户</dt>
+                  <dd>{{ row.userName || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>输入/输出</dt>
+                  <dd>{{ row.inputLength ?? 0 }} / {{ row.outputLength ?? 0 }} 字</dd>
+                </div>
+                <div>
+                  <dt>耗时</dt>
+                  <dd>{{ row.costTime ?? 0 }} ms</dd>
+                </div>
+              </dl>
+            </article>
+          </template>
+        </ResponsiveTable>
+      </PageState>
+
+      <div v-if="!loading && !errorMessage && total > 0" class="pagination-box">
         <el-pagination
           v-model:current-page="pageNum"
           v-model:page-size="pageSize"
@@ -50,30 +107,33 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { getAiCallLogApi } from '@/api/ai-manage'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
 const loading = ref(false)
+const errorMessage = ref('')
 const logList = ref([])
 const pageNum = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
-// 统计：成功/失败仅基于当前页样本（后端未提供全量聚合接口），
-// 总数用 total（全量），避免只统计当前 10 条造成的误导。
 const successCount = computed(() => logList.value.filter(i => i.status === 'SUCCESS').length)
 const failCount = computed(() => logList.value.filter(i => i.status === 'FAILED').length)
 
 const getLogList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const res = await getAiCallLogApi({ page: pageNum.value, pageSize: pageSize.value })
-    // 后端 GET /ai/call-log 返回 PageResult（{records,total,...}），不是数组。
-    // 直接赋 res.data 会导致 logList.value.filter 报 "not a function"（render 崩溃）。
-    // request 拦截器已补 records 别名（items→records），这里统一取 records 数组。
     const data = res.data
     logList.value = Array.isArray(data) ? data : (data?.records ?? data?.items ?? [])
-    if (data && typeof data.total === 'number') total.value = data.total
+    total.value = typeof data?.total === 'number' ? data.total : logList.value.length
+  } catch (error) {
+    logList.value = []
+    total.value = 0
+    errorMessage.value = error?.message || 'AI调用日志加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -89,29 +149,157 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-bottom: 20px;
 }
+
+.eyebrow,
+.page-title {
+  margin: 0;
+}
+
+.eyebrow {
+  margin-bottom: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--primary-color);
+  text-transform: uppercase;
+}
+
 .page-title {
   font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0;
 }
+
 .stat-bar {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
   font-size: 14px;
   color: var(--text-regular);
 }
+
+.stat-bar span {
+  min-height: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--border-lighter);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+}
+
 .stat-bar b {
   color: var(--text-primary);
   font-size: 16px;
 }
-.stat-bar .success { color: #52c41a; }
-.stat-bar .danger { color: #ff4d4f; }
+
+.stat-bar .success {
+  color: var(--success-color);
+}
+
+.stat-bar .danger {
+  color: var(--danger-color);
+}
+
 .pagination-box {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.ai-log-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(37, 99, 235, .14);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(145deg, rgba(239, 246, 255, .88), rgba(255, 255, 255, .96));
+  box-shadow: 0 14px 32px rgba(15, 35, 95, .07);
+}
+
+.ai-log-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-log-card__title,
+.ai-log-card__meta {
+  margin: 0;
+}
+
+.ai-log-card__title {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ai-log-card__meta {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.ai-log-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.ai-log-card__fields div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(37, 99, 235, .1);
+}
+
+.ai-log-card__fields dt,
+.ai-log-card__fields dd {
+  margin: 0;
+}
+
+.ai-log-card__fields dt {
+  color: var(--text-secondary);
+}
+
+.ai-log-card__fields dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stat-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+  }
+
+  .stat-bar span {
+    justify-content: space-between;
+  }
+
+  .pagination-box {
+    justify-content: flex-start;
+  }
 }
 </style>

@@ -81,4 +81,40 @@ test.describe('list error recovery', () => {
     await expect(page.locator('[data-testid="responsive-stock-warning-card"]').first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
   })
+
+  test('admin AI call log exposes retry path after first load failure', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'admin')
+    await page.evaluate(() => localStorage.setItem('mock_ai_call_log_fail_once', '1'))
+
+    await page.goto('/admin/ai-call-log')
+
+    await expect(page.getByRole('alert')).toContainText(/鍔犺浇澶辫触|AI/)
+    const retryButton = page.getByRole('alert').getByRole('button')
+    await expect(retryButton).toBeVisible()
+
+    await retryButton.click()
+
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect(page.locator('[data-testid="responsive-ai-call-log-card"]').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('admin AI feedback exposes retry path after first load failure', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'admin')
+    await page.evaluate(() => localStorage.setItem('mock_ai_feedback_fail_once', '1'))
+
+    await page.goto('/admin/ai-feedback')
+
+    await expect(page.getByRole('alert')).toContainText(/鍔犺浇澶辫触|AI/)
+    const retryButton = page.getByRole('alert').getByRole('button')
+    await expect(retryButton).toBeVisible()
+
+    await retryButton.click()
+
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect(page.locator('[data-testid="responsive-ai-feedback-card"]').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
 })

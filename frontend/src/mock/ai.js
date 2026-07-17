@@ -1,5 +1,12 @@
 
 // 生成病历摘要
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 export const mockRecordSummary = (recordId) => {
   return {
     code: 0,
@@ -389,6 +396,9 @@ export const mockSessionHistory = (sessionId) => {
 
 // AI调用日志
 export const mockAiCallLog = () => {
+  if (consumeFailOnce('mock_ai_call_log_fail_once')) {
+    return Promise.reject(new Error('AI调用日志加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
@@ -405,6 +415,9 @@ export const mockAiCallLog = () => {
 
 // AI反馈列表
 export const mockAiFeedbackList = () => {
+  if (consumeFailOnce('mock_ai_feedback_fail_once')) {
+    return Promise.reject(new Error('AI反馈列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
