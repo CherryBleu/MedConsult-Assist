@@ -51,7 +51,7 @@ public class SymptomChatService {
     private final AiCallLogService callLogService;
     private final DoctorFeignClient doctorFeignClient;
     private final StringRedisTemplate redisTemplate;
-    private final RiskRuleEngine riskRuleEngine = new RiskRuleEngine();
+    private final RiskRuleEngine riskRuleEngine;
 
     /** 有医生科室集合的 Redis 缓存 key（5 分钟 TTL，与 TriageService 共用） */
     private static final String DEPT_WITH_DOCTORS_CACHE_KEY = "medconsult:ai:dept-with-doctors";
@@ -64,7 +64,8 @@ public class SymptomChatService {
             AiChatMessageMapper chatMessageMapper,
             AiCallLogService callLogService,
             DoctorFeignClient doctorFeignClient,
-            StringRedisTemplate redisTemplate
+            StringRedisTemplate redisTemplate,
+            RiskRuleEngine riskRuleEngine
     ) {
         this.diseaseSearchService = diseaseSearchService;
         this.properties = properties;
@@ -73,6 +74,7 @@ public class SymptomChatService {
         this.callLogService = callLogService;
         this.doctorFeignClient = doctorFeignClient;
         this.redisTemplate = redisTemplate;
+        this.riskRuleEngine = riskRuleEngine;
     }
 
     /**

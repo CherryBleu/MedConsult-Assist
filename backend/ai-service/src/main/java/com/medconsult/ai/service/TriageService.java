@@ -41,19 +41,21 @@ public class TriageService {
     private final AiTriageResultMapper triageResultMapper;
     private final AiCallLogService callLogService;
     private final AiProperties properties;
-    private final RiskRuleEngine riskRuleEngine = new RiskRuleEngine();
+    private final RiskRuleEngine riskRuleEngine;
     private final DoctorFeignClient doctorFeignClient;
     private final StringRedisTemplate redisTemplate;
 
     public TriageService(DiseaseSearchService diseaseSearchService, AiTriageResultMapper triageResultMapper,
                          AiCallLogService callLogService, AiProperties properties,
-                         DoctorFeignClient doctorFeignClient, StringRedisTemplate redisTemplate) {
+                         DoctorFeignClient doctorFeignClient, StringRedisTemplate redisTemplate,
+                         RiskRuleEngine riskRuleEngine) {
         this.diseaseSearchService = diseaseSearchService;
         this.triageResultMapper = triageResultMapper;
         this.callLogService = callLogService;
         this.properties = properties;
         this.doctorFeignClient = doctorFeignClient;
         this.redisTemplate = redisTemplate;
+        this.riskRuleEngine = riskRuleEngine;
     }
 
     public TriageResponse triage(TriageRequest request) {
