@@ -74,10 +74,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     public MedicalRecordDTO.CreateResponse create(MedicalRecordDTO.CreateRequest req) {
         // ① 身份与归属校验（§2.3 权限矩阵「病历 创建=DOCTOR 自己接诊的」）：
         //    DOCTOR 身份下强制 doctorId 为本人（防伪造他人医生身份建病历）；管理员暂放行（留待行级权限）。
-        enforceCreateScope(req);
+        Long forcedDoctorId = enforceCreateScope(req);
         // ② 事务外：Feign 反查真实主键（patient_no/doctor_no 不存在 → NOT_FOUND，此时无 DB 写入可回滚）
         Long patientId = resolvePatientId(req.getPatientId());
-        Long doctorId = resolveDoctorId(req.getDoctorId());
+        Long doctorId = forcedDoctorId != null ? forcedDoctorId : resolveDoctorId(req.getDoctorId());
         Long appointmentId = (req.getAppointmentId() != null && !req.getAppointmentId().isBlank())
                 // appointment 反查待 outpatient 暴露接口；暂用正哈希占位（可空、非查询键，影响有限）
                 ? positiveHash(req.getAppointmentId()) : null;
@@ -92,7 +92,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
      * <p>HOSPITAL_ADMIN：放行（管理员可代建，行级权限留待 RBAC 五表阶段）。
      * <p>PATIENT：禁止建病历（§2.3 矩阵「病历 创建」无 PATIENT）。
      */
-    private void enforceCreateScope(MedicalRecordDTO.CreateRequest req) {
+    private Long enforceCreateScope(MedicalRecordDTO.CreateRequest req) {
         JwtPayload payload = SecurityContext.requireUser();
         if (isPatient(payload)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "患者无权创建病历");
@@ -102,14 +102,12 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
             if (selfDoctorId == null) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联医生档案，无法创建病历");
             }
-            // DOCTOR 只能以本人身份建病历：覆盖请求体 doctorId，防伪造他人医生编号
-            if (req.getDoctorId() != null && !req.getDoctorId().isBlank()
-                    && !String.valueOf(selfDoctorId).equals(req.getDoctorId())) {
-                log.warn("DOCTOR 创建病历时传入了 doctorId={}，已覆盖为本人身份 {}", req.getDoctorId(), selfDoctorId);
-            }
-            req.setDoctorId(String.valueOf(selfDoctorId));
+            // DOCTOR 只能以本人身份建病历：直接使用网关注入的 doctor 主键，防伪造他人医生编号。
+            // 请求体 doctorId 仍按接口契约保留为 doctor_no，不再把 doctor 主键当 doctor_no 反查。
+            return selfDoctorId;
         }
         // HOSPITAL_ADMIN/PHARMACY_ADMIN 保留请求体值（代建场景）
+        return null;
     }
 
     /**
@@ -144,10 +142,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Override
     public MedicalRecordDTO.DetailResponse detail(String recordNo) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 只能查自己的病历（架构 §4.3 SELF 数据范围）。
+        // 越权防护（IDOR）：PATIENT 只能查自己的病历，DOCTOR 只能查本人接诊病历。
         // medical_record.patient_id 落库已是真实主键（create 时 Feign 反查 no→id），
-        // 与 JWT 里的 patientId（BIGINT PK）同类型可直接比较。DOCTOR/管理员不限制。
-        enforcePatientOwnership(r.getPatientId());
+        // 与 JWT 里的 patientId（BIGINT PK）同类型可直接比较。
+        enforceRecordAccess(r);
         // patientId/doctorId 落库已是真实主键（create 时 Feign 反查 no→id）；但详情接口回传
         // 业务编号需 id→no 反向解析，目前未实现（display 反查是独立需求，留待下一批）。
         // 暂回传 null（避免传主键误导调用方当作 patient_no 使用）。
@@ -166,12 +164,16 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId, Long appointmentId) {
         Page<MedicalRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
-        // 越权防护（IDOR）：PATIENT 只能列自己的病历（架构 §4.3 SELF 数据范围）。
+        // 越权防护（IDOR）：PATIENT 只能列自己的病历，DOCTOR 只能列本人接诊病历。
         // PATIENT 身份时忽略入参 patientId，强制限定为本人 patientId，防用他人 patient_no 越权拉取。
         // 非 PATIENT（DOCTOR/管理员）尊重入参 patientId 过滤。
         Long scopePatientId = resolvePatientScope(patientId);
         if (scopePatientId != null) {
             qw.eq("patient_id", scopePatientId);
+        }
+        Long scopeDoctorId = resolveDoctorScope();
+        if (scopeDoctorId != null) {
+            qw.eq("doctor_id", scopeDoctorId);
         }
         // 可选：按预约 ID 过滤（供"完成就诊前校验是否有病历"场景）
         if (appointmentId != null) {
@@ -197,8 +199,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Transactional
     public MedicalRecordDTO.UpdateResponse updateDraft(String recordNo, MedicalRecordDTO.UpdateDraftRequest req) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿
-        enforcePatientOwnership(r.getPatientId());
+        // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿，DOCTOR 只能改本人接诊病历。
+        enforceRecordAccess(r);
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可修改，当前状态: " + r.getStatus() + "（归档后不可改，§6.1 医疗文书不可变）");
@@ -233,8 +235,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Transactional
     public MedicalRecordDTO.ArchiveResponse archive(String recordNo, MedicalRecordDTO.ArchiveRequest req) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 不能归档他人病历（归档由接诊医生触发，此处防越权）
-        enforcePatientOwnership(r.getPatientId());
+        // 越权防护（IDOR）：归档由接诊医生触发，PATIENT/其他医生都不得越权归档。
+        enforceRecordAccess(r);
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可归档，当前状态: " + r.getStatus());
@@ -339,7 +341,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围）=====
     //
-    // 当前调用者为 PATIENT 时，强制只能访问自己的数据；DOCTOR / 管理员不限制（架构 §4.3 ALL/ASSIGNED）。
+    // 当前调用者为 PATIENT 时强制 SELF；DOCTOR 时强制 ASSIGNED；管理员不限制（架构 §4.3）。
     // 身份取自 SecurityContext（网关已解析 X-User-* 头重建 JwtPayload，§4.4）。
     // 直连（无网关头、无 token）时 SecurityContext.getPayload() 返回 null，按"匿名拒绝"处理。
 
@@ -373,10 +375,51 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     }
 
     /**
+     * 列表查询的医生接诊范围：DOCTOR 只能看到本人 doctor_id 的病历。
+     * 管理员/药师等非医生角色不在这里收窄，仍由 Controller 角色和业务场景控制。
+     */
+    private Long resolveDoctorScope() {
+        JwtPayload p = SecurityContext.getPayload();
+        if (p == null || !p.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (!isDoctor(p)) {
+            return null;
+        }
+        Long selfDoctorId = p.doctorId();
+        if (selfDoctorId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联医生档案，无法查询病历");
+        }
+        return selfDoctorId;
+    }
+
+    /**
      * 单条资源的归属校验（detail/update/delete 等带具体 record 的场景）。
      * <p>PATIENT 身份：资源的 patient_id 必须等于本人 patientId，否则 FORBIDDEN。
-     * DOCTOR/管理员：不校验（可看全部/接诊范围）。
+     * DOCTOR 身份：资源的 doctor_id 必须等于本人 doctorId，否则 FORBIDDEN。
+     * 管理员/药师等非医生角色不在这里收窄，仍由 Controller 角色和业务场景控制。
      */
+    private void enforceRecordAccess(MedicalRecord record) {
+        enforcePatientOwnership(record.getPatientId());
+        enforceDoctorAssignment(record.getDoctorId());
+    }
+
+    /**
+     * 单条资源的医生接诊范围校验。
+     */
+    private void enforceDoctorAssignment(Long resourceDoctorId) {
+        JwtPayload p = SecurityContext.getPayload();
+        if (p == null || !p.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isDoctor(p)) {
+            Long selfDoctorId = p.doctorId();
+            if (selfDoctorId == null || !selfDoctorId.equals(resourceDoctorId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问非本人接诊的病历");
+            }
+        }
+    }
+
     private void enforcePatientOwnership(Long resourcePatientId) {
         JwtPayload p = SecurityContext.getPayload();
         if (p == null || !p.isUser()) {
