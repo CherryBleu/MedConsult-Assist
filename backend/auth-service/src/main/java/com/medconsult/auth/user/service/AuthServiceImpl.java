@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.medconsult.auth.log.entity.LoginLog;
 import com.medconsult.auth.log.mapper.LoginLogMapper;
 import com.medconsult.auth.user.dto.AuthDTO;
+import com.medconsult.auth.user.entity.SysRole;
 import com.medconsult.auth.user.entity.SysUser;
+import com.medconsult.auth.user.entity.SysUserRole;
 import com.medconsult.auth.user.mapper.SysUserMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
@@ -62,6 +64,12 @@ public class AuthServiceImpl implements AuthService {
     private final PatientFeignClient patientClient;
     /** 划定 sys_user 写入事务边界（Feign 建档在事务外，参照 medical-record 模式 A） */
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+    /** RBAC 权限聚合查询：登录/列表时取 roles/primaryRole/scope（无记录兜底 *，避免 403 回归） */
+    private final UserPermissionResolver userPermissionResolver;
+    /** sys_user_role 写入：注册时为新用户挂角色（默认 PATIENT） */
+    private final com.medconsult.auth.user.mapper.SysUserRoleMapper sysUserRoleMapper;
+    /** sys_role 反查：注册时按 role_code 拿 role_id 挂到 sys_user_role */
+    private final com.medconsult.auth.user.mapper.SysRoleMapper sysRoleMapper;
 
     /** access token 有效期：2 小时 */
     @Value("${medconsult.security.jwt.access-ttl:7200}")
@@ -133,9 +141,9 @@ public class AuthServiceImpl implements AuthService {
             user.setStatus("ACTIVE");
             userMapper.insert(user);
 
-            // 冒烟期：角色暂存 Redis（RBAC 五表阶段改为查 sys_user_role）。
-            // 设 365 天 TTL：角色为长期数据，但须有上限，避免禁用/删除用户后 key 永驻。
-            redis.opsForValue().set(roleKey(user.getId()), finalRole, Duration.ofDays(365));
+            // RBAC：为新用户挂角色（默认 PATIENT，自助注册仅 PATIENT/DOCTOR）。
+            // sys_user_role 为权威角色源，登录时 UserPermissionResolver 据此聚合权限。
+            assignRole(user.getId(), finalRole, true);
             return user;
         });
 
@@ -209,17 +217,12 @@ public class AuthServiceImpl implements AuthService {
         u.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(u);
 
-        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）。
-        // 从 Redis 读回注册时写入的角色；读失败或缺失兜底为 PATIENT。
-        String storedRole = null;
-        try {
-            storedRole = redis.opsForValue().get(roleKey(u.getId()));
-        } catch (Exception e) {
-            // Redis 不可用时兜底，不阻断登录
-        }
-        String primaryRole = (storedRole != null && !storedRole.isBlank()) ? storedRole : "PATIENT";
-        List<String> roles = List.of(primaryRole);
-        List<String> scope = List.of("*"); // 冒烟期全权限；RBAC 阶段改为查 sys_role_permission
+        // 签发双 token。RBAC：从 sys_user_role + sys_role_permission 聚合 roles/primaryRole/scope。
+        // 无 sys_user_role 记录时 resolver 兜底 scope=["*"]、primaryRole=PATIENT（避免 403 回归）。
+        UserPermissionResolver.UserPermission perm = userPermissionResolver.resolve(u.getId());
+        List<String> roles = perm.roles();
+        String primaryRole = perm.primaryRole();
+        List<String> scope = perm.scope();
 
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
                 u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, accessTtl, null);
@@ -336,8 +339,10 @@ public class AuthServiceImpl implements AuthService {
 
         // 重签 JWT：让新 token 带上 patientId，前端存储后无需重新登录即可使用全部功能。
         // 旧 token 的 patientId 是 null，refresh 也沿用旧 claims，只有重签才能带上新 patientId。
-        List<String> roles = List.of(primaryRole);
-        List<String> scope = List.of("*");
+        // scope/roles 沿用当前 token（bindPatient 不改权限），RBAC 阶段不再硬编码 *。
+        List<String> roles = (p != null && p.roles() != null) ? p.roles() : List.of(primaryRole);
+        List<String> scope = (p != null && p.scope() != null && !p.scope().isEmpty())
+                ? p.scope() : List.of("*");
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
                 u.getPatientId(), u.getDoctorId(), u.getUserNo(), scope, accessTtl, null);
         String refresh = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
@@ -418,19 +423,36 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * 从 Redis 读用户角色，读不到兜底 PATIENT（与登录流程一致）。
-     * <p>Redis 不可用时 catch 住兜底，不阻断列表查询。
+     * 查用户主角色（listUsers 内存过滤用）：从 sys_user_role 聚合，无记录兜底 PATIENT。
+     * <p>原从 Redis 读（medconsult:auth:role:{userId}），RBAC 落地后 sys_user_role 为权威源。
      */
     private String resolveRole(Long userId) {
-        try {
-            String stored = redis.opsForValue().get(roleKey(userId));
-            if (stored != null && !stored.isBlank()) {
-                return stored;
-            }
-        } catch (Exception ignored) {
-            // Redis 不可用兜底，不阻断查询
+        return userPermissionResolver.resolve(userId).primaryRole();
+    }
+
+    /**
+     * 为用户挂角色到 sys_user_role（注册/管理员授予用）。
+     * <p>按 role_code 反查 sys_role.id；role 不存在则跳过并告警（不阻断主流程，登录时 resolver 兜底 *）。
+     *
+     * @param userId   用户 ID
+     * @param roleCode 角色编码（PATIENT/DOCTOR/...）
+     * @param isPrimary 是否主角色
+     */
+    private void assignRole(Long userId, String roleCode, boolean isPrimary) {
+        if (roleCode == null || roleCode.isBlank()) {
+            return;
         }
-        return "PATIENT";
+        SysRole role = sysRoleMapper.selectOne(
+                new LambdaQueryWrapper<SysRole>().eq(SysRole::getRoleCode, roleCode));
+        if (role == null) {
+            log.warn("[assignRole] 角色 {} 在 sys_role 不存在，跳过挂角色（userId={}）", roleCode, userId);
+            return;
+        }
+        SysUserRole ur = new SysUserRole();
+        ur.setUserId(userId);
+        ur.setRoleId(role.getId());
+        ur.setIsPrimary(isPrimary ? 1 : 0);
+        sysUserRoleMapper.insert(ur);
     }
 
     // ===== 私有助手 =====
@@ -441,11 +463,6 @@ public class AuthServiceImpl implements AuthService {
 
     private static String refreshKey(String jti) {
         return "medconsult:auth:refresh:" + jti;
-    }
-
-    /** 注册时暂存的角色（冒烟期 sys_user_role 未落地的临时方案）的 Redis key */
-    private static String roleKey(Long userId) {
-        return "medconsult:auth:role:" + userId;
     }
 
     /**

@@ -39,3 +39,62 @@ CREATE TABLE IF NOT EXISTS login_log (
     logout_at       TIMESTAMP,
     PRIMARY KEY (id)
 );
+
+-- RBAC 四表（H2 兼容版，对齐 src/main/resources/schema.sql）。AI_SERVICE 不进 sys_role。
+CREATE TABLE IF NOT EXISTS sys_role (
+    id              BIGINT       NOT NULL,
+    role_code       VARCHAR(32)  NOT NULL,
+    role_name       VARCHAR(50),
+    description     VARCHAR(200),
+    enabled         INT          DEFAULT 1,
+    created_at      TIMESTAMP,
+    updated_at      TIMESTAMP,
+    deleted         INT          DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_role_code ON sys_role(role_code);
+
+CREATE TABLE IF NOT EXISTS sys_permission (
+    id                BIGINT       NOT NULL,
+    permission_code   VARCHAR(64)  NOT NULL,
+    permission_name   VARCHAR(100),
+    resource_type     VARCHAR(50),
+    action            VARCHAR(20),
+    description       VARCHAR(200),
+    created_at        TIMESTAMP,
+    updated_at        TIMESTAMP,
+    deleted           INT          DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_permission_code ON sys_permission(permission_code);
+
+CREATE TABLE IF NOT EXISTS sys_user_role (
+    id              BIGINT       NOT NULL,
+    user_id         BIGINT       NOT NULL,
+    role_id         BIGINT       NOT NULL,
+    is_primary      INT          DEFAULT 0,
+    created_at      TIMESTAMP,
+    updated_at      TIMESTAMP,
+    deleted         INT          DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_user_role ON sys_user_role(user_id, role_id);
+
+CREATE TABLE IF NOT EXISTS sys_role_permission (
+    id              BIGINT       NOT NULL,
+    role_id         BIGINT       NOT NULL,
+    permission_id   BIGINT       NOT NULL,
+    data_scope      VARCHAR(20)  DEFAULT 'ALL',
+    created_at      TIMESTAMP,
+    updated_at      TIMESTAMP,
+    deleted         INT          DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sys_role_permission ON sys_role_permission(role_id, permission_id);
+
+-- 种子：4 个固定角色（H2 upsert 用 MERGE ... KEY(id)，确保可重入）
+MERGE INTO sys_role (id, role_code, role_name, description, enabled) KEY(id) VALUES
+    (1, 'PATIENT',         '患者',     '就诊主体', 1),
+    (2, 'DOCTOR',          '医生',     '接诊/开方', 1),
+    (3, 'PHARMACY_ADMIN',  '药师',     '审方/发药', 1),
+    (4, 'HOSPITAL_ADMIN',  '医院管理员', '科室/排班/审计', 1);
