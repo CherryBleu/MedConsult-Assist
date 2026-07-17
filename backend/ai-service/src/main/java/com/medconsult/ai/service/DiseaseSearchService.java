@@ -139,16 +139,22 @@ public class DiseaseSearchService {
                         matches.size());
                 return matches;
             }
+            results = new ArrayList<>(mongoMatches);
         }
 
         // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）。
         // 当 Mongo 症状召回不足 topK 时补齐语义候选，提高纯症状输入的召回质量。
+        int remaining = limit - dedupe(results).size();
+        if (remaining <= 0) {
+            return results.stream().limit(limit).toList();
+        }
+        int semanticLimit = Math.min(limit, Math.max(remaining, remaining * 2));
         DiseaseCandidate fallbackCandidate = new DiseaseCandidate(
                 "", symptoms.isEmpty() ? List.of(userText) : symptoms,
                 "纯症状输入，基于原始文本做语义检索兜底。");
         String queryText = QueryExpander.expand(userText, fallbackCandidate);
         llmClient.embedOne(queryText)
-                .map(vector -> milvusRestClient.search(vector, limit))
+                .map(vector -> milvusRestClient.search(vector, semanticLimit))
                 .ifPresent(results::addAll);
 
         List<DiseaseKnowledge> matches = dedupe(results).stream().limit(limit).toList();

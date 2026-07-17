@@ -41,7 +41,7 @@ class DiseaseSearchServiceTest {
                 knowledge("mongo-2", "肺炎", 1.0, MatchSource.MONGODB_NAME_EXACT)
         ));
         when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
-        when(milvusRestClient.search(anyList(), eq(3))).thenReturn(List.of(
+        when(milvusRestClient.search(anyList(), eq(2))).thenReturn(List.of(
                 knowledge("milvus-dup", "肺炎", 0.92, MatchSource.MILVUS_SEMANTIC),
                 knowledge("milvus-3", "百日咳", 0.88, MatchSource.MILVUS_SEMANTIC)
         ));
@@ -51,7 +51,7 @@ class DiseaseSearchServiceTest {
         assertEquals(List.of("急性支气管炎", "肺炎", "百日咳"),
                 results.stream().map(DiseaseKnowledge::diseaseName).toList());
         verify(llmClient).embedOne(anyString());
-        verify(milvusRestClient).search(anyList(), eq(3));
+        verify(milvusRestClient).search(anyList(), eq(2));
     }
 
     private static DiseaseKnowledge knowledge(String id, String name, double score, MatchSource source) {
