@@ -69,3 +69,7 @@ frontend/playwright/.cache/
 
 # ZCode agent skills (local tooling, not project code)
 .agents/
+
+# Python test/runtime cache
+__pycache__/
+*.py[cod]
