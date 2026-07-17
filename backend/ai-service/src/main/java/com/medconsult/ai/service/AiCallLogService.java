@@ -53,7 +53,8 @@ public class AiCallLogService {
         try {
             save(message.type(), message.patientId(), message.relatedId(), message.model(), message.requestSummary(),
                     message.responseSummary(), message.riskLevel(), message.status(), message.latencyMs(),
-                    message.errorMessage(), message.callerService(), message.traceId(), message.triggerUserId());
+                    message.errorMessage(), message.callerService(), message.traceId(), message.triggerUserId(),
+                    message.requestId());
         } catch (DuplicateKeyException ignored) {
             // RabbitMQ can redeliver an already persisted log; unique keys make the write idempotent.
         }
@@ -139,7 +140,7 @@ public class AiCallLogService {
 
     private void save(String type, String patientId, String relatedId, String model, String requestSummary,
                       String responseSummary, String riskLevel, String status, long latencyMs, String errorMessage,
-                      String callerService, String traceId, String triggerUserId) {
+                      String callerService, String traceId, String triggerUserId, String requestId) {
         AiCallLogEntity entity = new AiCallLogEntity();
         entity.setLogNo(BusinessIds.next("AILOG"));
         entity.setCallType(type);
@@ -149,7 +150,7 @@ public class AiCallLogService {
         entity.setTriggerUserId(BusinessIds.numericId(triggerUserId));
         entity.setTraceId(StringUtils.hasText(traceId) ? traceId : currentTraceId());
         entity.setCostTokens(0);
-        entity.setRequestId(BusinessIds.next("REQ"));
+        entity.setRequestId(StringUtils.hasText(requestId) ? requestId : BusinessIds.next("REQ"));
         entity.setModelName(model);
         entity.setKnowledgeSource(type.equals("SYMPTOM_CHAT") || type.equals("TRIAGE") ? "DISEASE_JSON" : null);
         entity.setRequestSummary(truncate(requestSummary, 500));
