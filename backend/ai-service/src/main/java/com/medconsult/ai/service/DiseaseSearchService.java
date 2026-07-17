@@ -116,10 +116,13 @@ public class DiseaseSearchService {
      *       用 {@link QueryExpander#expand} 扩展查询文本后 embedding，再向量检索。
      *       依赖本地 Embedding 容器（localhost:7997）和 Milvus（localhost:19530）。</li>
      * </ol>
-     * 两条路径任一命中即返回；都未命中返回空列表（由上层 generateFinalAnswer 给出兜底提示）。
+     * Mongo 命中数量不足 topK 时继续用 Milvus 语义检索补齐，再按疾病名去重；
+     * 两条路径都未命中时返回空列表（由上层 generateFinalAnswer 给出兜底提示）。
      */
     private List<DiseaseKnowledge> searchBySymptomText(String userText, DiseaseIntent intent, int topK) {
         int limit = Math.max(1, Math.min(3, topK));
+
+        List<DiseaseKnowledge> results = new ArrayList<>();
 
         // 路径1：Mongo 按症状关键词查询（不依赖 Embedding/Milvus，纯规则）
         List<String> symptoms = intent.candidates().stream()
@@ -128,26 +131,31 @@ public class DiseaseSearchService {
                 .distinct()
                 .toList();
         if (!symptoms.isEmpty()) {
-            List<DiseaseKnowledge> mongoMatches = mongoDiseaseRepository.findBySymptom(symptoms, limit);
-            if (!mongoMatches.isEmpty()) {
+            results.addAll(mongoDiseaseRepository.findBySymptom(symptoms, limit));
+            List<DiseaseKnowledge> mongoMatches = dedupe(results);
+            if (mongoMatches.size() >= limit) {
+                List<DiseaseKnowledge> matches = mongoMatches.stream().limit(limit).toList();
                 log.info("[AI-TIMER] disease.searchBySymptomText source=mongodb_symptom results={}",
-                        mongoMatches.size());
-                return mongoMatches;
+                        matches.size());
+                return matches;
             }
         }
 
-        // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）
+        // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）。
+        // 当 Mongo 症状召回不足 topK 时补齐语义候选，提高纯症状输入的召回质量。
         DiseaseCandidate fallbackCandidate = new DiseaseCandidate(
                 "", symptoms.isEmpty() ? List.of(userText) : symptoms,
                 "纯症状输入，基于原始文本做语义检索兜底。");
         String queryText = QueryExpander.expand(userText, fallbackCandidate);
-        List<DiseaseKnowledge> milvusMatches = llmClient.embedOne(queryText)
+        llmClient.embedOne(queryText)
                 .map(vector -> milvusRestClient.search(vector, limit))
-                .orElse(List.of());
-        if (!milvusMatches.isEmpty()) {
-            log.info("[AI-TIMER] disease.searchBySymptomText source=milvus_semantic results={}",
-                    milvusMatches.size());
-            return milvusMatches;
+                .ifPresent(results::addAll);
+
+        List<DiseaseKnowledge> matches = dedupe(results).stream().limit(limit).toList();
+        if (!matches.isEmpty()) {
+            log.info("[AI-TIMER] disease.searchBySymptomText source=merged_symptom_semantic results={}",
+                    matches.size());
+            return matches;
         }
 
         log.info("[AI-TIMER] disease.searchBySymptomText source=miss results=0");
