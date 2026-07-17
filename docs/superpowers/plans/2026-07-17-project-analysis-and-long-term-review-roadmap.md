@@ -1029,6 +1029,8 @@ git commit -m "feat(patient): 双写加密证件号并提供可重入迁移"
 
 ### 任务 10：接入症状规则表并保留零漂移降级
 
+> **执行状态（2026-07-17）**：已完成并提交 `c553223 feat(ai-service): 接入症状规则表并保留硬编码降级`。随后 `b270739 perf(ai-service): 合并症状规则与语义召回结果` 补齐检索质量：规则召回不足 topK 时继续 Milvus 语义检索补齐并按疾病编码去重。验证命令：`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-Dtest=DiseaseSearchServiceTest,MedicationFunctionServiceTest,RagReadinessServiceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`。
+
 **文件：**
 - 创建：`backend/ai-service/src/main/java/com/medconsult/ai/persistence/entity/SymptomRuleEntity.java`
 - 创建：`backend/ai-service/src/main/java/com/medconsult/ai/persistence/entity/HighRiskSymptomRuleEntity.java`
@@ -1040,19 +1042,19 @@ git commit -m "feat(patient): 双写加密证件号并提供可重入迁移"
 - 修改：`backend/ai-service/src/main/java/com/medconsult/ai/service/SymptomChatService.java`
 - 创建：`backend/ai-service/src/test/java/com/medconsult/ai/knowledge/RiskRuleEngineDatabaseTest.java`
 
-- [ ] **步骤 1：把当前硬编码行为固化为参数化测试**
+- [x] **步骤 1：把当前硬编码行为固化为参数化测试**
 
 覆盖 CRITICAL、MEDIUM、LOW、否定词、空库和数据库异常。
 
-- [ ] **步骤 2：实现 Mapper 查询与缓存**
+- [x] **步骤 2：实现 Mapper 查询与缓存**
 
 按启用规则加载，编译为不可变内存快照；刷新失败保留上一份快照。库为空时使用当前常量，返回结果逐字段与改造前一致。
 
-- [ ] **步骤 3：改为 Spring 注入**
+- [x] **步骤 3：改为 Spring 注入**
 
 `RiskRuleEngine` 标记 `@Component`，`SymptomChatService` 使用构造器注入，不再 `new`。
 
-- [ ] **步骤 4：运行 AI 测试**
+- [x] **步骤 4：运行 AI 测试**
 
 ```bash
 ./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am test
@@ -1060,7 +1062,7 @@ git commit -m "feat(patient): 双写加密证件号并提供可重入迁移"
 
 预期：规则测试、RAG readiness 和 symptom-chat 相关测试全部通过。
 
-- [ ] **步骤 5：Commit**
+- [x] **步骤 5：Commit**
 
 ```bash
 git status --short
@@ -1386,6 +1388,8 @@ git commit -m "perf(database): 按执行计划优化审计与 AI 日志索引"
 
 ### 任务 15：修复 HTML 基础与响应式设计令牌
 
+> **执行状态（2026-07-17）**：已完成并提交 `f6e2ec2 feat(frontend): 优化响应式基础与患者入口体验`。本次实现覆盖 HTML `lang/title`、响应式与可访问性令牌、`useResponsive`、移动端登录/注册、患者首页语义按钮、主布局移动端折叠菜单和多视口 Playwright 回归。验证命令：`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，12/12 passed。
+
 **文件：**
 - 修改：`frontend/index.html`
 - 修改：`frontend/src/styles/variables.css`
@@ -1395,7 +1399,7 @@ git commit -m "perf(database): 按执行计划优化审计与 AI 日志索引"
 - 修改：`frontend/src/views/common/Register.vue`
 - 创建：`frontend/e2e/mobile-responsive.spec.ts`
 
-- [ ] **步骤 1：先写移动端失败测试**
+- [x] **步骤 1：先写移动端失败测试**
 
 ```ts
 for (const width of [375, 768, 1024, 1440]) {
@@ -1413,7 +1417,7 @@ for (const width of [375, 768, 1024, 1440]) {
 
 再断言 `html[lang=zh-CN]` 和标题为“智慧医疗问诊辅助系统”。
 
-- [ ] **步骤 2：运行测试确认 375px 失败**
+- [x] **步骤 2：运行测试确认 375px 失败**
 
 ```bash
 npm --prefix frontend run test:e2e -- e2e/mobile-responsive.spec.ts
@@ -1421,19 +1425,19 @@ npm --prefix frontend run test:e2e -- e2e/mobile-responsive.spec.ts
 
 预期：375px 因 780px 文档宽度失败。
 
-- [ ] **步骤 3：增加断点与可访问性令牌**
+- [x] **步骤 3：增加断点与可访问性令牌**
 
 CSS 使用 640/768/1024/1280 px 媒体查询；增加 `--focus-ring`、`--content-max-width`、移动间距和触摸目标尺寸。CSS 自定义属性不能直接用于 `@media`，断点值在 CSS 和 composable 中用同一注释与测试固定。
 
-- [ ] **步骤 4：实现 `useResponsive`**
+- [x] **步骤 4：实现 `useResponsive`**
 
 使用 `window.matchMedia('(max-width: 767px)')`，在 mounted 时注册 `change`，unmounted 时移除；SSR/测试环境先判断 `window`。
 
-- [ ] **步骤 5：登录/注册移动布局**
+- [x] **步骤 5：登录/注册移动布局**
 
 小于 768px 时隐藏非必要品牌特性区或移动到表单顶部，右侧宽度改为 `min(100%, 420px)`，页面不横向滚动，输入和按钮触摸高度至少 44px。
 
-- [ ] **步骤 6：运行多视口测试并 Commit**
+- [x] **步骤 6：运行多视口测试并 Commit**
 
 ```bash
 npm --prefix frontend run build
