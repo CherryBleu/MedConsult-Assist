@@ -15,14 +15,92 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DiseaseSearchServiceTest {
+
+    @Test
+    void namedCandidateSearchShouldReturnFiveResultsWhenTopKIsFive() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = namedIntent(5);
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        for (int i = 1; i <= 5; i++) {
+            when(mongoDiseaseRepository.findByNameExact("Disease-" + i))
+                    .thenReturn(Optional.of(knowledge("mongo-" + i, "Disease-" + i, 1.0, MatchSource.MONGODB_NAME_EXACT)));
+        }
+
+        List<DiseaseKnowledge> results = service.search("symptom text", intent, 5);
+
+        assertEquals(List.of("Disease-1", "Disease-2", "Disease-3", "Disease-4", "Disease-5"),
+                results.stream().map(DiseaseKnowledge::diseaseName).toList());
+    }
+
+    @Test
+    void namedCandidateSearchShouldCapExcessiveTopKToTen() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = namedIntent(12);
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        for (int i = 1; i <= 12; i++) {
+            when(mongoDiseaseRepository.findByNameExact("Disease-" + i))
+                    .thenReturn(Optional.of(knowledge("mongo-" + i, "Disease-" + i, 1.0, MatchSource.MONGODB_NAME_EXACT)));
+        }
+
+        List<DiseaseKnowledge> results = service.search("symptom text", intent, 50);
+
+        assertEquals(10, results.size());
+        assertEquals("Disease-1", results.getFirst().diseaseName());
+        assertEquals("Disease-10", results.getLast().diseaseName());
+        verify(mongoDiseaseRepository, times(10)).findByNameExact(anyString());
+    }
+
+    @Test
+    void symptomSearchShouldSupplementMongoShortageWithSemanticMatchesUntilFive() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("unknown", List.of("cough"), "symptom-only input")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(mongoDiseaseRepository.findBySymptom(List.of("cough"), 5)).thenReturn(List.of(
+                knowledge("mongo-1", "Disease-1", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-2", "Disease-2", 1.0, MatchSource.MONGODB_NAME_EXACT)
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(5))).thenReturn(List.of(
+                knowledge("milvus-dup", "Disease-2", 0.95, MatchSource.MILVUS_SEMANTIC),
+                knowledge("milvus-3", "Disease-3", 0.93, MatchSource.MILVUS_SEMANTIC),
+                knowledge("milvus-4", "Disease-4", 0.91, MatchSource.MILVUS_SEMANTIC),
+                knowledge("milvus-5", "Disease-5", 0.89, MatchSource.MILVUS_SEMANTIC)
+        ));
+
+        List<DiseaseKnowledge> results = service.search("cough for three days", intent, 5);
+
+        assertEquals(List.of("Disease-1", "Disease-2", "Disease-3", "Disease-4", "Disease-5"),
+                results.stream().map(DiseaseKnowledge::diseaseName).toList());
+        verify(mongoDiseaseRepository).findBySymptom(List.of("cough"), 5);
+        verify(milvusRestClient).search(anyList(), eq(5));
+    }
 
     @Test
     void symptomSearchShouldMergeMongoAndSemanticMatchesUntilTopK() {
@@ -52,6 +130,13 @@ class DiseaseSearchServiceTest {
                 results.stream().map(DiseaseKnowledge::diseaseName).toList());
         verify(llmClient).embedOne(anyString());
         verify(milvusRestClient).search(anyList(), eq(2));
+    }
+
+    private static DiseaseIntent namedIntent(int count) {
+        List<DiseaseCandidate> candidates = java.util.stream.IntStream.rangeClosed(1, count)
+                .mapToObj(index -> new DiseaseCandidate("Disease-" + index, List.of("symptom"), "candidate " + index))
+                .toList();
+        return new DiseaseIntent(candidates, new MetadataQuery(List.of(), Map.of()));
     }
 
     private static DiseaseKnowledge knowledge(String id, String name, double score, MatchSource source) {

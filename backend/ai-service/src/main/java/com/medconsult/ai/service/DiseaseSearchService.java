@@ -27,6 +27,8 @@ import java.util.concurrent.Future;
 @Service
 public class DiseaseSearchService {
     private static final Logger log = LoggerFactory.getLogger(DiseaseSearchService.class);
+    private static final int DEFAULT_TOP_K = 5;
+    private static final int MAX_TOP_K = 10;
 
     private final OpenAiCompatibleClient llmClient;
     private final MongoDiseaseRepository mongoDiseaseRepository;
@@ -59,15 +61,16 @@ public class DiseaseSearchService {
 
     public List<DiseaseKnowledge> search(String userText, DiseaseIntent intent, int topK) {
         long started = System.currentTimeMillis();
+        int limit = normalizeTopK(topK);
         List<DiseaseCandidate> candidates = intent.candidates().stream()
                 .filter(item -> !item.isPlaceholderDiseaseName())
-                .limit(3)
+                .limit(limit)
                 .toList();
         if (candidates.isEmpty()) {
             // 纯症状输入兜底：用户未明确提及疾病名时（如只输入"咳嗽""胸闷"），
             // 所有候选都是"待鉴别"占位符被过滤掉。此时不应直接返回空列表短路，
             // 否则 Milvus 语义检索路径永远走不到。改为用症状关键词 + 原始文本做检索兜底。
-            List<DiseaseKnowledge> fallback = searchBySymptomText(userText, intent, topK);
+            List<DiseaseKnowledge> fallback = searchBySymptomText(userText, intent, limit);
             log.info("[AI-TIMER] disease.search={}ms candidates=0 fallback=symptom results={}",
                     elapsed(started), fallback.size());
             return fallback;
@@ -96,7 +99,7 @@ public class DiseaseSearchService {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Disease search interrupted", ex);
         }
-        List<DiseaseKnowledge> deduped = dedupe(results).stream().limit(Math.max(1, Math.min(3, topK))).toList();
+        List<DiseaseKnowledge> deduped = dedupe(results).stream().limit(limit).toList();
         log.info("[AI-TIMER] disease.search={}ms candidates={} rawResults={} results={} sources={}",
                 elapsed(started), candidates.size(), results.size(), deduped.size(), summarizeSources(deduped));
         return deduped;
@@ -120,7 +123,7 @@ public class DiseaseSearchService {
      * 两条路径都未命中时返回空列表（由上层 generateFinalAnswer 给出兜底提示）。
      */
     private List<DiseaseKnowledge> searchBySymptomText(String userText, DiseaseIntent intent, int topK) {
-        int limit = Math.max(1, Math.min(3, topK));
+        int limit = normalizeTopK(topK);
 
         List<DiseaseKnowledge> results = new ArrayList<>();
 
@@ -350,5 +353,12 @@ public class DiseaseSearchService {
 
     private static long elapsed(long started) {
         return System.currentTimeMillis() - started;
+    }
+
+    private static int normalizeTopK(int topK) {
+        if (topK <= 0) {
+            return DEFAULT_TOP_K;
+        }
+        return Math.min(MAX_TOP_K, topK);
     }
 }
