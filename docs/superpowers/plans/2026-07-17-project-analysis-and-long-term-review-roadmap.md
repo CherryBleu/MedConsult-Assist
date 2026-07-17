@@ -1148,6 +1148,8 @@ git commit -m "feat(appointment): 补齐幂等退款状态机与患者入口"
 
 ### 任务 12：批量查询药品风险，消除用药分析 N+1
 
+> **执行补充（2026-07-17）**：在既有受控 tool_call/functionTrace 基础上，本轮补齐 `MedicationAnalysisService` 结果合并保护：服务端 `FunctionResult` 的风险等级、禁忌/相互作用和 functionTrace 不再被 LLM JSON 降级、清空或伪造。验证命令：`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-Dtest=TriageServiceInjectedRiskRuleTest,RiskRuleEngineDatabaseTest,DiseaseSearchServiceTest,MedicationAnalysisServiceControlledResultTest,MedicationToolCallTraceTest,MedicationAnalysisCacheKeyTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`、`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-DskipTests" compile`。
+
 **文件：**
 - 修改：`docs/架构设计文档.md`
 - 修改：`backend/medconsult-common/common-feign/src/main/java/com/medconsult/common/feign/client/DrugFeignClient.java`

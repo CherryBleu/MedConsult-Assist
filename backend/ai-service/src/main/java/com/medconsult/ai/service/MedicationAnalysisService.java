@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,7 +108,7 @@ public class MedicationAnalysisService {
                 : llmClient.chatJsonStream(PROMPT, JsonUtils.toJson(llmPayload), tokenConsumer))
                 .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
                 .orElse(fallback);
-        result.putIfAbsent("functionTrace", functionResult.functionTrace());
+        result = enforceControlledFunctionResult(result, functionResult);
 
         String analysisNo = BusinessIds.next("MA");
         AiMedicationAnalysisEntity entity = new AiMedicationAnalysisEntity();
@@ -182,6 +183,45 @@ public class MedicationAnalysisService {
         result.put("reminders", functionResult.reminders());
         result.put("functionTrace", functionResult.functionTrace());
         return result;
+    }
+
+    private static Map<String, Object> enforceControlledFunctionResult(
+            Map<String, Object> llmResult,
+            MedicationFunctionService.FunctionResult functionResult
+    ) {
+        Map<String, Object> result = new LinkedHashMap<>(llmResult == null ? Map.of() : llmResult);
+        result.put("overallRiskLevel", maxRiskLevel(functionResult.overallRiskLevel(), string(result.get("overallRiskLevel"))));
+        result.put("contraindicationRisks", functionResult.contraindicationRisks());
+        result.put("interactionRisks", functionResult.interactionRisks());
+        result.put("reminders", mergeReminders(functionResult.reminders(), listMap(result.get("reminders"))));
+        result.put("functionTrace", functionResult.functionTrace());
+        return result;
+    }
+
+    private static String maxRiskLevel(String controlledRiskLevel, String llmRiskLevel) {
+        return severity(llmRiskLevel) > severity(controlledRiskLevel) ? llmRiskLevel : controlledRiskLevel;
+    }
+
+    private static int severity(String riskLevel) {
+        return switch (string(riskLevel).toUpperCase()) {
+            case "CRITICAL" -> 4;
+            case "HIGH" -> 3;
+            case "MEDIUM" -> 2;
+            case "LOW" -> 1;
+            default -> 0;
+        };
+    }
+
+    private static List<Map<String, Object>> mergeReminders(List<Map<String, Object>> controlled,
+                                                            List<Map<String, Object>> generated) {
+        List<Map<String, Object>> merged = new ArrayList<>();
+        if (controlled != null) {
+            merged.addAll(controlled);
+        }
+        if (generated != null) {
+            merged.addAll(generated);
+        }
+        return merged;
     }
 
     private static String string(Object value) {
