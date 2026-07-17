@@ -136,10 +136,10 @@ export const refundAppointmentApi = (id, payload = {}) => {
   })
 }
 
-// 签到（状态机 PATCH /appointments/{appointmentId}/status，appointmentStatus=CHECKED_IN）
+// 患者签到（专用 SELF 动作 POST /appointments/{appointmentId}/check-in）
 export const checkInAppointmentApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockCheckInAppointment(id))
-  return request({ url: `/appointments/${id}/status`, method: 'patch', data: { appointmentStatus: 'CHECKED_IN' } })
+  return request({ url: `/appointments/${id}/check-in`, method: 'post' })
 }
 
 // 标记爽约（状态机 PATCH，appointmentStatus=NO_SHOW）

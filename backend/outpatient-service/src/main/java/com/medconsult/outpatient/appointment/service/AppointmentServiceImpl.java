@@ -263,6 +263,19 @@ public class AppointmentServiceImpl implements AppointmentService {
         return new AppointmentDTO.PaymentResponse(a.getAppointmentNo(), a.getPaymentStatus());
     }
 
+    // ===== 患者签到（专用 SELF 动作）=====
+
+    @Override
+    @Transactional
+    public AppointmentDTO.StatusResponse checkIn(String appointmentNo) {
+        Appointment a = requireByNo(appointmentNo);
+        enforceAppointmentOwnership(a);
+        if (!"PAID".equals(a.getPaymentStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "预约未支付，不能签到");
+        }
+        return transitionStatus(a, "CHECKED_IN");
+    }
+
     // ===== §2.5.6 更新就诊状态（状态机）=====
 
     @Override
@@ -271,7 +284,10 @@ public class AppointmentServiceImpl implements AppointmentService {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能改本人预约状态，DOCTOR 只能改本人接诊的
         enforceAppointmentOwnership(a);
-        String newStatus = req.getAppointmentStatus();
+        return transitionStatus(a, req.getAppointmentStatus());
+    }
+
+    private AppointmentDTO.StatusResponse transitionStatus(Appointment a, String newStatus) {
         if (!ALLOWED_APPOINTMENT_STATUS.contains(newStatus)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法预约状态: " + newStatus);
         }
@@ -284,7 +300,7 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
         a.setAppointmentStatus(newStatus);
         appointmentMapper.updateById(a);
-        log.info("预约状态流转: appointmentNo={} {} → {}", appointmentNo, current, newStatus);
+        log.info("预约状态流转: appointmentNo={} {} → {}", a.getAppointmentNo(), current, newStatus);
         return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), newStatus);
     }
 

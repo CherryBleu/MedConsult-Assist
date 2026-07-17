@@ -265,6 +265,36 @@ class OutpatientFlowTest {
     }
 
     @Test
+    void patientCanCheckInOwnPaidAppointmentButCannotStartVisit() throws Exception {
+        String scheduleNo = createSchedule(5);
+        String appointmentNo = createAppointment(scheduleNo, "9008");
+
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/payment"), "9008")
+                        .contentType("application/json")
+                        .content("{\"paymentStatus\":\"PAID\",\"paymentNo\":\"PAY-CHECKIN\",\"paidAmount\":50.00}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/check-in"), "9008"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.appointmentStatus").value("CHECKED_IN"));
+
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/status"), "9008")
+                        .contentType("application/json")
+                        .content("{\"appointmentStatus\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void patientCannotCheckInUnpaidAppointment() throws Exception {
+        String scheduleNo = createSchedule(5);
+        String appointmentNo = createAppointment(scheduleNo, "9009");
+
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/check-in"), "9009"))
+                .andExpect(jsonPath("$.code").value(409001))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("支付")));
+    }
+
+    @Test
     void paymentUpdate_andScheduleSuspendNotified() throws Exception {
         String scheduleNo = createSchedule(5);
         String appointmentNo = createAppointment(scheduleNo, "9004");

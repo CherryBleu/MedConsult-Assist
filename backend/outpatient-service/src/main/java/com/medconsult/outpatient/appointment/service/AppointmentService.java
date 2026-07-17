@@ -26,6 +26,9 @@ public interface AppointmentService {
     /** §2.5.5 更新支付状态 */
     AppointmentDTO.PaymentResponse updatePayment(String appointmentNo, AppointmentDTO.PaymentUpdateRequest req);
 
+    /** 患者签到（仅允许本人已支付预约 BOOKED -> CHECKED_IN） */
+    AppointmentDTO.StatusResponse checkIn(String appointmentNo);
+
     /** §2.5.6 更新就诊状态（状态机校验） */
     AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req);
 }

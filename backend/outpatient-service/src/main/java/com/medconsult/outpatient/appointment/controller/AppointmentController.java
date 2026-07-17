@@ -68,6 +68,14 @@ public class AppointmentController {
         return Result.ok(appointmentService.updatePayment(appointmentId, req));
     }
 
+    /** 患者签到：只允许患者本人将已支付预约从 BOOKED 推进到 CHECKED_IN。 */
+    @PostMapping("/{appointmentId}/check-in")
+    @Operation(summary = "患者签到")
+    @Permission(roles = {"PATIENT"}, dataScope = DataScope.SELF)
+    public Result<AppointmentDTO.StatusResponse> checkIn(@Parameter(description = "预约编号", required = true) @PathVariable String appointmentId) {
+        return Result.ok(appointmentService.checkIn(appointmentId));
+    }
+
     /** §2.5.6 更新就诊状态（状态机校验，医生接诊/完成就诊动作） */
     @PatchMapping("/{appointmentId}/status")
     @Operation(summary = "更新就诊状态")
