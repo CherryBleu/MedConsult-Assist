@@ -1029,7 +1029,7 @@ git commit -m "feat(patient): 双写加密证件号并提供可重入迁移"
 
 ### 任务 10：接入症状规则表并保留零漂移降级
 
-> **执行状态（2026-07-17）**：已完成并提交 `c553223 feat(ai-service): 接入症状规则表并保留硬编码降级`。随后 `b270739 perf(ai-service): 合并症状规则与语义召回结果` 补齐检索质量：规则召回不足 topK 时继续 Milvus 语义检索补齐并按疾病编码去重。验证命令：`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-Dtest=DiseaseSearchServiceTest,MedicationFunctionServiceTest,RagReadinessServiceTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`。
+> **执行状态（2026-07-17）**：已完成并提交 `c553223 feat(ai-service): 接入症状规则表并保留硬编码降级`。随后 `b270739 perf(ai-service): 合并症状规则与语义召回结果` 补齐检索质量：规则召回不足 topK 时继续 Milvus 语义检索补齐并按疾病编码去重；本轮补齐 `TriageService` 构造注入 `RiskRuleEngine`，智能分诊与症状问诊共用数据库规则快照。验证命令：`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-Dtest=TriageServiceInjectedRiskRuleTest,RiskRuleEngineDatabaseTest,DiseaseSearchServiceTest,MedicationToolCallTraceTest,MedicationAnalysisCacheKeyTest" "-Dsurefire.failIfNoSpecifiedTests=false" test`、`./backend/mvnw -q -f backend/pom.xml -pl :ai-service -am "-DskipTests" compile`。
 
 **文件：**
 - 创建：`backend/ai-service/src/main/java/com/medconsult/ai/persistence/entity/SymptomRuleEntity.java`
