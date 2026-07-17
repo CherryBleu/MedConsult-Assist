@@ -1,3 +1,10 @@
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 // 药品列表
 export const mockDrugList = () => {
   return {
@@ -50,6 +57,9 @@ export const mockStockOperate = (id, type, quantity, remark) => {
 
 // 库存预警列表
 export const mockStockWarningList = () => {
+  if (consumeFailOnce('mock_stock_warning_fail_once')) {
+    return Promise.reject(new Error('库存预警加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',

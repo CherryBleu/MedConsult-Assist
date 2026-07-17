@@ -64,4 +64,21 @@ test.describe('list error recovery', () => {
     await expect(page.locator('[data-testid="responsive-reception-card"]').first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
   })
+
+  test('stock warning list exposes retry path after first load failure', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'pharmacy')
+    await page.evaluate(() => localStorage.setItem('mock_stock_warning_fail_once', '1'))
+
+    await page.goto('/pharmacy/stock-warning')
+
+    await expect(page.getByRole('alert')).toContainText(/加载失败|库存预警加载失败/)
+    await expect(page.getByRole('button', { name: /重试/ })).toBeVisible()
+
+    await page.getByRole('button', { name: /重试/ }).click()
+
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect(page.locator('[data-testid="responsive-stock-warning-card"]').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
 })

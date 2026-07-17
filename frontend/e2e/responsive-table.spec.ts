@@ -46,6 +46,32 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
+  test('admin stock warning list switches to cards on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'admin')
+
+    await page.goto('/admin/stock-warning')
+
+    await expect(page.locator('[data-testid="responsive-stock-warning-card"]').first()).toBeVisible()
+    await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('pharmacy stock warning list keeps filters usable on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'pharmacy')
+
+    await page.goto('/pharmacy/stock-warning')
+
+    await expect(page.locator('[data-testid="responsive-stock-warning-card"]').first()).toBeVisible()
+    const lowStockFilter = page.getByTestId('stock-warning-filter-low')
+    await lowStockFilter.locator('.el-radio-button__inner').click()
+    await expect(lowStockFilter.getByRole('radio')).toBeChecked()
+    await expect(page.locator('[data-testid="responsive-stock-warning-card"]')).toHaveCount(2)
+    await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await expectNoHorizontalOverflow(page)
+  })
+
   test('audit log switches to cards on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.route('**/api/v1/audit-logs**', async (route) => {
