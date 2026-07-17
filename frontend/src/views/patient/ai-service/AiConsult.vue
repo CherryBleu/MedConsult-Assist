@@ -34,7 +34,77 @@
             <el-avatar :size="36" class="ai-avatar">
               <el-icon><Cpu /></el-icon>
             </el-avatar>
-            <div class="message-bubble ai-bubble">{{ msg.content }}</div>
+            <div class="ai-message-stack">
+              <div class="message-bubble ai-bubble">{{ msg.content }}</div>
+              <div v-if="hasEvidence(msg)" class="evidence-panel" aria-label="RAG 检索证据">
+                <div class="evidence-title">
+                  <span class="evidence-title-main">
+                    <el-icon><Document /></el-icon>
+                    检索证据
+                  </span>
+                  <el-tag v-if="msg.answerSource" size="small" type="success" effect="plain">
+                    {{ answerSourceLabel(msg.answerSource) }}
+                  </el-tag>
+                </div>
+
+                <div v-if="msg.citations?.length" class="evidence-section">
+                  <div class="evidence-section-title">引用片段</div>
+                  <article
+                    v-for="citation in msg.citations"
+                    :key="citationKey(citation)"
+                    class="citation-card"
+                  >
+                    <div class="citation-head">
+                      <strong>{{ citation.diseaseName || citation.sourceId || '疾病 JSON 条目' }}</strong>
+                      <span v-if="typeof citation.score === 'number'" class="score-pill">
+                        {{ formatScore(citation.score) }}
+                      </span>
+                    </div>
+                    <p v-if="citation.snippet" class="citation-snippet">{{ citation.snippet }}</p>
+                    <div v-if="citation.matchedFields?.length" class="field-row">
+                      <span class="field-label">匹配字段</span>
+                      <el-tag
+                        v-for="field in citation.matchedFields"
+                        :key="`${citationKey(citation)}-${field}`"
+                        size="small"
+                        effect="plain"
+                      >
+                        {{ field }}
+                      </el-tag>
+                    </div>
+                  </article>
+                </div>
+
+                <details v-if="msg.vectorMatches?.length" class="vector-details">
+                  <summary>
+                    <span class="summary-main">
+                      <el-icon><Search /></el-icon>
+                      向量匹配
+                    </span>
+                    <span class="summary-count">{{ msg.vectorMatches.length }} 条</span>
+                  </summary>
+                  <div class="vector-list">
+                    <div
+                      v-for="match in msg.vectorMatches"
+                      :key="vectorMatchKey(match)"
+                      class="vector-item"
+                    >
+                      <div class="vector-head">
+                        <strong>{{ match.diseaseName || match.sourceId || '疾病 JSON 条目' }}</strong>
+                        <span v-if="typeof match.score === 'number'" class="score-pill">
+                          {{ formatScore(match.score) }}
+                        </span>
+                      </div>
+                      <div class="vector-meta">
+                        {{ match.fieldName || 'text' }}
+                        <span v-if="match.sourceId"> · {{ match.sourceId }}</span>
+                      </div>
+                      <p v-if="match.chunkText" class="vector-snippet">{{ match.chunkText }}</p>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </div>
           </template>
           <template v-else>
             <div class="message-bubble user-bubble">{{ msg.content }}</div>
@@ -92,7 +162,7 @@ defineOptions({ name: 'AiConsult' })
 
 import { ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Cpu, Loading } from '@element-plus/icons-vue'
+import { Cpu, Document, Loading, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
 
@@ -142,6 +212,41 @@ const sendMessage = async () => {
 const quickSend = (text) => {
   inputText.value = text
   sendMessage()
+}
+
+const hasEvidence = (msg) => {
+  return Boolean(msg?.citations?.length || msg?.vectorMatches?.length)
+}
+
+const formatScore = (score) => {
+  return typeof score === 'number' ? `${Math.round(score * 100)}%` : ''
+}
+
+const answerSourceLabel = (source) => {
+  if (source === 'VECTOR_SEARCH_AND_RULE') {
+    return '向量检索 + 规则'
+  }
+  if (source === 'VECTOR_SEARCH_AND_RULE_DEGRADED') {
+    return '降级检索 + 规则'
+  }
+  return source
+}
+
+const citationKey = (citation) => {
+  return [
+    citation.sourceId,
+    citation.diseaseName,
+    citation.snippet
+  ].filter(Boolean).join('|')
+}
+
+const vectorMatchKey = (match) => {
+  return [
+    match.vectorId,
+    match.sourceId,
+    match.fieldName,
+    match.chunkText
+  ].filter(Boolean).join('|')
 }
 
 onMounted(async () => {
@@ -235,12 +340,124 @@ onMounted(async () => {
   font-size: 14px;
   word-break: break-word;
 }
+.ai-message-stack {
+  width: min(780px, 78%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ai-message-stack .message-bubble {
+  max-width: 100%;
+}
 .ai-bubble {
   background: #fff;
   border: 1px solid var(--border-lighter);
   border-top-left-radius: 4px;
   color: var(--text-primary);
   box-shadow: 0 8px 24px rgba(15, 35, 95, .06);
+}
+
+.evidence-panel {
+  padding: 14px;
+  border: 1px solid rgba(22, 119, 255, .14);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(244,250,255,.92));
+  box-shadow: 0 10px 24px rgba(15, 35, 95, .06);
+}
+.evidence-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.evidence-title-main,
+.summary-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.evidence-section-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.citation-card,
+.vector-item {
+  padding: 12px;
+  border: 1px solid var(--border-lighter);
+  border-radius: 12px;
+  background: #fff;
+}
+.citation-card + .citation-card,
+.vector-item + .vector-item {
+  margin-top: 8px;
+}
+.citation-head,
+.vector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.citation-snippet,
+.vector-snippet {
+  margin: 8px 0 0;
+  color: var(--text-regular);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.field-label,
+.vector-meta,
+.summary-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.score-pill {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #0958d9;
+  background: rgba(22, 119, 255, .1);
+  font-size: 12px;
+  font-weight: 700;
+}
+.vector-details {
+  margin-top: 10px;
+}
+.vector-details summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 12px;
+  padding: 0 10px;
+  color: var(--text-primary);
+}
+.vector-details summary::-webkit-details-marker {
+  display: none;
+}
+.vector-details summary:focus-visible {
+  outline: 2px solid rgba(22, 119, 255, .45);
+  outline-offset: 2px;
+}
+.vector-list {
+  padding-top: 8px;
 }
 .user-bubble {
   background: var(--gradient-primary);
@@ -287,5 +504,29 @@ onMounted(async () => {
 .quick-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .chat-page {
+    height: calc(100vh - 76px);
+  }
+  .chat-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .chat-messages {
+    padding: 18px 14px;
+  }
+  .message-bubble,
+  .ai-message-stack {
+    max-width: none;
+    width: calc(100% - 48px);
+  }
+  .evidence-title,
+  .citation-head,
+  .vector-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

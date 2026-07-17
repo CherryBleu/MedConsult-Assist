@@ -328,11 +328,40 @@ export const mockSendMessage = (sessionId, userMessage) => {
       id: Date.now(),
       sessionId,
       userMessage,
+      answer: reply,
       aiAnswer: reply,
+      answerSource: 'VECTOR_SEARCH_AND_RULE',
+      possibleCauses: ['急性支气管炎', '上呼吸道感染'],
       suggestedDepartments: ['呼吸内科'],
       riskLevel: 'LOW',
       emergencyAdvice: 0,
-      citations: ['急性支气管炎', '上呼吸道感染'],
+      vectorMatches: [
+        {
+          vectorId: 'vec_mock_001',
+          score: 0.89,
+          sourceId: 'DISEASE_JSON:急性支气管炎',
+          diseaseName: '急性支气管炎',
+          fieldName: 'symptom',
+          chunkText: '症状包含咳嗽、咳痰，可伴随发热、咽痛等表现。'
+        },
+        {
+          vectorId: 'vec_mock_002',
+          score: 0.82,
+          sourceId: 'DISEASE_JSON:上呼吸道感染',
+          diseaseName: '上呼吸道感染',
+          fieldName: 'cure_department',
+          chunkText: '推荐就诊科室包含呼吸内科。'
+        }
+      ],
+      citations: [
+        {
+          sourceId: 'DISEASE_JSON:急性支气管炎',
+          diseaseName: '急性支气管炎',
+          matchedFields: ['symptom', 'cure_department'],
+          snippet: '症状包含咳嗽、咳痰，可伴随发热、咽痛等表现；推荐就诊科室包含呼吸内科。',
+          score: 0.89
+        }
+      ],
       createdAt: new Date().toLocaleString()
     }
   }

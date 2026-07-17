@@ -24,4 +24,10 @@ test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
   // 行为断言2：AI 回复出现，且含 mock 预设关键词（呼吸道感染），
   // 证明走通了"发送→后端(mock)→渲染回复"的完整链路，不是空兜底。
   await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
+
+  // 行为断言3：RAG 可追溯证据随 AI 回复一起展示，避免前端只渲染 answer 丢失 citations/vectorMatches。
+  await expect(page.getByText('检索证据').first()).toBeVisible()
+  await expect(page.getByText('急性支气管炎').first()).toBeVisible()
+  await expect(page.getByText('向量匹配').first()).toBeVisible()
+  await expect(page.getByText('symptom').first()).toBeVisible()
 })

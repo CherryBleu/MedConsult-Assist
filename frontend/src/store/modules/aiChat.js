@@ -1,6 +1,56 @@
 import { defineStore } from 'pinia'
 import { createSessionApi, sendChatMessageApi } from '@/api/ai'
 
+const normalizeCitation = (item) => {
+  if (typeof item === 'string') {
+    return {
+      sourceId: item,
+      diseaseName: item,
+      matchedFields: [],
+      snippet: item,
+      score: null
+    }
+  }
+  if (!item || typeof item !== 'object') {
+    return null
+  }
+  return {
+    sourceId: item.sourceId || '',
+    diseaseName: item.diseaseName || item.sourceId || '疾病 JSON 条目',
+    matchedFields: Array.isArray(item.matchedFields) ? item.matchedFields : [],
+    snippet: item.snippet || item.chunkText || '',
+    score: typeof item.score === 'number' ? item.score : null
+  }
+}
+
+const normalizeVectorMatch = (item) => {
+  if (!item || typeof item !== 'object') {
+    return null
+  }
+  return {
+    vectorId: item.vectorId || '',
+    score: typeof item.score === 'number' ? item.score : null,
+    sourceId: item.sourceId || '',
+    diseaseName: item.diseaseName || item.sourceId || '疾病 JSON 条目',
+    fieldName: item.fieldName || 'text',
+    chunkText: item.chunkText || item.snippet || ''
+  }
+}
+
+const normalizeAiReply = (data) => {
+  const payload = data || {}
+  return {
+    content: payload.answer || payload.aiAnswer || '暂无回复',
+    answerSource: payload.answerSource || '',
+    possibleCauses: Array.isArray(payload.possibleCauses) ? payload.possibleCauses : [],
+    suggestedDepartments: Array.isArray(payload.suggestedDepartments) ? payload.suggestedDepartments : [],
+    riskLevel: payload.riskLevel || '',
+    emergencyAdvice: payload.emergencyAdvice === true || payload.emergencyAdvice === 1,
+    citations: Array.isArray(payload.citations) ? payload.citations.map(normalizeCitation).filter(Boolean) : [],
+    vectorMatches: Array.isArray(payload.vectorMatches) ? payload.vectorMatches.map(normalizeVectorMatch).filter(Boolean) : []
+  }
+}
+
 /**
  * AI 问诊会话状态。
  *
@@ -85,18 +135,21 @@ export const useAiChatStore = defineStore('aiChat', {
       this.loading = true
       try {
         const res = await sendChatMessageApi(this.sessionId, content)
+        const reply = normalizeAiReply(res.data)
         this.addMessage({
           // AI 消息 id 不能用 sessionId（同一会话多次回复会重复，Vue v-for key 冲突）
           id: Date.now(),
           role: 'ai',
-          content: res.data.answer || res.data.aiAnswer || '暂无回复'
+          ...reply
         })
       } catch (e) {
         // 发送失败时保留用户消息并追加错误提示，避免用户等待后消息消失无反馈
         this.addMessage({
           id: Date.now(),
           role: 'ai',
-          content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。'
+          content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。',
+          citations: [],
+          vectorMatches: []
         })
       } finally {
         this.loading = false
