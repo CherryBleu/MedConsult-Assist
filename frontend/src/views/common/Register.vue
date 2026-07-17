@@ -1,29 +1,29 @@
 <template>
-  <div class="register-page">
+  <main class="register-page" aria-labelledby="register-title">
     <div class="register-box">
       <div class="register-header">
-        <h2>用户注册</h2>
+        <h2 id="register-title">用户注册</h2>
         <p>智慧医疗系统账号注册</p>
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" class="register-form">
         <el-form-item label="账号" prop="account">
-          <el-input v-model="form.account" placeholder="请输入账号（4-20位字母数字）" />
+          <el-input v-model="form.account" placeholder="请输入账号（4-20位字母数字）" autocomplete="username" aria-label="账号" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码（8-20位，含字母和数字）" show-password />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码（8-20位，含字母和数字）" autocomplete="new-password" aria-label="密码" show-password />
         </el-form-item>
         <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" show-password />
+          <el-input v-model="form.confirmPassword" type="password" placeholder="请再次输入密码" autocomplete="new-password" aria-label="确认密码" show-password />
         </el-form-item>
         <el-form-item label="姓名" prop="name">
-          <el-input v-model="form.name" placeholder="请输入真实姓名" />
+          <el-input v-model="form.name" placeholder="请输入真实姓名" autocomplete="name" aria-label="姓名" />
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入手机号" maxlength="11" />
+          <el-input v-model="form.phone" placeholder="请输入手机号" maxlength="11" inputmode="tel" autocomplete="tel" aria-label="手机号" />
         </el-form-item>
         <el-form-item label="身份证号" prop="idCard">
-          <el-input v-model="form.idCard" placeholder="请输入身份证号（用于自动建档）" maxlength="18" />
+          <el-input v-model="form.idCard" placeholder="请输入身份证号（用于自动建档）" maxlength="18" inputmode="text" autocomplete="off" aria-label="身份证号" />
         </el-form-item>
         <el-alert
           type="info"
@@ -43,7 +43,7 @@
         </div>
       </el-form>
     </div>
-  </div>
+  </main>
 </template>
 
 <script setup>
@@ -155,19 +155,28 @@ const handleRegister = async () => {
 <style scoped>
 .register-page {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 24px;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 12% 14%, rgba(8, 145, 178, .18), transparent 30%),
+    radial-gradient(circle at 88% 12%, rgba(22, 163, 74, .12), transparent 28%),
+    linear-gradient(135deg, #ecfeff 0%, #f0f9ff 48%, #f8fafc 100%);
 }
 .register-box {
-  width: 480px;
-  background: #fff;
-  border-radius: 12px;
-  padding: 40px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  max-height: 90vh;
+  width: min(100%, 500px);
+  background: var(--bg-glass);
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: var(--radius-xl);
+  padding: clamp(24px, 5vw, 40px);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100svh - 48px);
   overflow-y: auto;
 }
 .register-header {
@@ -175,7 +184,7 @@ const handleRegister = async () => {
   margin-bottom: 30px;
 }
 .register-header h2 {
-  font-size: 24px;
+  font-size: clamp(24px, 5vw, 30px);
   color: var(--text-primary);
   margin: 0 0 8px;
 }
@@ -193,5 +202,34 @@ const handleRegister = async () => {
   color: var(--primary-color);
   text-decoration: none;
   margin-left: 4px;
+}
+
+.register-form :deep(.el-input__wrapper) {
+  min-height: 44px;
+}
+
+.register-form :deep(.el-button) {
+  min-height: 44px;
+}
+
+.login-link a:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 480px) {
+  .register-page {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .register-box {
+    max-height: none;
+    padding: 22px 16px;
+  }
+
+  .register-header {
+    margin-bottom: 22px;
+  }
 }
 </style>

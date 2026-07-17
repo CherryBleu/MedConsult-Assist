@@ -1,14 +1,19 @@
 <template>
   <div class="page-container">
     <!-- 顶部欢迎横幅 -->
-    <div class="banner-card">
+    <section class="banner-card" aria-labelledby="patient-home-title">
       <div class="banner-left">
         <span class="eyebrow">MEDCONSULT ASSIST</span>
-        <h2>您好，{{ userStore.userInfo.name || '用户' }}</h2>
-        <p>今天也可以从智能分诊、快速挂号和病历追踪开始管理健康。</p>
+        <h2 id="patient-home-title">您好，{{ userStore.userInfo.name || '用户' }}</h2>
+        <p class="hero-copy">从智能分诊、快速挂号和病历追踪开始，按步骤完成今天的健康管理。</p>
         <div class="hero-actions">
           <el-button type="primary" round @click="$router.push('/patient/ai-consult')">AI 问诊</el-button>
           <el-button round @click="$router.push('/patient/appointment/department')">立即挂号</el-button>
+        </div>
+        <div class="hero-assurance" aria-label="服务保障">
+          <span>智能导诊</span>
+          <span>预约提醒</span>
+          <span>病历可追溯</span>
         </div>
       </div>
       <div class="banner-right">
@@ -16,36 +21,26 @@
           <el-icon :size="48" color="#fff"><FirstAidKit /></el-icon>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- 快捷功能入口 -->
     <div class="card-box mb-20">
       <h3 class="section-title">常用功能</h3>
       <div class="quick-grid">
-        <div class="quick-item interactive-card" @click="$router.push('/patient/appointment')">
-          <div class="quick-icon icon-blue">
-            <el-icon :size="28"><Calendar /></el-icon>
-          </div>
-          <span>预约挂号</span>
-        </div>
-        <div class="quick-item interactive-card" @click="$router.push('/patient/triage')">
-          <div class="quick-icon icon-green">
-            <el-icon :size="28"><Cpu /></el-icon>
-          </div>
-          <span>智能分诊</span>
-        </div>
-        <div class="quick-item interactive-card" @click="$router.push('/patient/records')">
-          <div class="quick-icon icon-orange">
-            <el-icon :size="28"><Document /></el-icon>
-          </div>
-          <span>我的病历</span>
-        </div>
-        <div class="quick-item interactive-card" @click="$router.push('/patient/profile')">
-          <div class="quick-icon icon-purple">
-            <el-icon :size="28"><User /></el-icon>
-          </div>
-          <span>个人中心</span>
-        </div>
+        <button
+          v-for="action in quickActions"
+          :key="action.path"
+          type="button"
+          class="quick-item interactive-card"
+          :aria-label="action.label"
+          @click="router.push(action.path)"
+        >
+          <span class="quick-icon" :class="action.iconClass" aria-hidden="true">
+            <el-icon :size="28"><component :is="action.icon" /></el-icon>
+          </span>
+          <span class="quick-title">{{ action.label }}</span>
+          <span class="quick-desc">{{ action.desc }}</span>
+        </button>
       </div>
     </div>
 
@@ -56,15 +51,16 @@
         <el-button type="primary" link @click="$router.push('/patient/appointment/department')">全部科室</el-button>
       </div>
       <div v-loading="deptLoading" class="dept-grid">
-        <div 
+        <button
           v-for="item in hotDepartments" 
           :key="item.id" 
+          type="button"
           class="dept-item"
           @click="goToDoctorList(item.id)"
         >
           <div class="dept-name">{{ item.name }}</div>
           <div class="dept-desc">{{ item.description }}</div>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -75,7 +71,7 @@
         <el-button type="primary" link @click="$router.push('/patient/appointment/department')">查看更多</el-button>
       </div>
       <div v-loading="doctorLoading" class="doctor-list">
-        <div v-for="doctor in recommendDoctors" :key="doctor.id" class="doctor-card">
+        <article v-for="doctor in recommendDoctors" :key="doctor.id" class="doctor-card">
           <el-avatar :size="56" class="doctor-avatar">
             {{ (doctor.name || '?').charAt(0) }}
           </el-avatar>
@@ -89,7 +85,7 @@
           <el-button type="primary" size="small" @click="goToSchedule(doctor.id)">
             预约
           </el-button>
-        </div>
+        </article>
       </div>
     </div>
   </div>
@@ -109,6 +105,13 @@ const deptLoading = ref(false)
 const doctorLoading = ref(false)
 const hotDepartments = ref([])
 const recommendDoctors = ref([])
+
+const quickActions = [
+  { label: '预约挂号', desc: '查看预约和缴费', path: '/patient/appointment', icon: 'Calendar', iconClass: 'icon-blue' },
+  { label: '智能分诊', desc: '按症状推荐科室', path: '/patient/triage', icon: 'Cpu', iconClass: 'icon-green' },
+  { label: '我的病历', desc: '追踪诊疗记录', path: '/patient/records', icon: 'Document', iconClass: 'icon-orange' },
+  { label: '个人中心', desc: '维护健康档案', path: '/patient/profile', icon: 'User', iconClass: 'icon-teal' }
+]
 
 // 获取热门科室（取前6个）
 const getHotDepartments = async () => {
@@ -182,6 +185,7 @@ onMounted(() => {
 .banner-left {
   position: relative;
   z-index: 1;
+  max-width: 640px;
 }
 .eyebrow {
   display: inline-flex;
@@ -196,14 +200,32 @@ onMounted(() => {
   font-size: 28px;
   margin-bottom: 8px;
 }
-.banner-left p {
+.hero-copy {
   opacity: 0.92;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1.7;
+  max-width: 560px;
 }
 .hero-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
+}
+.hero-assurance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.hero-assurance span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .18);
+  font-size: 13px;
 }
 .health-orbit {
   position: relative;
@@ -243,11 +265,14 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  min-height: 148px;
   cursor: pointer;
-  padding: 18px 0;
+  padding: 18px 12px;
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,251,255,.92));
   border: 1px solid var(--border-lighter);
+  color: var(--text-primary);
+  text-align: center;
 }
 .quick-icon {
   width: 56px;
@@ -259,9 +284,18 @@ onMounted(() => {
   color: #fff;
 }
 .icon-blue { background: #1677ff; }
-.icon-green { background: #52c41a; }
-.icon-orange { background: #faad14; }
-.icon-purple { background: #722ed1; }
+.icon-green { background: var(--success-color); }
+.icon-orange { background: var(--warning-color); }
+.icon-teal { background: var(--accent-cyan); }
+.quick-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.quick-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
 
 /* 科室网格 */
 .dept-grid {
@@ -275,6 +309,9 @@ onMounted(() => {
   border-radius: var(--radius-base);
   cursor: pointer;
   transition: all 0.2s;
+  background: #fff;
+  color: inherit;
+  text-align: left;
 }
 .dept-item:hover {
   border-color: var(--primary-color);
@@ -327,5 +364,67 @@ onMounted(() => {
 .doctor-special {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+@media (max-width: 1024px) {
+  .quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dept-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .banner-card {
+    border-radius: var(--radius-xl);
+    padding: 24px;
+    align-items: flex-start;
+  }
+
+  .banner-right {
+    display: none;
+  }
+
+  .banner-left h2 {
+    font-size: 24px;
+  }
+
+  .hero-actions :deep(.el-button) {
+    min-height: 44px;
+  }
+
+  .section-header {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .quick-grid,
+  .dept-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .quick-item {
+    min-height: 108px;
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .quick-icon {
+    flex: 0 0 52px;
+  }
+
+  .doctor-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .doctor-card :deep(.el-button) {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 </style>

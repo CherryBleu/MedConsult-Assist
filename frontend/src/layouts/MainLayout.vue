@@ -1,14 +1,14 @@
 <template>
   <el-container class="layout-container">
     <!-- 侧边栏 -->
-    <el-aside :width="isCollapse ? '64px' : '220px'" class="layout-aside">
+    <el-aside :width="asideWidth" class="layout-aside">
       <div class="logo-box">
-        <span v-if="!isCollapse" class="logo-text">智慧医疗系统</span>
+        <span v-if="!isMenuCollapsed" class="logo-text">智慧医疗系统</span>
         <span v-else class="logo-text">医疗</span>
       </div>
       <el-menu
         :default-active="activeMenu"
-        :collapse="isCollapse"
+        :collapse="isMenuCollapsed"
         :collapse-transition="false"
         router
         background-color="transparent"
@@ -45,7 +45,7 @@
       <el-header class="layout-header">
         <div class="header-left">
           <el-icon class="collapse-btn" @click="isCollapse = !isCollapse">
-            <Fold v-if="!isCollapse" />
+            <Fold v-if="!isMenuCollapsed" />
             <Expand v-else />
           </el-icon>
           <el-breadcrumb separator="/">
@@ -135,14 +135,18 @@ import { Bell } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useNoticeStore } from '@/store/modules/notice'
 import { ROLE_ENUM } from '@/constants'
+import { useResponsive } from '@/composables/useResponsive'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const noticeStore = useNoticeStore()
+const { isMobile } = useResponsive()
 
 const isCollapse = ref(false)
 const noticePopoverVisible = ref(false)
+const isMenuCollapsed = computed(() => isMobile.value || isCollapse.value)
+const asideWidth = computed(() => isMenuCollapsed.value ? '64px' : '220px')
 
 // 需要 keep-alive 缓存的路由 name 列表：
 // 仅缓存"重状态"页面（AI 工具等生成结果耗时 10-15s，切走再切回不应丢失）。
@@ -320,6 +324,11 @@ const handleCommand = (command) => {
 .layout-container {
   width: 100%;
   height: 100vh;
+  overflow-x: hidden;
+}
+
+.layout-container > .el-container {
+  min-width: 0;
 }
 
 /* 侧边栏 */
@@ -328,6 +337,7 @@ const handleCommand = (command) => {
   background: linear-gradient(180deg, #07182f 0%, #09254b 52%, #102a5e 100%);
   transition: width 0.2s;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .layout-aside::before {
   content: '';
@@ -384,12 +394,14 @@ const handleCommand = (command) => {
   justify-content: space-between;
   padding: 0 24px;
   height: 64px !important;
+  min-width: 0;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
 }
 
 .collapse-btn {
@@ -402,6 +414,7 @@ const handleCommand = (command) => {
   display: flex;
   align-items: center;
   gap: 20px;
+  min-width: 0;
 }
 
 .notice-bell {
@@ -505,6 +518,8 @@ const handleCommand = (command) => {
   background: var(--gradient-soft);
   padding: 0;
   overflow-y: auto;
+  min-width: 0;
+  overflow-x: clip;
 }
 
 /* 页面过渡动画 */
@@ -515,5 +530,24 @@ const handleCommand = (command) => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .layout-header {
+    padding: 0 12px;
+  }
+
+  .header-left {
+    gap: 10px;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+
+  .user-name,
+  :deep(.el-breadcrumb) {
+    display: none;
+  }
 }
 </style>

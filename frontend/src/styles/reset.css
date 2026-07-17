@@ -7,7 +7,11 @@
 html, body, #app {
   width: 100%;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  min-width: 0;
+  font-family: "Figtree", "Noto Sans SC", "Noto Sans", "Microsoft YaHei", sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  -webkit-text-size-adjust: 100%;
 }
 
 ul, ol {
@@ -32,11 +36,11 @@ table {
 button {
   cursor: pointer;
   border: none;
-  outline: none;
   background: none;
+  font: inherit;
 }
 
 input, textarea {
-  outline: none;
+  font: inherit;
   border: none;
 }

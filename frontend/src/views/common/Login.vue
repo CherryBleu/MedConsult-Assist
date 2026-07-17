@@ -1,7 +1,7 @@
 <template>
-  <div class="login-container">
+  <main class="login-container" aria-labelledby="login-title">
     <!-- 左侧品牌介绍区 -->
-    <div class="login-left" :class="{ 'patient-theme': selectedEntry === 'patient', 'staff-theme': selectedEntry === 'staff' }">
+    <section class="login-left" :class="{ 'patient-theme': selectedEntry === 'patient', 'staff-theme': selectedEntry === 'staff' }" aria-label="系统能力">
       <div class="brand-box">
         <h1 class="brand-title">智慧医疗系统</h1>
         <p class="brand-desc">智能分诊 · 电子病历 · AI辅助诊疗</p>
@@ -20,14 +20,14 @@
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- 右侧登录表单区 -->
-    <div class="login-right">
+    <section class="login-right" aria-label="登录表单">
       <div class="login-card">
         <!-- 入口选择界面 -->
         <template v-if="!selectedEntry">
-          <h2 class="login-title">请选择登录入口</h2>
+          <h2 id="login-title" class="login-title">请选择登录入口</h2>
           <div class="entry-selector">
             <button type="button" class="entry-card patient-entry" @click="selectEntry('patient')">
               <el-icon :size="48" class="entry-icon"><User /></el-icon>
@@ -44,11 +44,11 @@
 
         <!-- 登录表单界面 -->
         <template v-else>
-          <div class="back-entry" @click="backToEntrySelect">
+          <button type="button" class="back-entry" @click="backToEntrySelect">
             <el-icon><ArrowLeft /></el-icon>
             <span>返回选择</span>
-          </div>
-          <h2 class="login-title">
+          </button>
+          <h2 id="login-title" class="login-title">
             {{ selectedEntry === 'patient' ? '患者登录' : '工作人员登录' }}
           </h2>
           <el-form
@@ -64,6 +64,8 @@
                 :placeholder="selectedEntry === 'patient' ? '请输入患者账号' : '请输入工号/账号'"
                 size="large"
                 :prefix-icon="User"
+                autocomplete="username"
+                :aria-label="selectedEntry === 'patient' ? '患者账号' : '工号或账号'"
               />
             </el-form-item>
 
@@ -75,6 +77,8 @@
                 size="large"
                 :prefix-icon="Lock"
                 show-password
+                autocomplete="current-password"
+                aria-label="登录密码"
               />
             </el-form-item>
 
@@ -106,19 +110,19 @@
             <div class="demo-title">演示账号（密码任意6位以上）：</div>
             <div class="demo-list">
               <template v-if="selectedEntry === 'patient'">
-                <span class="demo-tag" @click="fillAccount('patient')">患者/patient</span>
+                <button type="button" class="demo-tag" @click="fillAccount('patient')">患者/patient</button>
               </template>
               <template v-else>
-                <span class="demo-tag" @click="fillAccount('doctor')">医生/doctor</span>
-                <span class="demo-tag" @click="fillAccount('admin')">管理员/admin</span>
-                <span class="demo-tag" @click="fillAccount('pharmacy')">药房/pharmacy</span>
+                <button type="button" class="demo-tag" @click="fillAccount('doctor')">医生/doctor</button>
+                <button type="button" class="demo-tag" @click="fillAccount('admin')">管理员/admin</button>
+                <button type="button" class="demo-tag" @click="fillAccount('pharmacy')">药房/pharmacy</button>
               </template>
             </div>
           </div>
         </template>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 </template>
 
 <script setup>
@@ -219,15 +223,20 @@ const handleLogin = async () => {
 <style scoped>
 .login-container {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
-  background: var(--bg-page);
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(8, 145, 178, .20), transparent 28%),
+    radial-gradient(circle at 92% 18%, rgba(22, 163, 74, .15), transparent 26%),
+    var(--bg-page);
 }
 
 /* 左侧品牌区 */
 .login-left {
   flex: 1;
-  background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 54%, var(--accent-green) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,19 +245,19 @@ const handleLogin = async () => {
 }
 
 .login-left.patient-theme {
-  background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 54%, var(--accent-green) 100%);
 }
 
 .login-left.staff-theme {
-  background: linear-gradient(135deg, #fa8c16 0%, #d46b08 100%);
+  background: linear-gradient(135deg, #92400e 0%, var(--accent-amber) 52%, var(--primary-color) 100%);
 }
 
 .brand-box {
-  width: 420px;
+  width: min(420px, calc(100% - 48px));
 }
 
 .brand-title {
-  font-size: 42px;
+  font-size: clamp(32px, 4vw, 42px);
   font-weight: 600;
   margin-bottom: 16px;
 }
@@ -276,18 +285,20 @@ const handleLogin = async () => {
 /* 右侧登录区 */
 .login-right {
   width: 520px;
-  background: #fff;
+  background: rgba(255, 255, 255, .94);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 32px;
 }
 
 .login-card {
-  width: 360px;
+  width: min(100%, 380px);
+  border-radius: var(--radius-xl);
 }
 
 .login-title {
-  font-size: 28px;
+  font-size: clamp(24px, 4vw, 28px);
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 32px;
@@ -307,7 +318,7 @@ const handleLogin = async () => {
 
 .login-btn {
   width: 100%;
-  height: 44px;
+  min-height: 44px;
   font-size: 16px;
 }
 
@@ -340,6 +351,7 @@ const handleLogin = async () => {
 }
 .demo-tag {
   font-size: 12px;
+  min-height: 32px;
   padding: 4px 10px;
   background: var(--bg-page);
   border-radius: 4px;
@@ -362,9 +374,10 @@ const handleLogin = async () => {
 
 .entry-card {
   width: 100%;
+  min-height: 132px;
   padding: 24px;
   border: 2px solid var(--border-light);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all 0.25s ease;
   text-align: center;
@@ -374,7 +387,7 @@ const handleLogin = async () => {
 
 .entry-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-hover);
 }
 
 .patient-entry:hover {
@@ -387,12 +400,12 @@ const handleLogin = async () => {
 }
 
 .staff-entry:hover {
-  border-color: #fa8c16;
-  background: rgba(250, 140, 22, 0.04);
+  border-color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .staff-entry:hover .entry-icon {
-  color: #fa8c16;
+  color: var(--accent-amber);
 }
 
 .entry-icon {
@@ -425,10 +438,101 @@ const handleLogin = async () => {
   cursor: pointer;
   margin-bottom: 8px;
   width: fit-content;
+  min-height: 36px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
   transition: color 0.2s;
 }
 
 .back-entry:hover {
   color: var(--primary-color);
+}
+
+.entry-card:focus-visible,
+.demo-tag:focus-visible,
+.back-entry:focus-visible,
+.register-link:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.login-form :deep(.el-input__wrapper) {
+  min-height: 44px;
+}
+
+@media (max-width: 900px) {
+  .login-container {
+    display: block;
+    padding: 16px;
+  }
+
+  .login-left {
+    min-height: 220px;
+    border-radius: var(--radius-xl);
+    padding: 28px 20px;
+    text-align: center;
+  }
+
+  .brand-box {
+    width: min(100%, 420px);
+  }
+
+  .brand-desc {
+    margin-bottom: 24px;
+  }
+
+  .brand-features {
+    align-items: center;
+    gap: 12px;
+  }
+
+  .login-right {
+    width: 100%;
+    padding: 16px 0 0;
+    background: transparent;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 460px;
+    margin: 0 auto;
+    padding: 24px 18px;
+    background: rgba(255, 255, 255, .94);
+    border: 1px solid rgba(255, 255, 255, .72);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(12px);
+  }
+}
+
+@media (max-width: 420px) {
+  .login-container {
+    padding: 12px;
+  }
+
+  .login-left {
+    min-height: 188px;
+    padding: 22px 16px;
+  }
+
+  .brand-title {
+    margin-bottom: 10px;
+  }
+
+  .brand-desc {
+    font-size: 15px;
+    margin-bottom: 16px;
+  }
+
+  .feature-item {
+    font-size: 14px;
+  }
+
+  .login-title {
+    margin-bottom: 22px;
+  }
+
+  .entry-card {
+    min-height: 118px;
+    padding: 18px 14px;
+  }
 }
 </style>
