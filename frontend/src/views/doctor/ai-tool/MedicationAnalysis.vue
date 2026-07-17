@@ -31,10 +31,37 @@
                 </div>
               </el-option>
             </el-select>
-            <el-button type="primary" :loading="analyzing" @click="doAnalysis" style="margin-left: 12px">
+            <el-button
+              type="primary"
+              :loading="analyzing"
+              :disabled="!selectedRecord || selectedPrescriptions.length === 0"
+              @click="doAnalysis"
+              style="margin-left: 12px"
+            >
               开始分析
             </el-button>
           </el-form-item>
+          <el-form-item label="选择药品">
+            <el-select
+              v-model="selectedDrugIds"
+              placeholder="请选择本次分析涉及的真实药品"
+              style="width: 500px"
+              filterable
+              multiple
+              :loading="drugLoading"
+            >
+              <el-option
+                v-for="item in drugOptions"
+                :key="item.drugId"
+                :label="`${item.drugName || item.name} | ${item.specification || '无规格'}`"
+                :value="item.drugId"
+              />
+            </el-select>
+          </el-form-item>
+          <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+          <div class="form-helper">
+            当前处方前端闭环尚未完成，请先选择真实药品条目；缺少药品时不会再提交占位分析。
+          </div>
         </el-form>
       </div>
 
@@ -109,12 +136,17 @@ import { ElMessage } from 'element-plus'
 import { CircleCheck } from '@element-plus/icons-vue'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
+import { getDrugListApi } from '@/api/drug'
 import { medicationAnalysisApi } from '@/api/ai'
 
 const selectedRecord = ref('')
+const selectedDrugIds = ref([])
 const analyzing = ref(false)
+const drugLoading = ref(false)
 const recordList = ref([])
+const drugOptions = ref([])
 const analysisResult = ref(null)
+const formError = ref('')
 
 const riskLabel = computed(() => {
   const map = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险' }
@@ -127,18 +159,58 @@ const getRecordList = async () => {
   recordList.value = res.data?.records ?? res.data ?? []
 }
 
+const getDrugOptions = async () => {
+  drugLoading.value = true
+  try {
+    const res = await getDrugListApi({ page: 1, pageSize: 100 })
+    const list = Array.isArray(res.data) ? res.data : []
+    drugOptions.value = list.map(item => ({
+      ...item,
+      drugId: item.drugId ?? item.drugNo ?? item.id,
+      drugName: item.drugName ?? item.name ?? item.genericName
+    }))
+  } finally {
+    drugLoading.value = false
+  }
+}
+
+const selectedRecordItem = computed(() => {
+  return recordList.value.find(item => item.id === selectedRecord.value)
+})
+
+const selectedPrescriptions = computed(() => {
+  return selectedDrugIds.value
+    .map(id => drugOptions.value.find(item => item.drugId === id))
+    .filter(Boolean)
+    .map(item => ({
+      drugId: String(item.drugId || ''),
+      drugName: item.drugName || item.name || item.genericName,
+      dosage: '',
+      frequency: '',
+      route: '',
+      days: 1
+    }))
+    .filter(item => item.drugName)
+})
+
 const doAnalysis = async () => {
+  formError.value = ''
   if (!selectedRecord.value) {
-    ElMessage.warning('请先选择病历')
+    formError.value = '请先选择病历'
+    ElMessage.warning(formError.value)
+    return
+  }
+  if (selectedPrescriptions.value.length === 0) {
+    formError.value = '请至少选择 1 个真实药品后再开始分析'
+    ElMessage.warning(formError.value)
     return
   }
   analyzing.value = true
   try {
-    // 后端 MedicationAnalysisRequest 需要 prescriptions 列表（@NotEmpty）
-    // 前端暂无处方数据组装能力，发送最小占位处方让后端能处理
     const res = await medicationAnalysisApi({
       recordId: selectedRecord.value,
-      prescriptions: [{ drugName: 'placeholder' }],
+      patientId: selectedRecordItem.value?.patientId ? String(selectedRecordItem.value.patientId) : undefined,
+      prescriptions: selectedPrescriptions.value,
       patientContext: null
     })
     analysisResult.value = res.data
@@ -150,6 +222,7 @@ const doAnalysis = async () => {
 
 onMounted(() => {
   getRecordList()
+  getDrugOptions()
 })
 </script>
 
@@ -166,6 +239,19 @@ onMounted(() => {
   background: var(--bg-page);
   border-radius: var(--radius-base);
   margin-bottom: 24px;
+}
+
+.form-error {
+  margin: 0 0 10px 100px;
+  color: var(--el-color-danger);
+  font-size: 13px;
+}
+
+.form-helper {
+  margin-left: 100px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .risk-overview {

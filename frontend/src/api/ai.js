@@ -85,22 +85,30 @@ export const confirmSummaryApi = (summaryId, data) => {
   })
 }
 
-// 用药分析
-// 后端 MedicationAnalysisRequest 需要 prescriptions 列表 + patientContext，
-// 前端只传 recordId 时后端会因 @NotEmpty 校验失败（400）。
-// 改为接受完整 data 对象，由调用方组装 prescriptions。
-export const medicationAnalysisApi = (data) => {
-  if (USE_MOCK) {
-    // 兼容旧调用：传 recordId 字符串时走 mock
-    if (typeof data === 'string') {
-      return Promise.resolve(mockMedicationAnalysis(data))
-    }
-    return Promise.resolve(mockMedicationAnalysis(data.recordId))
+const normalizeMedicationAnalysisPayload = (data) => {
+  if (!data || typeof data === 'string') {
+    throw new Error('用药分析需要真实药品明细，不能只传病历编号')
   }
-  // 兼容旧调用：传 recordId 字符串时包装为最小请求体（无处方则后端返回空风险）
-  const payload = typeof data === 'string'
-    ? { recordId: data, prescriptions: [{ drugName: 'placeholder' }] }
-    : data
+  const prescriptions = Array.isArray(data.prescriptions)
+    ? data.prescriptions.filter(item => {
+        const drugName = String(item?.drugName || '').trim()
+        return drugName && drugName.toLowerCase() !== 'placeholder'
+      })
+    : []
+  if (prescriptions.length === 0) {
+    throw new Error('用药分析至少需要 1 条真实药品')
+  }
+  return { ...data, prescriptions }
+}
+
+// 用药分析
+// 后端 MedicationAnalysisRequest 需要 prescriptions 列表 + patientContext。
+// 调用方必须传真实药品，禁止用 placeholder 绕过 @NotEmpty 后制造“空风险”假成功。
+export const medicationAnalysisApi = (data) => {
+  const payload = normalizeMedicationAnalysisPayload(data)
+  if (USE_MOCK) {
+    return Promise.resolve(mockMedicationAnalysis(payload.recordId))
+  }
   return request({
     url: '/ai/medication-analysis',
     method: 'post',

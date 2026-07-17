@@ -10,6 +10,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
@@ -29,8 +30,10 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 药品库存服务实现（对齐《需求文档》§4.1.5 / 《接口文档》§2.7 / 架构文档 §7.1）。
@@ -304,6 +307,36 @@ public class DrugServiceImpl implements DrugService {
         if (d == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "药品不存在: " + drugId);
         }
+        return toRiskInfo(d);
+    }
+
+    /** 内部：批量用药风险信息（一次 selectBatchIds，按输入首次出现顺序返回） */
+    @Override
+    public DrugRiskBatchResponse getRiskInfoBatch(List<Long> drugIds) {
+        List<Long> normalized = normalizeDrugIds(drugIds);
+        if (normalized.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "drugIds 不能为空");
+        }
+        if (normalized.size() > 100) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "drugIds 一次最多查询 100 个");
+        }
+
+        List<Drug> drugs = drugMapper.selectBatchIds(normalized);
+        Map<Long, Drug> drugMap = toDrugMap(drugs);
+        List<DrugRiskInfoDTO> items = new ArrayList<>();
+        List<Long> missingDrugIds = new ArrayList<>();
+        for (Long drugId : normalized) {
+            Drug drug = drugMap.get(drugId);
+            if (drug == null) {
+                missingDrugIds.add(drugId);
+            } else {
+                items.add(toRiskInfo(drug));
+            }
+        }
+        return new DrugRiskBatchResponse(items, missingDrugIds);
+    }
+
+    private DrugRiskInfoDTO toRiskInfo(Drug d) {
         List<DrugRiskInfoDTO.Contraindication> contras = parseContraindications(d.getContraindications());
         List<DrugRiskInfoDTO.Interaction> inters = parseInteractions(d.getInteractions());
         return new DrugRiskInfoDTO(d.getId(), d.getGenericName(), contras, inters);
@@ -389,6 +422,18 @@ public class DrugServiceImpl implements DrugService {
             map.put(d.getId(), d);
         }
         return map;
+    }
+
+    private static List<Long> normalizeDrugIds(List<Long> drugIds) {
+        Set<Long> unique = new LinkedHashSet<>();
+        if (drugIds != null) {
+            for (Long id : drugIds) {
+                if (id != null && id > 0) {
+                    unique.add(id);
+                }
+            }
+        }
+        return new ArrayList<>(unique);
     }
 
     /**

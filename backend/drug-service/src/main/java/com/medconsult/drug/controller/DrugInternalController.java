@@ -1,6 +1,8 @@
 package com.medconsult.drug.controller;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.DrugRiskBatchRequest;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.drug.dto.DrugDTO;
@@ -44,6 +46,13 @@ public class DrugInternalController {
     public Result<DrugRiskInfoDTO> getRiskInfo(@PathVariable Long drugId) {
         SecurityContext.requireService();
         return Result.ok(drugService.getRiskInfo(drugId));
+    }
+
+    /** 批量用药风险信息，供 ai-service 用药分析一次性查询处方药品风险 */
+    @PostMapping("/risk-info/batch")
+    public Result<DrugRiskBatchResponse> getRiskInfoBatch(@RequestBody DrugRiskBatchRequest request) {
+        SecurityContext.requireService();
+        return Result.ok(drugService.getRiskInfoBatch(request == null ? null : request.drugIds()));
     }
 
     /** FEFO 选批查询（按 expire_date ASC，不扣减，供调剂选批参考） */

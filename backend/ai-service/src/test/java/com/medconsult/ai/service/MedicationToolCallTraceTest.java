@@ -6,18 +6,22 @@ import com.medconsult.ai.dto.AiModels.PrescriptionDto;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.DrugRiskBatchRequest;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,10 +37,13 @@ class MedicationToolCallTraceTest {
     void functionTraceShouldUseToolCallFieldsAndWhitelistPrescriptionDrugs() {
         PatientFeignClient patientClient = mock(PatientFeignClient.class);
         DrugFeignClient drugClient = mock(DrugFeignClient.class);
-        when(drugClient.getRiskInfo(1L)).thenReturn(Result.ok(new DrugRiskInfoDTO(
-                1L, "布洛芬",
-                List.of(new DrugRiskInfoDTO.Contraindication("胃溃疡", "RELATIVE", "慎用")),
-                List.of(new DrugRiskInfoDTO.Interaction("ASPIRIN", "增加出血风险", "MEDIUM"))
+        when(drugClient.getRiskInfoBatch(any(DrugRiskBatchRequest.class))).thenReturn(Result.ok(new DrugRiskBatchResponse(
+                List.of(new DrugRiskInfoDTO(
+                        1L, "布洛芬",
+                        List.of(new DrugRiskInfoDTO.Contraindication("胃溃疡", "RELATIVE", "慎用")),
+                        List.of(new DrugRiskInfoDTO.Interaction("ASPIRIN", "增加出血风险", "MEDIUM"))
+                )),
+                List.of()
         )));
         MedicationFunctionService service = new MedicationFunctionService(patientClient, drugClient);
         MedicationAnalysisRequest request = new MedicationAnalysisRequest(
@@ -63,11 +70,10 @@ class MedicationToolCallTraceTest {
     void duplicatedDrugIdShouldBeFetchedOnce() {
         PatientFeignClient patientClient = mock(PatientFeignClient.class);
         DrugFeignClient drugClient = mock(DrugFeignClient.class);
-        AtomicInteger calls = new AtomicInteger();
-        when(drugClient.getRiskInfo(1L)).thenAnswer(invocation -> {
-            calls.incrementAndGet();
-            return Result.ok(DrugRiskInfoDTO.safe(1L, "布洛芬"));
-        });
+        when(drugClient.getRiskInfoBatch(any(DrugRiskBatchRequest.class))).thenReturn(Result.ok(new DrugRiskBatchResponse(
+                List.of(DrugRiskInfoDTO.safe(1L, "布洛芬")),
+                List.of()
+        )));
         MedicationFunctionService service = new MedicationFunctionService(patientClient, drugClient);
         MedicationAnalysisRequest request = new MedicationAnalysisRequest(
                 "1001", "MR1", "RX1",
@@ -81,14 +87,17 @@ class MedicationToolCallTraceTest {
 
         service.execute(request);
 
-        assertEquals(1, calls.get());
+        ArgumentCaptor<DrugRiskBatchRequest> captor = ArgumentCaptor.forClass(DrugRiskBatchRequest.class);
+        verify(drugClient, times(1)).getRiskInfoBatch(captor.capture());
+        verify(drugClient, never()).getRiskInfo(anyLong());
+        assertEquals(List.of(1L), captor.getValue().drugIds());
     }
 
     @Test
     void downstreamFailureShouldBeVisibleInToolTrace() {
         PatientFeignClient patientClient = mock(PatientFeignClient.class);
         DrugFeignClient drugClient = mock(DrugFeignClient.class);
-        when(drugClient.getRiskInfo(1L)).thenThrow(new RuntimeException("drug-service timeout"));
+        when(drugClient.getRiskInfoBatch(any(DrugRiskBatchRequest.class))).thenThrow(new RuntimeException("drug-service timeout"));
         MedicationFunctionService service = new MedicationFunctionService(patientClient, drugClient);
         MedicationAnalysisRequest request = new MedicationAnalysisRequest(
                 "1001", "MR1", "RX1",
@@ -102,5 +111,42 @@ class MedicationToolCallTraceTest {
         assertTrue(result.functionTrace().stream().anyMatch(trace -> "queryDrugRiskInfo".equals(trace.get("toolName"))
                 && "FAILED".equals(trace.get("status"))
                 && String.valueOf(trace.get("errorCode")).contains("RuntimeException")));
+    }
+
+    @Test
+    void uniqueDrugIdsShouldUseSingleBatchRiskCall() {
+        PatientFeignClient patientClient = mock(PatientFeignClient.class);
+        DrugFeignClient drugClient = mock(DrugFeignClient.class);
+        when(drugClient.getRiskInfoBatch(any(DrugRiskBatchRequest.class))).thenReturn(Result.ok(new DrugRiskBatchResponse(
+                List.of(
+                        DrugRiskInfoDTO.safe(1L, "布洛芬"),
+                        DrugRiskInfoDTO.safe(2L, "阿司匹林"),
+                        DrugRiskInfoDTO.safe(3L, "阿莫西林")
+                ),
+                List.of()
+        )));
+        MedicationFunctionService service = new MedicationFunctionService(patientClient, drugClient);
+        MedicationAnalysisRequest request = new MedicationAnalysisRequest(
+                "1001", "MR1", "RX1",
+                List.of(
+                        new PrescriptionDto("1", "布洛芬", "0.2g", "tid", "口服", 3),
+                        new PrescriptionDto("2", "阿司匹林", "100mg", "qd", "口服", 7),
+                        new PrescriptionDto("3", "阿莫西林", "0.5g", "tid", "口服", 5),
+                        new PrescriptionDto("1", "布洛芬缓释胶囊", "0.3g", "bid", "口服", 3)
+                ),
+                new PatientContext(45, "MALE", List.of(), List.of(), List.of()),
+                true
+        );
+
+        MedicationFunctionService.FunctionResult result = service.execute(request);
+
+        ArgumentCaptor<DrugRiskBatchRequest> captor = ArgumentCaptor.forClass(DrugRiskBatchRequest.class);
+        verify(drugClient, times(1)).getRiskInfoBatch(captor.capture());
+        verify(drugClient, never()).getRiskInfo(anyLong());
+        assertEquals(List.of(1L, 2L, 3L), captor.getValue().drugIds());
+        long riskInfoTraceCount = result.functionTrace().stream()
+                .filter(trace -> "queryDrugRiskInfo".equals(trace.get("toolName")))
+                .count();
+        assertEquals(3, riskInfoTraceCount);
     }
 }

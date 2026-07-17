@@ -7,6 +7,8 @@ import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.DrugRiskBatchRequest;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import org.slf4j.Logger;
@@ -15,10 +17,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -48,8 +53,7 @@ public class MedicationFunctionService {
         List<Map<String, Object>> reminders = new ArrayList<>();
 
         for (PrescriptionDto prescription : request.prescriptions()) {
-            // 前端在无真实处方数据时会硬编码 {drugName:'placeholder'} 占位以满足 @NotEmpty 校验，
-            // 占位处方不应产生用药提醒，否则会向用户显示无意义的 placeholder 药名提醒。
+            // 防御性过滤旧客户端/测试数据里的占位药名，避免生成无意义的用药提醒。
             if (isPlaceholderDrugName(prescription.drugName())) {
                 continue;
             }
@@ -105,7 +109,6 @@ public class MedicationFunctionService {
     }
 
     private List<DrugRiskInfoDTO> queryDrugRiskInfos(List<PrescriptionDto> prescriptions, List<Map<String, Object>> functionTrace) {
-        List<DrugRiskInfoDTO> result = new ArrayList<>();
         Map<String, PrescriptionDto> unique = new LinkedHashMap<>();
         for (PrescriptionDto prescription : prescriptions) {
             if (!StringUtils.hasText(prescription.drugId()) || isPlaceholderDrugName(prescription.drugName())) {
@@ -113,30 +116,81 @@ public class MedicationFunctionService {
             }
             unique.putIfAbsent(prescription.drugId(), prescription);
         }
+
+        List<Long> drugIds = new ArrayList<>();
+        Map<Long, PrescriptionDto> byNumericId = new LinkedHashMap<>();
         for (PrescriptionDto prescription : unique.values()) {
-            try {
-                Result<DrugRiskInfoDTO> res = drugClient.getRiskInfo(BusinessIds.numericId(prescription.drugId()));
-                if (res != null && res.data() != null) {
-                    result.add(res.data());
+            Long drugId = BusinessIds.numericId(prescription.drugId());
+            if (drugId == null) {
+                functionTrace.add(toolTrace("queryDrugRiskInfo",
+                        "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
+                        "FAILED", "invalid drugId", "INVALID_DRUG_ID"));
+                continue;
+            }
+            drugIds.add(drugId);
+            byNumericId.putIfAbsent(drugId, prescription);
+        }
+        if (drugIds.isEmpty()) {
+            return List.of();
+        }
+
+        try {
+            Result<DrugRiskBatchResponse> response = drugClient.getRiskInfoBatch(new DrugRiskBatchRequest(drugIds));
+            DrugRiskBatchResponse batch = response == null ? null : response.data();
+            if (batch == null) {
+                addRiskInfoFailureTraces(byNumericId.values(), functionTrace, "empty", "EMPTY_RESPONSE");
+                return List.of();
+            }
+            Map<Long, DrugRiskInfoDTO> infoMap = toRiskInfoMap(batch.items());
+            Set<Long> missing = new HashSet<>(batch.missingDrugIds() == null ? List.of() : batch.missingDrugIds());
+            List<DrugRiskInfoDTO> result = new ArrayList<>();
+            for (Map.Entry<Long, PrescriptionDto> entry : byNumericId.entrySet()) {
+                Long drugId = entry.getKey();
+                PrescriptionDto prescription = entry.getValue();
+                DrugRiskInfoDTO info = infoMap.get(drugId);
+                if (info != null) {
+                    result.add(info);
                     functionTrace.add(toolTrace("queryDrugRiskInfo",
                             "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
-                            "SUCCESS", riskInfoSummary(res.data()), null));
+                            "SUCCESS", riskInfoSummary(info), null));
                 } else {
                     functionTrace.add(toolTrace("queryDrugRiskInfo",
                             "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
-                            "FAILED", "empty", "EMPTY_RESPONSE"));
+                            "FAILED", missing.contains(drugId) ? "missing" : "empty", "NOT_FOUND"));
                 }
-            } catch (RuntimeException ex) {
-                // 用药安全场景：drug-service 不可用时静默降级为本地规则，必须留日志便于发现，
-                // 否则用户拿不到真实禁忌/相互作用却无任何告警。
-                log.warn("drug risk info fetch failed, degrade to local rules, drugId={}",
-                        prescription.drugId(), ex);
-                functionTrace.add(toolTrace("queryDrugRiskInfo",
-                        "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
-                        "FAILED", "degraded to local rules", errorCode(ex)));
+            }
+            return result;
+        } catch (RuntimeException ex) {
+            // 用药安全场景：drug-service 不可用时静默降级为本地规则，必须留日志便于发现，
+            // 否则用户拿不到真实禁忌/相互作用却无任何告警。
+            log.warn("drug risk info batch fetch failed, degrade to local rules, drugIds={}", drugIds, ex);
+            addRiskInfoFailureTraces(byNumericId.values(), functionTrace, "degraded to local rules", errorCode(ex));
+            return List.of();
+        }
+    }
+
+    private static Map<Long, DrugRiskInfoDTO> toRiskInfoMap(List<DrugRiskInfoDTO> items) {
+        Map<Long, DrugRiskInfoDTO> map = new HashMap<>();
+        if (items == null) {
+            return map;
+        }
+        for (DrugRiskInfoDTO item : items) {
+            if (item != null && item.drugId() != null) {
+                map.putIfAbsent(item.drugId(), item);
             }
         }
-        return result;
+        return map;
+    }
+
+    private static void addRiskInfoFailureTraces(Iterable<PrescriptionDto> prescriptions,
+                                                 List<Map<String, Object>> functionTrace,
+                                                 String resultSummary,
+                                                 String errorCode) {
+        for (PrescriptionDto prescription : prescriptions) {
+            functionTrace.add(toolTrace("queryDrugRiskInfo",
+                    "drugId=" + prescription.drugId() + ",drugName=" + safeText(prescription.drugName()),
+                    "FAILED", resultSummary, errorCode));
+        }
     }
 
     private static void detectLocalContraindication(PatientContext context, PrescriptionDto prescription,
@@ -296,8 +350,8 @@ public class MedicationFunctionService {
 
     /**
      * 判断药名是否为前端无真实处方时硬编码的占位值。
-     * <p>前端 MedicationAnalysis.vue / api/ai.js 在无处方数据时会传 {drugName:'placeholder'}
-     * 满足后端 @NotEmpty 校验，这类占位处方不应产生用药提醒和风险分析。
+     * <p>旧客户端可能传 {drugName:'placeholder'} 满足后端 @NotEmpty 校验，
+     * 这类占位处方不应产生用药提醒和风险分析。
      */
     private static boolean isPlaceholderDrugName(String drugName) {
         if (!StringUtils.hasText(drugName)) {

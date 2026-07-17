@@ -2,6 +2,8 @@ package com.medconsult.common.feign.client;
 
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.dto.DispenseDTO;
+import com.medconsult.common.feign.dto.DrugRiskBatchRequest;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +36,10 @@ public interface DrugFeignClient {
     /** 内部：用药风险信息（禁忌 / 相互作用）—— ai-service Function Calling 用 */
     @GetMapping("/internal/drugs/{drugId}/risk-info")
     Result<DrugRiskInfoDTO> getRiskInfo(@PathVariable("drugId") Long drugId);
+
+    /** 内部：批量用药风险信息，避免 ai-service 按药品逐次 Feign 调用 */
+    @PostMapping("/internal/drugs/risk-info/batch")
+    Result<DrugRiskBatchResponse> getRiskInfoBatch(@RequestBody DrugRiskBatchRequest request);
 
     /** 内部：当前总库存—— medical-record dispense 前预校验 */
     @GetMapping("/internal/drugs/{drugId}/current-stock")

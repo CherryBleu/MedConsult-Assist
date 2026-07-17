@@ -1,6 +1,7 @@
 package com.medconsult.drug.service;
 
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
 import com.medconsult.drug.dto.DrugDTO;
 
@@ -41,6 +42,9 @@ public interface DrugService {
 
     /** 内部：用药风险信息（禁忌 / 相互作用，DrugRiskInfoDTO） */
     DrugRiskInfoDTO getRiskInfo(Long drugId);
+
+    /** 内部：批量用药风险信息（1 次 SQL 返回命中项和缺失项） */
+    DrugRiskBatchResponse getRiskInfoBatch(List<Long> drugIds);
 
     /** 内部：FEFO 选批查询（返回按 expire_date ASC 排序的可用批次，不扣减） */
     List<DrugDTO.BatchInfo> ffeoBatches(Long drugId, int quantity);

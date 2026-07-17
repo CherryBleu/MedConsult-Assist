@@ -275,6 +275,31 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data").value(100));
     }
 
+    @Test
+    void internalRiskInfoBatchReturnsItemsAndMissingIdsInInputOrder() throws Exception {
+        Long ibuprofenId = insertDrugDirectly("D-BATCH-IBU", "批量布洛芬");
+        Long aspirinId = insertDrugDirectly("D-BATCH-ASP", "批量阿司匹林");
+        Long missingId = 999_999_991L;
+
+        String body = """
+                {"drugIds":[%d,%d,%d,%d,null,-1]}""".formatted(
+                aspirinId, ibuprofenId, aspirinId, missingId);
+
+        mvc.perform(post("/internal/drugs/risk-info/batch")
+                        .header("X-Caller-Service", "test-service")
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items.size()").value(2))
+                .andExpect(jsonPath("$.data.items[0].drugId").value(aspirinId))
+                .andExpect(jsonPath("$.data.items[0].genericName").value("批量阿司匹林"))
+                .andExpect(jsonPath("$.data.items[1].drugId").value(ibuprofenId))
+                .andExpect(jsonPath("$.data.items[1].genericName").value("批量布洛芬"))
+                .andExpect(jsonPath("$.data.missingDrugIds.size()").value(1))
+                .andExpect(jsonPath("$.data.missingDrugIds[0]").value(missingId));
+    }
+
     // ===== 测试助手 =====
 
     /** 创建药品，返回 drugNo */
@@ -307,6 +332,19 @@ class DrugFlowTest {
     private Long queryDrugIdByNo(String drugNo) {
         org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
         return jdbc.queryForObject("SELECT id FROM drug WHERE drug_no = ?", Long.class, drugNo);
+    }
+
+    /** 直接插入药品主表，供 internal 只读接口测试准备数据，避免引入对外接口登录前置条件。 */
+    private Long insertDrugDirectly(String drugNo, String genericName) {
+        org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+        long id = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+        jdbc.update("INSERT INTO drug (id, drug_no, generic_name, unit, min_stock_threshold, "
+                        + "contraindications, interactions, current_stock, status, created_at, updated_at, deleted) "
+                        + "VALUES (?, ?, ?, '盒', 10, null, null, 0, 'ACTIVE', NOW(), NOW(), 0)",
+                id,
+                drugNo,
+                genericName);
+        return id;
     }
 
     /**
