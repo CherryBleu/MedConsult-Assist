@@ -25,6 +25,13 @@ const writeRefundOrders = (orders) => {
   localStorage.setItem(REFUND_ORDER_KEY, JSON.stringify(orders))
 }
 
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 let mockSchedules = []
 const doctorData = [
   { id: 1, name: '张明', departmentId: 1, deptName: '心血管内科', fee: 50 },
@@ -110,6 +117,9 @@ export const mockCreateAppointment = (data) => {
 }
 
 export const mockMyAppointmentList = (params = {}) => {
+  if (consumeFailOnce('mock_appointment_list_fail_once')) {
+    return Promise.reject(new Error('预约列表加载失败，请重试'))
+  }
   let list = mockAppointments.filter(a => a.patientId === 1001)
   if (params.status) list = list.filter(a => a.appointmentStatus === params.status)
   return { code: 0, message: 'success', data: { records: list, total: list.length, pageNum: params.pageNum || 1, pageSize: params.pageSize || 10 } }

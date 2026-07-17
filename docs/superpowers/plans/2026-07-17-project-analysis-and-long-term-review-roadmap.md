@@ -1494,6 +1494,8 @@ git commit -m "feat(frontend): 补齐移动导航与键盘可访问性"
 
 ### 任务 17：统一页面状态、分页和移动表格
 
+> **执行状态（2026-07-17）**：部分完成。已新增 `PageState.vue`、`ResponsiveTable.vue` 和 `frontend/e2e/error-recovery.spec.ts`，并先迁移患者“我的预约”列表：首次加载失败会以 `role="alert"` 显示错误与“重试”按钮，点击后恢复列表；390px 视口无横向溢出。验证命令：`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，13/13 passed。剩余：`UserManage.vue`、`AuditLog.vue`、`PrescriptionReview.vue` 的响应式卡片化和分页请求竞争处理。
+
 **文件：**
 - 创建：`frontend/src/components/common/PageState.vue`
 - 创建：`frontend/src/components/common/ResponsiveTable.vue`
@@ -1503,15 +1505,15 @@ git commit -m "feat(frontend): 补齐移动导航与键盘可访问性"
 - 修改：`frontend/src/views/patient/appointment/MyAppointment.vue`
 - 创建：`frontend/e2e/error-recovery.spec.ts`
 
-- [ ] **步骤 1：写接口失败测试**
+- [x] **步骤 1：写接口失败测试**
 
 用 `page.route` 让列表接口首次返回 500、第二次成功。断言页面显示“加载失败”和“重试”，点击重试后渲染数据；不得把错误显示成空列表。
 
-- [ ] **步骤 2：实现 PageState**
+- [x] **步骤 2：实现 PageState**
 
 props 为 `loading`、`error`、`empty`，emit `retry`；优先级为 loading → error → empty → slot。错误区使用 `role="alert"`。
 
-- [ ] **步骤 3：实现 ResponsiveTable**
+- [x] **步骤 3：实现 ResponsiveTable**
 
 桌面渲染 table slot，移动端渲染 card slot；组件只负责布局，不复制领域字段映射。
 

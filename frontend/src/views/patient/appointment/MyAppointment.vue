@@ -18,8 +18,15 @@
         <el-tab-pane label="已取消" name="CANCELLED" />
       </el-tabs>
 
-      <div v-loading="loading" class="appointment-list">
-        <div v-for="item in list" :key="item.id" class="appointment-item">
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="list.length === 0"
+        empty-text="暂无预约记录"
+        @retry="fetchList"
+      >
+        <div class="appointment-list">
+          <div v-for="item in list" :key="item.id" class="appointment-item">
           <div class="item-header">
             <div class="header-left">
               <span class="dept-name">{{ item.deptName }}</span>
@@ -93,8 +100,8 @@
           </div>
         </div>
 
-        <el-empty v-if="!loading && list.length === 0" description="暂无预约记录" />
-      </div>
+        </div>
+      </PageState>
 
       <div class="pagination-wrap" v-if="total > 0">
         <el-pagination
@@ -142,6 +149,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Calendar } from '@element-plus/icons-vue'
 import { APPOINTMENT_STATUS, PAYMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
+import PageState from '@/components/common/PageState.vue'
 import {
   getAppointmentListApi, cancelAppointmentApi, payAppointmentApi,
   checkInAppointmentApi, getAppointmentDetailApi, refundAppointmentApi
@@ -149,6 +157,7 @@ import {
 
 const activeTab = ref('all')
 const loading = ref(false)
+const errorMessage = ref('')
 const list = ref([])
 const total = ref(0)
 const pageNum = ref(1)
@@ -159,6 +168,7 @@ const refundLoadingId = ref(null)
 
 const fetchList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const params = { page: pageNum.value, pageSize: pageSize.value }
     // 待支付：BOOKED + UNPAID；待就诊：BOOKED + PAID；其他直接按状态过滤
@@ -177,6 +187,8 @@ const fetchList = async () => {
     }
     list.value = records
     total.value = res.data.total || records.length
+  } catch (error) {
+    errorMessage.value = error?.message || '请求失败，请稍后重试'
   } finally {
     loading.value = false
   }
@@ -318,4 +330,29 @@ onMounted(() => {
 .reason { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 .item-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .pagination-wrap { margin-top: 20px; display: flex; justify-content: flex-end; }
+
+@media (max-width: 640px) {
+  .page-header,
+  .item-header,
+  .item-body {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .header-left,
+  .item-actions {
+    flex-wrap: wrap;
+  }
+
+  .item-actions .el-button {
+    min-height: var(--touch-target);
+    margin-left: 0;
+  }
+
+  .pagination-wrap {
+    justify-content: center;
+    overflow-x: auto;
+  }
+}
 </style>
