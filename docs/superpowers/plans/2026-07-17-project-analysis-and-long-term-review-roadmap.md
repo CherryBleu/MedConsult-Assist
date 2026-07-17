@@ -1494,7 +1494,7 @@ git commit -m "feat(frontend): 补齐移动导航与键盘可访问性"
 
 ### 任务 17：统一页面状态、分页和移动表格
 
-> **执行状态（2026-07-17）**：部分完成。已新增 `PageState.vue`、`ResponsiveTable.vue`、`frontend/e2e/error-recovery.spec.ts` 和 `frontend/e2e/responsive-table.spec.ts`；患者“我的预约”列表已支持首次加载失败 `role="alert"` +“重试”恢复，管理员 `UserManage.vue` 与 `AuditLog.vue` 已在 390px 视口切换为卡片并避免横向溢出。相关验证：`npm --prefix frontend run build` 通过；`npm --prefix frontend run test:e2e -- e2e/patient-home-responsive.spec.ts e2e/mobile-responsive.spec.ts e2e/error-recovery.spec.ts e2e/responsive-table.spec.ts` 6/6 passed；审计日志补充验证 `npm --prefix frontend run test:e2e -- e2e/responsive-table.spec.ts` 2/2 passed。剩余：`PrescriptionReview.vue` 的响应式卡片化和分页请求竞争处理。
+> **执行状态（2026-07-17）**：部分完成。已新增 `PageState.vue`、`ResponsiveTable.vue`、`frontend/e2e/error-recovery.spec.ts` 和 `frontend/e2e/responsive-table.spec.ts`；患者“我的预约”列表已支持首次加载失败 `role="alert"` +“重试”恢复，管理员 `UserManage.vue` 与 `AuditLog.vue` 已在 390px 视口切换为卡片并避免横向溢出。相关验证：`npm --prefix frontend run build` 通过；`npm --prefix frontend run test:e2e` 15/15 passed；审计日志补充验证 `npm --prefix frontend run test:e2e -- e2e/responsive-table.spec.ts` 2/2 passed。剩余：`PrescriptionReview.vue` 的响应式卡片化和分页请求竞争处理。
 
 **文件：**
 - 创建：`frontend/src/components/common/PageState.vue`
