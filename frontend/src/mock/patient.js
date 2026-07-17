@@ -77,7 +77,17 @@ const patientListData = [
   { id: 10, patientNo: 'P202604150010', name: '吴婷', gender: 'FEMALE', age: 33, phone: '13800000010', idCard: '120101199008188901', status: 'ACTIVE', createdAt: '2026-04-15 15:45:00' }
 ]
 
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 export const mockPatientList = (params) => {
+  if (consumeFailOnce('mock_patient_list_fail_once')) {
+    return Promise.reject(new Error('患者列表加载失败，请重试'))
+  }
   const { keyword = '', pageNum = 1, pageSize = 10 } = params || {}
   let filteredList = [...patientListData]
   if (keyword) {
