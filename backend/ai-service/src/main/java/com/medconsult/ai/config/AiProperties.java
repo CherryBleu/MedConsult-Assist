@@ -2,6 +2,7 @@ package com.medconsult.ai.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.Locale;
 import java.util.Map;
 
 @ConfigurationProperties(prefix = "medconsult.ai")
@@ -30,7 +31,32 @@ public record AiProperties(
     public record RedisProperties(String keyPrefix, long cacheSeconds) {
     }
 
-    public record MilvusProperties(String uri, String token, String database, String collection, double minScore) {
+    public record MilvusProperties(
+            String uri,
+            String token,
+            String database,
+            String collection,
+            double minScore,
+            String metricType,
+            int searchTimeoutSeconds
+    ) {
+        public MilvusProperties {
+            metricType = normalizeMilvusMetricType(metricType);
+            if (searchTimeoutSeconds <= 0) {
+                searchTimeoutSeconds = 15;
+            }
+        }
+
+        private static String normalizeMilvusMetricType(String value) {
+            String normalized = value == null || value.isBlank() ? "COSINE" : value.trim().toUpperCase(Locale.ROOT);
+            if ("EUCLIDEAN".equals(normalized)) {
+                return "L2";
+            }
+            return switch (normalized) {
+                case "COSINE", "IP", "L2" -> normalized;
+                default -> throw new IllegalArgumentException("Unsupported Milvus metric type: " + value);
+            };
+        }
     }
 
     public record ImagingProperties(String provider, String model) {

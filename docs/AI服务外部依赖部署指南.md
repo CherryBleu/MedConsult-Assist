@@ -288,9 +288,13 @@ ai-service 从 JVM 环境变量读配置（不是从 docker-compose 读，因为
 $env:DEEPSEEK_API_KEY     = "sk-你的key"
 $env:EMBEDDING_API_KEY    = "sk-你的embedding-key"   # 不要 RAG 可跳过
 $env:MILVUS_URI           = "http://localhost:19530"
+$env:MILVUS_METRIC_TYPE   = "COSINE"                 # 必须与导入器建索引 metric 一致
+$env:MILVUS_SEARCH_TIMEOUT_SECONDS = "15"
 $env:MINIO_ENDPOINT       = "http://localhost:9000"
 $env:MONGODB_URI          = "mongodb://localhost:27017"
 ```
+
+`MILVUS_METRIC_TYPE` 默认 `COSINE`，可选 `COSINE`/`IP`/`L2`/`EUCLIDEAN`；`EUCLIDEAN` 会规范为 Milvus 原生 `L2`。如果切换 metric，需先删除旧 collection 并用 `backend/data` 导入器带同一 `MILVUS_METRIC_TYPE` 重新导入，否则运行时会按错误分数语义过滤召回结果。
 
 ### 方式 B：读 .env 自动设（推荐）
 ```powershell

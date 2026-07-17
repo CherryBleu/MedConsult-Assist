@@ -21,8 +21,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
 
 @Component
 public class MilvusRestClient {
@@ -98,7 +100,7 @@ public class MilvusRestClient {
 
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(trimRightSlash(milvus.uri()) + "/v2/vectordb/entities/search"))
-                    .timeout(Duration.ofSeconds(60))
+                    .timeout(searchTimeout(milvus))
                     .header("Content-Type", "application/json; charset=utf-8")
                     .header("Accept", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(JsonUtils.toJson(payload), StandardCharsets.UTF_8));
@@ -117,11 +119,11 @@ public class MilvusRestClient {
             }
             List<DiseaseKnowledge> matches = new ArrayList<>();
             for (JsonNode entity : root.path("data")) {
-                double score = entity.path("distance").asDouble(entity.path("score").asDouble(0));
-                if (score < milvus.minScore()) {
+                OptionalDouble normalizedScore = normalizedScore(entity, milvus.metricType());
+                if (normalizedScore.isEmpty() || !passesMinScore(normalizedScore.getAsDouble(), milvus.minScore())) {
                     continue;
                 }
-                matches.add(toKnowledge(entity, score));
+                matches.add(toKnowledge(entity, normalizedScore.getAsDouble()));
             }
             log.info("[AI-TIMER] milvus.search={}ms success=true matches={}", elapsed(started), matches.size());
             return matches;
@@ -155,6 +157,39 @@ public class MilvusRestClient {
                 score,
                 MatchSource.MILVUS_SEMANTIC
         );
+    }
+
+    static OptionalDouble normalizedScore(JsonNode entity, String metricType) {
+        if (entity == null || entity.isMissingNode() || entity.isNull()) {
+            return OptionalDouble.empty();
+        }
+        JsonNode distance = entity.path("distance");
+        if (distance.isNumber()) {
+            double value = distance.asDouble();
+            if (isLowerDistanceBetter(metricType)) {
+                return OptionalDouble.of(1.0 / (1.0 + Math.max(0.0, value)));
+            }
+            return OptionalDouble.of(value);
+        }
+        JsonNode score = entity.path("score");
+        if (score.isNumber()) {
+            return OptionalDouble.of(score.asDouble());
+        }
+        return OptionalDouble.empty();
+    }
+
+    static boolean passesMinScore(double score, double minScore) {
+        return Double.isFinite(score) && score >= minScore;
+    }
+
+    static Duration searchTimeout(AiProperties.MilvusProperties milvus) {
+        int seconds = milvus == null ? 15 : milvus.searchTimeoutSeconds();
+        return Duration.ofSeconds(Math.max(1, seconds));
+    }
+
+    private static boolean isLowerDistanceBetter(String metricType) {
+        String normalized = metricType == null ? "COSINE" : metricType.trim().toUpperCase(Locale.ROOT);
+        return "L2".equals(normalized) || "EUCLIDEAN".equals(normalized);
     }
 
     private static Map<String, Object> parseMetadata(JsonNode metadata) {

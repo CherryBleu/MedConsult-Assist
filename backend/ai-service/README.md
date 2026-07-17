@@ -207,6 +207,10 @@ src/main/resources/application.yml
 | `RABBITMQ_HOST` | RabbitMQ 地址 |
 | `MONGODB_URI` | MongoDB 地址 |
 | `MILVUS_URI` | Milvus 地址 |
+| `MILVUS_METRIC_TYPE` | Milvus 向量索引 metric，默认 `COSINE`；可选 `COSINE`/`IP`/`L2`/`EUCLIDEAN`，必须与数据导入器建索引时一致 |
+| `MILVUS_SEARCH_TIMEOUT_SECONDS` | Milvus 检索超时秒数，默认 `15` |
+
+> `EUCLIDEAN` 会被规范为 Milvus 原生 `L2`。切换 `MILVUS_METRIC_TYPE` 后，已有 collection 的索引 metric 不会自动改变，必须删除并用 `backend/data` 导入器按同一 metric 重新导入。
 
 ## 9. 与其他业务域对接
 

@@ -79,7 +79,7 @@ class RagReadinessServiceTest {
                 new AiProperties.EmbeddingProperties("http://embedding", "key", "model", 5),
                 new AiProperties.MongoProperties("mongodb://localhost:27017", "medconsult", "diseases"),
                 new AiProperties.RedisProperties("medical:", 60),
-                new AiProperties.MilvusProperties("http://localhost:19530", "token", "medical", "data", 0.6),
+                new AiProperties.MilvusProperties("http://localhost:19530", "token", "medical", "data", 0.6, "COSINE", 15),
                 new AiProperties.ImagingProperties("provider", "model"),
                 new AiProperties.VisionProperties("http://vision", "key", "model", 5, 1024),
                 new AiProperties.FileStorageProperties("http://minio", "http://minio", "ak", "sk", "bucket", "imaging", "chunks", true),

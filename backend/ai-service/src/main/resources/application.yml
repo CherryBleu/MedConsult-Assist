@@ -77,6 +77,8 @@ medconsult:
       database: ${MILVUS_DATABASE:medical}
       collection: ${MILVUS_COLLECTION:data}
       min-score: ${MILVUS_MIN_SCORE:0.60}
+      metric-type: ${MILVUS_METRIC_TYPE:COSINE}
+      search-timeout-seconds: ${MILVUS_SEARCH_TIMEOUT_SECONDS:15}
     # RAG 自检：防止 Mongo/Milvus 未导入数据或 embedding 维度错配时被误判为“无命中”
     rag:
       expected-mongo-count: ${RAG_EXPECTED_MONGO_COUNT:8807}

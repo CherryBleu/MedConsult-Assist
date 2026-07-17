@@ -443,7 +443,7 @@ public class MedicalDataMilvusImporter {
             ObjectNode index = indexParams.addObject();
             index.put("fieldName", "vector");
             index.put("indexName", "vector_index");
-            index.put("metricType", "COSINE");
+            index.put("metricType", config.milvusMetricType());
             index.putObject("params").put("index_type", "AUTOINDEX");
 
             assertMilvusSuccess(postMilvus("/v2/vectordb/collections/create", payload, false), "创建 Milvus collection");
@@ -513,7 +513,7 @@ public class MedicalDataMilvusImporter {
         }
     }
 
-    private record Config(
+    record Config(
             Path inputFile,
             String embeddingBaseUrl,
             String embeddingApiKey,
@@ -525,6 +525,7 @@ public class MedicalDataMilvusImporter {
             String milvusToken,
             String milvusDatabase,
             String milvusCollection,
+            String milvusMetricType,
             int httpTimeoutSeconds,
             int maxRetries,
             int retryBackoffSeconds,
@@ -536,39 +537,44 @@ public class MedicalDataMilvusImporter {
             int metadataTextMaxChars
     ) {
         static Config fromEnv() {
+            return from(System.getenv());
+        }
+
+        static Config from(Map<String, String> environment) {
             return new Config(
-                    Path.of(env("MEDICAL_DATA_INPUT", "medical.data.unified.json")),
-                    stripTrailingSlash(envAny(List.of("EMBEDDING_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE"),
+                    Path.of(env(environment, "MEDICAL_DATA_INPUT", "medical.data.unified.json")),
+                    stripTrailingSlash(envAny(environment, List.of("EMBEDDING_BASE_URL", "OPENAI_BASE_URL", "OPENAI_API_BASE"),
                             "https://api.openai.com/v1")),
-                    envAny(List.of("EMBEDDING_API_KEY", "OPENAI_API_KEY"), ""),
-                    env("EMBEDDING_MODEL", "text-embedding-3-small"),
-                    intEnv("EMBEDDING_DIMENSION", 1536),
-                    intEnv("EMBEDDING_BATCH_SIZE", 16),
-                    intEnv("EMBEDDING_TEXT_MAX_CHARS", 6000),
-                    stripTrailingSlash(env("MILVUS_URI", "http://localhost:19530")),
-                    env("MILVUS_TOKEN", "root:Milvus"),
-                    env("MILVUS_DATABASE", "medical"),
-                    env("MILVUS_COLLECTION", "data"),
-                    intEnv("HTTP_TIMEOUT_SECONDS", 120),
-                    intEnv("MAX_RETRIES", 3),
-                    intEnv("RETRY_BACKOFF_SECONDS", 2),
-                    intEnv("IMPORT_LIMIT", 0),
-                    boolEnv("DRY_RUN", false),
-                    intEnv("MILVUS_NAME_MAX_LENGTH", 512),
-                    intEnv("MILVUS_TEXT_MAX_LENGTH", 8192),
-                    intEnv("MILVUS_METADATA_MAX_BYTES", 60000),
-                    intEnv("MILVUS_METADATA_TEXT_MAX_CHARS", 2000)
+                    envAny(environment, List.of("EMBEDDING_API_KEY", "OPENAI_API_KEY"), ""),
+                    env(environment, "EMBEDDING_MODEL", "text-embedding-3-small"),
+                    intEnv(environment, "EMBEDDING_DIMENSION", 1536),
+                    intEnv(environment, "EMBEDDING_BATCH_SIZE", 16),
+                    intEnv(environment, "EMBEDDING_TEXT_MAX_CHARS", 6000),
+                    stripTrailingSlash(env(environment, "MILVUS_URI", "http://localhost:19530")),
+                    env(environment, "MILVUS_TOKEN", "root:Milvus"),
+                    env(environment, "MILVUS_DATABASE", "medical"),
+                    env(environment, "MILVUS_COLLECTION", "data"),
+                    normalizeMilvusMetricType(env(environment, "MILVUS_METRIC_TYPE", "COSINE")),
+                    intEnv(environment, "HTTP_TIMEOUT_SECONDS", 120),
+                    intEnv(environment, "MAX_RETRIES", 3),
+                    intEnv(environment, "RETRY_BACKOFF_SECONDS", 2),
+                    intEnv(environment, "IMPORT_LIMIT", 0),
+                    boolEnv(environment, "DRY_RUN", false),
+                    intEnv(environment, "MILVUS_NAME_MAX_LENGTH", 512),
+                    intEnv(environment, "MILVUS_TEXT_MAX_LENGTH", 8192),
+                    intEnv(environment, "MILVUS_METADATA_MAX_BYTES", 60000),
+                    intEnv(environment, "MILVUS_METADATA_TEXT_MAX_CHARS", 2000)
             );
         }
 
-        private static String env(String key, String defaultValue) {
-            String value = System.getenv(key);
+        private static String env(Map<String, String> environment, String key, String defaultValue) {
+            String value = environment.get(key);
             return value == null || value.isBlank() ? defaultValue : value.trim();
         }
 
-        private static String envAny(List<String> keys, String defaultValue) {
+        private static String envAny(Map<String, String> environment, List<String> keys, String defaultValue) {
             for (String key : keys) {
-                String value = System.getenv(key);
+                String value = environment.get(key);
                 if (value != null && !value.isBlank()) {
                     return value.trim();
                 }
@@ -576,14 +582,25 @@ public class MedicalDataMilvusImporter {
             return defaultValue;
         }
 
-        private static int intEnv(String key, int defaultValue) {
-            String value = System.getenv(key);
+        private static int intEnv(Map<String, String> environment, String key, int defaultValue) {
+            String value = environment.get(key);
             return value == null || value.isBlank() ? defaultValue : Integer.parseInt(value.trim());
         }
 
-        private static boolean boolEnv(String key, boolean defaultValue) {
-            String value = System.getenv(key);
+        private static boolean boolEnv(Map<String, String> environment, String key, boolean defaultValue) {
+            String value = environment.get(key);
             return value == null || value.isBlank() ? defaultValue : Boolean.parseBoolean(value.trim());
+        }
+
+        private static String normalizeMilvusMetricType(String value) {
+            String metricType = value == null || value.isBlank() ? "COSINE" : value.trim().toUpperCase(Locale.ROOT);
+            if ("EUCLIDEAN".equals(metricType)) {
+                return "L2";
+            }
+            if (!Set.of("COSINE", "IP", "L2").contains(metricType)) {
+                throw new IllegalArgumentException("Unsupported Milvus metric type: " + value);
+            }
+            return metricType;
         }
 
         private static String stripTrailingSlash(String value) {
