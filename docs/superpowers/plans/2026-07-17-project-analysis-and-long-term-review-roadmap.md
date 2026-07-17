@@ -1494,7 +1494,7 @@ git commit -m "feat(frontend): 补齐移动导航与键盘可访问性"
 
 ### 任务 17：统一页面状态、分页和移动表格
 
-> **执行状态（2026-07-17）**：部分完成。已新增 `PageState.vue`、`ResponsiveTable.vue` 和 `frontend/e2e/error-recovery.spec.ts`，并先迁移患者“我的预约”列表：首次加载失败会以 `role="alert"` 显示错误与“重试”按钮，点击后恢复列表；390px 视口无横向溢出。验证命令：`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，13/13 passed。剩余：`UserManage.vue`、`AuditLog.vue`、`PrescriptionReview.vue` 的响应式卡片化和分页请求竞争处理。
+> **执行状态（2026-07-17）**：部分完成。已新增 `PageState.vue`、`ResponsiveTable.vue`、`frontend/e2e/error-recovery.spec.ts` 和 `frontend/e2e/responsive-table.spec.ts`；患者“我的预约”列表已支持首次加载失败 `role="alert"` +“重试”恢复，管理员 `UserManage.vue` 已在 390px 视口切换为卡片并避免横向溢出。验证命令：`npm --prefix frontend run build`、`npm --prefix frontend run test:e2e`，14/14 passed。剩余：`AuditLog.vue`、`PrescriptionReview.vue` 的响应式卡片化和分页请求竞争处理。
 
 **文件：**
 - 创建：`frontend/src/components/common/PageState.vue`
