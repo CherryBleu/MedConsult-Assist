@@ -37,8 +37,8 @@ public class AiSseEventBus {
     private final SseEventBus redisBus;
     private final ObjectMapper objectMapper;
 
-    /** streamId → 当前实例持有的 emitter（多实例下只有持有连接的实例会 send） */
-    private final ConcurrentHashMap<String, SseEmitter> emitters = new ConcurrentHashMap<>();
+    /** streamId → 当前实例持有的连接状态（多实例下只有持有连接的实例会 send） */
+    private final ConcurrentHashMap<String, ConnectionState> connections = new ConcurrentHashMap<>();
 
     public AiSseEventBus(SseEventBus redisBus, ObjectMapper objectMapper) {
         this.redisBus = redisBus;
@@ -53,40 +53,76 @@ public class AiSseEventBus {
      * @param emitter  SSE 发射器
      */
     public void register(String userId, String streamId, SseEmitter emitter) {
-        emitters.put(streamId, emitter);
         String channel = channel(userId, streamId);
+        ConnectionState connection = new ConnectionState(emitter);
+        connections.put(streamId, connection);
         // emitter 生命周期结束（完成/超时/出错）时，同时移除本地 emitter 并取消 Redis 订阅，
         // 否则 Redis 监听器会随连接数持续累积泄漏。
-        Runnable cleanup = () -> {
-            emitters.remove(streamId);
-            redisBus.unsubscribe(channel);
-        };
+        Runnable cleanup = () -> deactivate(streamId, channel, connection);
         emitter.onCompletion(cleanup);
         emitter.onTimeout(cleanup);
         emitter.onError(e -> cleanup.run());
-        // 订阅 channel：收到 Redis 广播后，若本实例持有该 streamId 的 emitter 则 send
+        // JSON 解析不持有连接锁；发送前会在连接锁内再次检查 active，和 cleanup 形成线性化顺序。
         redisBus.subscribe(channel, json -> {
-            SseEmitter local = emitters.get(streamId);
-            if (local == null) {
-                return; // 本实例不持有该连接，忽略（其他实例会处理）
-            }
             SsePayload payload = parse(json);
             if (payload == null) {
                 return;
             }
+            deliver(streamId, channel, connection, payload);
+        });
+    }
+
+    private void deliver(String streamId, String channel, ConnectionState connection, SsePayload payload) {
+        boolean terminal = "done".equals(payload.event()) || "error".equals(payload.event());
+        boolean deactivated = false;
+        Exception sendFailure = null;
+        synchronized (connection) {
+            if (!connection.active) {
+                return;
+            }
             try {
-                local.send(SseEmitter.event().name(payload.event()).data(payload.dataJson()));
-                if ("done".equals(payload.event()) || "error".equals(payload.event())) {
-                    local.complete();
-                    emitters.remove(streamId);
-                    redisBus.unsubscribe(channel);
+                connection.emitter.send(SseEmitter.event().name(payload.event()).data(payload.dataJson()));
+                if (terminal) {
+                    deactivated = deactivateLocked(streamId, connection);
                 }
             } catch (IOException | IllegalStateException ex) {
-                log.debug("sse send failed, streamId={}", streamId, ex);
-                emitters.remove(streamId);
+                sendFailure = ex;
+                deactivated = deactivateLocked(streamId, connection);
+            }
+        }
+
+        if (sendFailure != null) {
+            log.debug("sse send failed, streamId={}", streamId, sendFailure);
+        }
+        try {
+            if (terminal && sendFailure == null) {
+                connection.emitter.complete();
+            }
+        } finally {
+            if (deactivated) {
                 redisBus.unsubscribe(channel);
             }
-        });
+        }
+    }
+
+    private void deactivate(String streamId, String channel, ConnectionState connection) {
+        boolean deactivated;
+        synchronized (connection) {
+            deactivated = deactivateLocked(streamId, connection);
+        }
+        if (deactivated) {
+            redisBus.unsubscribe(channel);
+        }
+    }
+
+    /** 调用者必须持有 connection 锁；返回 true 表示本次调用完成了首次停用。 */
+    private boolean deactivateLocked(String streamId, ConnectionState connection) {
+        if (!connection.active) {
+            return false;
+        }
+        connection.active = false;
+        connections.remove(streamId, connection);
+        return true;
     }
 
     /**
@@ -123,5 +159,14 @@ public class AiSseEventBus {
         // Jackson 反序列化需要（record 自带构造）
         public String event() { return event; }
         public String dataJson() { return dataJson; }
+    }
+
+    private static final class ConnectionState {
+        private final SseEmitter emitter;
+        private boolean active = true;
+
+        private ConnectionState(SseEmitter emitter) {
+            this.emitter = emitter;
+        }
     }
 }

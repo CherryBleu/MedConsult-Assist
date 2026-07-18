@@ -38,6 +38,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -137,7 +138,7 @@ public class SymptomChatService {
             return List.of();
         }
         // 会话归属校验：只能查自己的会话历史
-        if (session.getPatientId() != null && !session.getPatientId().equals(patientId)) {
+        if (!Objects.equals(session.getPatientId(), patientId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看他人问诊历史");
         }
         return chatMessageMapper.selectList(new LambdaQueryWrapper<AiChatMessageEntity>()
@@ -296,7 +297,7 @@ public class SymptomChatService {
                 .last("limit 1"));
         if (existing != null) {
             // 会话归属校验：已有会话的 patient_id 必须与当前登录患者一致，防止串用他人会话。
-            if (existing.getPatientId() != null && !existing.getPatientId().equals(patientId)) {
+            if (!Objects.equals(existing.getPatientId(), patientId)) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "无权操作他人问诊会话");
             }
             // 追加而非覆盖：累积多轮对话的症状，保留完整会话上下文汇总。
@@ -397,9 +398,9 @@ public class SymptomChatService {
 
     private List<String> extractDepartments(List<DiseaseKnowledge> knowledge, RiskAssessment risk) {
         // 过滤无医生的科室：避免推荐用户挂号时找不到医生的空科室（如全科医学科）。
-        Set<String> deptNosWithDoctors = departmentNosWithDoctors();
+        Optional<Set<String>> deptNosWithDoctors = departmentNosWithDoctors();
         LinkedHashSet<String> departments = new LinkedHashSet<>();
-        if (risk.emergencyAdvice() && deptNosWithDoctors.contains("DEP_EMERGENCY")) {
+        if (risk.emergencyAdvice() && departmentIsAvailable(deptNosWithDoctors, "DEP_EMERGENCY")) {
             departments.add("急诊科");
         }
         for (DiseaseKnowledge item : knowledge) {
@@ -417,7 +418,7 @@ public class SymptomChatService {
                     continue;
                 }
                 // 仅保留有医生的科室
-                if (deptNosWithDoctors.contains(departmentIdOf(dept))) {
+                if (departmentIsAvailable(deptNosWithDoctors, departmentIdOf(dept))) {
                     departments.add(dept);
                 }
             }
@@ -442,31 +443,38 @@ public class SymptomChatService {
         return "DEP_GENERAL";
     }
 
+    private static boolean departmentIsAvailable(Optional<Set<String>> availableDepartmentNos, String departmentNo) {
+        return availableDepartmentNos.isEmpty() || availableDepartmentNos.get().contains(departmentNo);
+    }
+
     /**
      * 查询有启用医生的科室编号集合（带 5 分钟 Redis 缓存，与 TriageService 共用同一 key）。
-     * <p>调用失败时降级为空集合（不过滤），保持原行为。
+     * <p>返回 {@link Optional#empty()} 表示查询失败，此时不过滤；成功返回空集合表示确实没有可用医生。
      */
-    private Set<String> departmentNosWithDoctors() {
+    private Optional<Set<String>> departmentNosWithDoctors() {
         try {
             String cached = redisTemplate.opsForValue().get(DEPT_WITH_DOCTORS_CACHE_KEY);
             if (cached != null && !cached.isBlank()) {
                 Set<String> nos = JsonUtils.MAPPER.readValue(cached,
                         JsonUtils.MAPPER.getTypeFactory().constructCollectionType(Set.class, String.class));
                 if (!nos.isEmpty()) {
-                    return nos;
+                    return Optional.of(nos);
                 }
             }
             Result<List<String>> resp = doctorFeignClient.departmentNosWithDoctors();
-            List<String> nos = resp == null ? null : resp.data();
-            if (nos == null || nos.isEmpty()) {
-                return Collections.emptySet();
+            if (resp == null || resp.data() == null) {
+                return Optional.empty();
+            }
+            List<String> nos = resp.data();
+            if (nos.isEmpty()) {
+                return Optional.of(Collections.emptySet());
             }
             Set<String> set = Set.copyOf(nos);
             redisTemplate.opsForValue().set(DEPT_WITH_DOCTORS_CACHE_KEY, JsonUtils.toJson(set), DEPT_WITH_DOCTORS_TTL);
-            return set;
+            return Optional.of(set);
         } catch (Exception e) {
             log.warn("查询有医生科室失败，降级为不过滤: {}", e.getMessage());
-            return Collections.emptySet();
+            return Optional.empty();
         }
     }
 
