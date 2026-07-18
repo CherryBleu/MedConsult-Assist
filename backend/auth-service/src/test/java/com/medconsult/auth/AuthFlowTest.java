@@ -1,20 +1,32 @@
 package com.medconsult.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.auth.user.entity.SysUser;
+import com.medconsult.auth.user.mapper.SysUserMapper;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientRegisterRequest;
+import com.medconsult.common.security.JwtCodec;
+import com.medconsult.common.security.JwtPayload;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -58,11 +70,33 @@ class AuthFlowTest {
     @Autowired
     ObjectMapper om;
 
+    @Autowired
+    JwtCodec jwtCodec;
+
+    @Autowired
+    SysUserMapper userMapper;
+
+    @Autowired
+    StringRedisTemplate redis;
+
     /** mock 掉 patient-service：测试环境不连真实 patient-service，注册即建档走 mock */
     @MockBean
     PatientFeignClient patientClient;
 
     private static final String JWT_SECRET = "test-secret";
+    private static final long LEGACY_PATIENT_USER_ID = 19001L;
+    private static final String LEGACY_PATIENT_ROLE_KEY = "medconsult:auth:role:" + LEGACY_PATIENT_USER_ID;
+    private static final String LEGACY_WILDCARD_REFRESH_JTI = "testlegacywildcardrefresh";
+    private final List<String> redisKeysToDelete = new ArrayList<>();
+
+    @AfterEach
+    void cleanupRedisKeys() {
+        if (!redisKeysToDelete.isEmpty()) {
+            redis.delete(redisKeysToDelete);
+        }
+        redis.delete(LEGACY_PATIENT_ROLE_KEY);
+        redis.delete(refreshKey(LEGACY_WILDCARD_REFRESH_JTI));
+    }
 
     @Test
     void fullAuthFlow_registerLoginMeRefreshLogout() throws Exception {
@@ -211,5 +245,133 @@ class AuthFlowTest {
                 {"account":"admin","password":"123456","clientType":"MOBILE"}""";
         mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(unknownEntry))
                 .andExpect(jsonPath("$.code").value(400001));
+    }
+
+    @Test
+    void login_builtinRoles_issueRoleScopedTokens() throws Exception {
+        assertTokenScope(login("patient", "123456").accessToken(), "PATIENT", "ai:symptom-chat", "ai:triage");
+        assertTokenScope(login("doctor", "123456").accessToken(), "DOCTOR", "ai:summary:confirm");
+        assertTokenScope(login("yaofang", "123456").accessToken(), "PHARMACY_ADMIN", "drug:write");
+        assertTokenScope(login("admin", "123456").accessToken(), "HOSPITAL_ADMIN", "user:manage");
+    }
+
+    @Test
+    void refresh_preservesNarrowScopeFromRefreshToken() throws Exception {
+        TokenPair tokens = login("patient", "123456");
+        JwtPayload refreshPayload = assertTokenScope(tokens.refreshToken(), "PATIENT", "ai:symptom-chat");
+
+        String refreshBody = "{\"refreshToken\":\"" + tokens.refreshToken() + "\"}";
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(refreshBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andReturn();
+
+        String newAccessToken = om.readTree(refreshResult.getResponse().getContentAsString())
+                .at("/data/accessToken").asText();
+        JwtPayload accessPayload = assertTokenScope(newAccessToken, "PATIENT", "ai:symptom-chat");
+        assertEquals(refreshPayload.scope(), accessPayload.scope());
+    }
+
+    @Test
+    void refresh_rewritesLegacyWildcardScope() throws Exception {
+        String legacyRefreshToken = jwtCodec.signUser(3L, "赵演示", List.of("PATIENT"), "PATIENT",
+                3001L, null, null, "U0000003", List.of("*"), 604800, LEGACY_WILDCARD_REFRESH_JTI);
+        redis.opsForValue().set(refreshKey(LEGACY_WILDCARD_REFRESH_JTI), "1", Duration.ofMinutes(5));
+
+        String refreshBody = "{\"refreshToken\":\"" + legacyRefreshToken + "\"}";
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(refreshBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andReturn();
+
+        String newAccessToken = om.readTree(refreshResult.getResponse().getContentAsString())
+                .at("/data/accessToken").asText();
+        assertTokenScope(newAccessToken, "PATIENT", "ai:symptom-chat", "ai:triage");
+    }
+
+    @Test
+    void bindPatient_reissuesRoleScopedTokens() throws Exception {
+        when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
+                .thenReturn(Result.ok(EntityIdDTO.of(9010L)));
+        seedLegacyPatientUser();
+
+        TokenPair tokens = login("legacy_patient_scope", "P@ssw0rd");
+        String bindBody = """
+                {"idCard":"110101199003101234"}""";
+        MvcResult bindResult = mvc.perform(post("/api/v1/auth/me/bind-patient")
+                        .header("Authorization", "Bearer " + tokens.accessToken())
+                        .contentType("application/json")
+                        .content(bindBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andExpect(jsonPath("$.data.user.patientId").value("9010"))
+                .andReturn();
+
+        String response = bindResult.getResponse().getContentAsString();
+        String accessToken = om.readTree(response).at("/data/accessToken").asText();
+        String refreshToken = om.readTree(response).at("/data/refreshToken").asText();
+        JwtPayload accessPayload = assertTokenScope(accessToken, "PATIENT", "ai:symptom-chat");
+        JwtPayload refreshPayload = assertTokenScope(refreshToken, "PATIENT", "ai:symptom-chat");
+        assertEquals(9010L, accessPayload.patientId());
+        assertEquals(accessPayload.scope(), refreshPayload.scope());
+    }
+
+    private TokenPair login(String account, String password) throws Exception {
+        String loginBody = """
+                {"account":"%s","password":"%s"}""".formatted(account, password);
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .contentType("application/json")
+                        .content(loginBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andExpect(jsonPath("$.data.refreshToken").exists())
+                .andReturn();
+        String response = loginResult.getResponse().getContentAsString();
+        TokenPair tokens = new TokenPair(
+                om.readTree(response).at("/data/accessToken").asText(),
+                om.readTree(response).at("/data/refreshToken").asText());
+        redisKeysToDelete.add(refreshKey(jwtCodec.parse(tokens.refreshToken()).jti()));
+        return tokens;
+    }
+
+    private JwtPayload assertTokenScope(String token, String expectedRole, String... expectedScopes) {
+        JwtPayload payload = jwtCodec.parse(token);
+        assertEquals(expectedRole, payload.primaryRole());
+        assertNotNull(payload.scope());
+        assertFalse(payload.scope().isEmpty());
+        assertFalse(payload.scope().contains("*"));
+        for (String expectedScope : expectedScopes) {
+            assertTrue(payload.scope().contains(expectedScope));
+        }
+        return payload;
+    }
+
+    private void seedLegacyPatientUser() {
+        SysUser user = new SysUser();
+        user.setId(LEGACY_PATIENT_USER_ID);
+        user.setUserNo("UTESTSCOPE001");
+        user.setAccount("legacy_patient_scope");
+        user.setPhone("13900000666");
+        user.setPasswordHash(new BCryptPasswordEncoder(10).encode("P@ssw0rd"));
+        user.setName("历史患者");
+        user.setStatus("ACTIVE");
+        userMapper.insert(user);
+        redis.opsForValue().set(LEGACY_PATIENT_ROLE_KEY, "PATIENT", Duration.ofDays(1));
+    }
+
+    private record TokenPair(String accessToken, String refreshToken) {
+    }
+
+    private static String refreshKey(String jti) {
+        return "medconsult:auth:refresh:" + jti;
     }
 }

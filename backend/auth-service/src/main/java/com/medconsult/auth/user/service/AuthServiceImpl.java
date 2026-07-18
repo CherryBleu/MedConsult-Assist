@@ -237,7 +237,7 @@ public class AuthServiceImpl implements AuthService {
         userMapper.updateById(u);
 
         List<String> roles = List.of(primaryRole);
-        List<String> scope = List.of("*"); // 冒烟期全权限；RBAC 阶段改为查 sys_role_permission
+        List<String> scope = resolveScope(primaryRole);
 
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
                 u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, accessTtl, null);
@@ -268,9 +268,10 @@ public class AuthServiceImpl implements AuthService {
         if (!isRefreshValid(p.jti())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "refreshToken 已失效（已登出或过期）");
         }
-        // 重签 access
+        // 重签 access。旧 refresh token 可能仍携带 scope=*，刷新时必须按当前角色策略收口。
+        List<String> scope = normalizeUserScope(p.primaryRole(), p.scope());
         String access = jwtCodec.signUser(p.userId(), p.name(), p.roles(), p.primaryRole(),
-                p.patientId(), p.doctorId(), p.pharmacistId(), p.userNo(), p.scope(), accessTtl, null);
+                p.patientId(), p.doctorId(), p.pharmacistId(), p.userNo(), scope, accessTtl, null);
         return new AuthDTO.RefreshResponse(access, "Bearer", accessTtl);
     }
 
@@ -379,7 +380,7 @@ public class AuthServiceImpl implements AuthService {
         // 重签 JWT：让新 token 带上 patientId，前端存储后无需重新登录即可使用全部功能。
         // 旧 token 的 patientId 是 null，refresh 也沿用旧 claims，只有重签才能带上新 patientId。
         List<String> roles = List.of(primaryRole);
-        List<String> scope = List.of("*");
+        List<String> scope = resolveScope(primaryRole);
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
                 u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, accessTtl, null);
         String refresh = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
@@ -546,6 +547,64 @@ public class AuthServiceImpl implements AuthService {
             // Redis 不可用兜底，不阻断查询
         }
         return "PATIENT";
+    }
+
+    private static List<String> resolveScope(String primaryRole) {
+        if (primaryRole == null || primaryRole.isBlank()) {
+            return List.of();
+        }
+        return switch (primaryRole) {
+            case "PATIENT" -> List.of(
+                    "patient:self",
+                    "appointment:self",
+                    "medical-record:self",
+                    "prescription:self",
+                    "payment:self",
+                    "file:self",
+                    "ai:symptom-chat",
+                    "ai:triage");
+            case "DOCTOR" -> List.of(
+                    "patient:assigned",
+                    "appointment:assigned",
+                    "appointment:write",
+                    "medical-record:read",
+                    "medical-record:write",
+                    "prescription:write",
+                    "file:assigned",
+                    "ai:doctor-assist",
+                    "ai:summary:confirm");
+            case "PHARMACY_ADMIN" -> List.of(
+                    "prescription:read",
+                    "prescription:review",
+                    "prescription:dispense",
+                    "drug:read",
+                    "drug:write",
+                    "drug:stock:write",
+                    "audit:read",
+                    "notification:manage");
+            case "HOSPITAL_ADMIN" -> List.of(
+                    "user:manage",
+                    "department:manage",
+                    "doctor:manage",
+                    "schedule:manage",
+                    "appointment:read",
+                    "patient:read",
+                    "medical-record:read",
+                    "prescription:read",
+                    "drug:read",
+                    "audit:read",
+                    "report:read",
+                    "notification:manage",
+                    "ai:admin-read");
+            default -> List.of();
+        };
+    }
+
+    private static List<String> normalizeUserScope(String primaryRole, List<String> existingScope) {
+        if (existingScope == null || existingScope.isEmpty() || existingScope.contains("*")) {
+            return resolveScope(primaryRole);
+        }
+        return existingScope;
     }
 
     // ===== 私有助手 =====
