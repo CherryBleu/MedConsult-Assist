@@ -166,6 +166,7 @@ class OpenAiCompatibleClientTest {
 
         assertTrue(result.path("accepted").asBoolean());
         assertEquals(List.of("{\"accepted\":", "true}"), deliveredTokens);
+        assertStreamPrompts(model, "system", "user");
     }
 
     @Test
@@ -301,6 +302,18 @@ class OpenAiCompatibleClientTest {
     private static void assertPrompts(ChatLanguageModel model, String systemPrompt, String userPrompt) {
         ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.forClass(List.class);
         verify(model).generate(captor.capture());
+        List<ChatMessage> messages = captor.getValue();
+        assertEquals(2, messages.size());
+        assertEquals(systemPrompt, assertInstanceOf(SystemMessage.class, messages.get(0)).text());
+        assertEquals(userPrompt, assertInstanceOf(UserMessage.class, messages.get(1)).singleText());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertStreamPrompts(StreamingChatLanguageModel model,
+                                            String systemPrompt,
+                                            String userPrompt) {
+        ArgumentCaptor<List<ChatMessage>> captor = ArgumentCaptor.forClass(List.class);
+        verify(model).generate(captor.capture(), any());
         List<ChatMessage> messages = captor.getValue();
         assertEquals(2, messages.size());
         assertEquals(systemPrompt, assertInstanceOf(SystemMessage.class, messages.get(0)).text());
