@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
@@ -47,6 +48,12 @@ public class AppointmentTxService {
      * @param scheduleNo 排班编号（锁外解析，事务内按 no 重查拿最新值）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
+            action = "CREATE",
+            resourceId = "#result.appointmentId()",
+            targetOwnerId = "#p1.patientId",
+            detail = "'appointment created'")
     public AppointmentDTO.CreateResponse createInTx(String scheduleNo, AppointmentDTO.CreateRequest req) {
         // 锁内按 no 重查最新排班（防读旧值）
         DoctorSchedule s = scheduleService.requireByNo(scheduleNo);
@@ -128,6 +135,11 @@ public class AppointmentTxService {
      * @param appointmentNo 预约编号（锁内按 no 重查拿最新值）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
+            action = "CANCEL",
+            resourceId = "#result.appointmentId()",
+            detail = "'appointment cancelled'")
     public AppointmentDTO.CancelResponse cancelInTx(String appointmentNo, AppointmentDTO.CancelRequest req,
                                                      java.util.Set<String> cancellableStatus) {
         Appointment a = requireByNo(appointmentNo);

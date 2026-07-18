@@ -26,7 +26,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @SpringBootApplication(scanBasePackages = {"com.medconsult.outpatient", "com.medconsult.common.web"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
-@MapperScan("com.medconsult.outpatient.**.mapper")
+@MapperScan({"com.medconsult.outpatient.**.mapper", "com.medconsult.common.mq"})
 public class OutpatientServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(OutpatientServiceApplication.class, args);

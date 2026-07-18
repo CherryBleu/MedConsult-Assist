@@ -158,3 +158,19 @@ FROM (
     UNION ALL SELECT 4003, 'S40003', 2003, 1003, 3, 'AFTERNOON', '14:00:00', '17:00:00', 15, 0, 30.00, 'AVAILABLE'
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM doctor_schedule WHERE schedule_no IN ('S40001','S40002','S40003'));
+
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    message_no      VARCHAR(64)   NOT NULL                 COMMENT '业务唯一键（消费者幂等去重用）',
+    exchange        VARCHAR(100)                           COMMENT '目标交换机',
+    routing_key     VARCHAR(100)                           COMMENT '路由键',
+    payload_json    TEXT                                   COMMENT '消息载荷（JSON 字符串）',
+    status          VARCHAR(20)   NOT NULL                 COMMENT '状态：PENDING/SENT/CONFIRMED/FAILED',
+    retry_count     INT           NOT NULL DEFAULT 0       COMMENT '已重试次数',
+    next_retry_at   DATETIME(3)                            COMMENT '下次重试时间（退避调度用）',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_local_message_no (message_no),
+    KEY idx_local_message_status_retry (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（可靠投递，MessageDispatcher 扫描）';

@@ -83,3 +83,18 @@ CREATE TABLE IF NOT EXISTS appointment (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_appointment_no ON appointment(appointment_no);
 CREATE INDEX IF NOT EXISTS idx_appointment_patient_schedule ON appointment(patient_no, schedule_id);
+
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT       NOT NULL,
+    message_no      VARCHAR(64),
+    exchange        VARCHAR(100),
+    routing_key     VARCHAR(100),
+    payload_json    CLOB,
+    status          VARCHAR(20),
+    retry_count     INT,
+    next_retry_at   TIMESTAMP,
+    created_at      TIMESTAMP,
+    updated_at      TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_local_message_no ON local_message(message_no);

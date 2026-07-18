@@ -44,9 +44,9 @@ public class AuditLogProducer {
     }
 
     private static String messageNo(AuditLogEvent event) {
-        return "audit:" + compact(event.getResourceType(), 16)
-                + ":" + compact(event.getAction(), 16)
-                + ":" + compact(event.getResourceId(), 20)
+        return "audit:" + compact(event.getResourceType(), 12)
+                + ":" + compact(event.getAction(), 12)
+                + ":" + compact(event.getResourceId(), 12)
                 + ":" + IdWorker.getIdStr();
     }
 

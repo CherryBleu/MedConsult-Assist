@@ -1,5 +1,6 @@
 package com.medconsult.outpatient;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import javax.sql.DataSource;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 门诊服务全流程集成测试：H2 内存库 + Redis 16379（无 Nacos，排除 discovery/config）。
@@ -320,6 +322,87 @@ class OutpatientFlowTest {
     // ===== 测试助手 =====
 
     /** 创建排班（总号源 quota），返回 schedule_no */
+    @Test
+    void appointmentMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        String traceId = "trace-outpatient-audit";
+        String scheduleNo = createSchedule(7);
+        String createBody = """
+                {"patientId":"9010","scheduleId":"%s","visitReason":"audit visit","source":"MOBILE_APP"}""".formatted(scheduleNo);
+        MvcResult createResult = mvc.perform(withPatient(post("/api/v1/appointments"), "9010")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json").content(createBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        String appointmentNo = om.readTree(createResult.getResponse().getContentAsString())
+                .at("/data/appointmentId").asText();
+
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/payment"), "9010")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"paymentStatus\":\"PAID\",\"paymentNo\":\"PAY-AUDIT\",\"paidAmount\":50.00}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/check-in"), "9010")
+                        .header("X-Trace-Id", traceId))
+                .andExpect(status().isOk());
+
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"appointmentStatus\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"appointmentStatus\":\"COMPLETED\"}"))
+                .andExpect(status().isOk());
+
+        String cancelBody = """
+                {"patientId":"9011","scheduleId":"%s","visitReason":"cancel audit","source":"MOBILE_APP"}""".formatted(scheduleNo);
+        MvcResult cancelCreateResult = mvc.perform(withPatient(post("/api/v1/appointments"), "9011")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json").content(cancelBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        String cancelledAppointmentNo = om.readTree(cancelCreateResult.getResponse().getContentAsString())
+                .at("/data/appointmentId").asText();
+        mvc.perform(withPatient(post("/api/v1/appointments/" + cancelledAppointmentNo + "/cancel"), "9011")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"cancelReason\":\"audit cancel\",\"operatorType\":\"PATIENT\"}"))
+                .andExpect(status().isOk());
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        java.util.List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                  AND message_no LIKE 'audit:APPOINTMENT:%'
+                ORDER BY id
+                """);
+        assertEquals(7, rows.size());
+
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : rows) {
+            assertEquals("medconsult.log", row.get("exchange"));
+            assertEquals("audit.log", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+            assertTrue(String.valueOf(row.get("message_no")).startsWith("audit:APPOINTMENT:"));
+
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            assertEquals(traceId, payload.get("traceId").asText());
+            assertEquals("APPOINTMENT", payload.get("resourceType").asText());
+            assertEquals("SUCCESS", payload.get("result").asText());
+            assertTrue(payload.get("resourceId").asText().equals(appointmentNo)
+                    || payload.get("resourceId").asText().equals(cancelledAppointmentNo));
+            actions.add(payload.get("action").asText());
+        }
+        assertEquals(java.util.List.of(
+                "CREATE", "PAYMENT", "CHECK_IN", "STATUS_CHANGE", "STATUS_CHANGE", "CREATE", "CANCEL"), actions);
+    }
+
     private String createSchedule(int quota) throws Exception {
         String createBody = """
                 {"doctorId":"%s","departmentId":"%s","scheduleDate":"2026-07-15",

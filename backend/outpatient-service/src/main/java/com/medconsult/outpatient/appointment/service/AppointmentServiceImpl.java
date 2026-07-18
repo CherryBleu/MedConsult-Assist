@@ -7,6 +7,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.common.security.JwtPayload;
@@ -242,6 +243,11 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
+            action = "PAYMENT",
+            resourceId = "#result.appointmentId()",
+            detail = "'paymentStatus=' + #result.paymentStatus()")
     public AppointmentDTO.PaymentResponse updatePayment(String appointmentNo, AppointmentDTO.PaymentUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能支付本人预约
@@ -267,6 +273,11 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
+            action = "CHECK_IN",
+            resourceId = "#result.appointmentId()",
+            detail = "'status=' + #result.appointmentStatus()")
     public AppointmentDTO.StatusResponse checkIn(String appointmentNo) {
         Appointment a = requireByNo(appointmentNo);
         enforceAppointmentOwnership(a);
@@ -280,6 +291,11 @@ public class AppointmentServiceImpl implements AppointmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
+            action = "STATUS_CHANGE",
+            resourceId = "#result.appointmentId()",
+            detail = "'status=' + #result.appointmentStatus()")
     public AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能改本人预约状态，DOCTOR 只能改本人接诊的

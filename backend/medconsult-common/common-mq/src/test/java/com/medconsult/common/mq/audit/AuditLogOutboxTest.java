@@ -69,6 +69,23 @@ class AuditLogOutboxTest {
     }
 
     @Test
+    void producerKeepsAuditMessageNoWithinOutboxColumnLimit() {
+        LocalMessageMapper mapper = mock(LocalMessageMapper.class);
+        AuditLogProducer producer = new AuditLogProducer(mapper, objectMapper);
+
+        AuditLogEvent event = new AuditLogEvent();
+        event.setResourceType("APPOINTMENT");
+        event.setAction("STATUS_CHANGE");
+        event.setResourceId("AFSILK78H1R0I");
+
+        producer.enqueue(event);
+
+        ArgumentCaptor<LocalMessage> captor = ArgumentCaptor.forClass(LocalMessage.class);
+        verify(mapper).insert(captor.capture());
+        assertTrue(captor.getValue().getMessageNo().length() <= 64);
+    }
+
+    @Test
     void aspectEnqueuesAuditEventAfterSuccessfulAnnotatedMethod() {
         AuditLogProducer producer = mock(AuditLogProducer.class);
         AuditLogAspect aspect = new AuditLogAspect(producer);
