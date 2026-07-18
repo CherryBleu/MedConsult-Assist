@@ -1,5 +1,38 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import { loginViaUI } from './helpers'
+
+async function gotoConsult(page: Page) {
+  await loginViaUI(page, 'patient', 'patient')
+  await page.goto('/patient/ai-consult')
+  await expect(page.getByRole('heading', { name: 'AI智能问诊' })).toBeVisible({ timeout: 15_000 })
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const metrics = await page.evaluate(() => ({
+    documentScrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth,
+    clientWidth: document.documentElement.clientWidth
+  }))
+
+  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
+  expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
+}
+
+async function expectTouchTargetsAtLeast(page: Page, selector: string, minSize = 44) {
+  const boxes = await page.locator(selector).evaluateAll(elements =>
+    elements.map(element => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    })
+  )
+
+  expect(boxes.length).toBeGreaterThan(0)
+  for (const box of boxes) {
+    expect(box.width).toBeGreaterThanOrEqual(minSize)
+    expect(box.height).toBeGreaterThanOrEqual(minSize)
+  }
+}
 
 /**
  * 流程 2：AI 症状自诊问答（RAG）。
@@ -8,11 +41,7 @@ import { loginViaUI } from './helpers'
  * 这验证的是"发送→收到非空回复"的行为闭环，而非接口 code。
  */
 test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
-  await loginViaUI(page, 'patient', 'patient')
-
-  // 进入 AI 问诊页（路由 name=AiConsult, path=/patient/ai-consult）
-  await page.goto('/patient/ai-consult')
-  await expect(page.getByText('AI智能问诊')).toBeVisible({ timeout: 15_000 })
+  await gotoConsult(page)
 
   // 输入症状并发送（输入框 placeholder 固定）
   await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
@@ -30,4 +59,78 @@ test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
   await expect(page.getByText('急性支气管炎').first()).toBeVisible()
   await expect(page.getByText('向量匹配').first()).toBeVisible()
   await expect(page.getByText('symptom').first()).toBeVisible()
+})
+
+test('高风险症状先展示急症安全摘要再展示 RAG 证据', async ({ page }) => {
+  await gotoConsult(page)
+
+  await page.getByPlaceholder('请输入您的症状描述...').fill('胸痛大汗怎么办')
+  await page.getByRole('button', { name: '发送' }).click()
+
+  const safetySummary = page.getByTestId('safety-summary').first()
+  await expect(safetySummary).toBeVisible({ timeout: 20_000 })
+  await expect(safetySummary).toHaveAttribute('role', 'alert')
+  await expect(safetySummary).toContainText('建议尽快就医')
+  await expect(safetySummary).toContainText('急诊科')
+
+  const evidence = page.getByText('检索证据').first()
+  await expect(evidence).toBeVisible()
+
+  const safetyBox = await safetySummary.boundingBox()
+  const evidenceBox = await evidence.boundingBox()
+  expect(safetyBox?.y ?? 0).toBeLessThan(evidenceBox?.y ?? Number.MAX_SAFE_INTEGER)
+})
+
+test('移动端问诊页无横向滚动且关键控件满足触控尺寸', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await gotoConsult(page)
+
+  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
+  await page.getByRole('button', { name: '发送' }).click()
+  await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
+
+  await expectTouchTargetsAtLeast(page, '.ai-consult-action')
+  await expectNoHorizontalOverflow(page)
+})
+
+test('发送失败时保留症状并提供可重试错误状态', async ({ page }) => {
+  await gotoConsult(page)
+  await page.evaluate(() => localStorage.setItem('mock_symptom_chat_fail_once', '1'))
+
+  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
+  await page.getByRole('button', { name: '发送' }).click()
+
+  await expect(page.getByText('咳嗽有痰怎么办').first()).toBeVisible()
+  const errorAlert = page.getByRole('alert').filter({ hasText: 'AI 问诊服务暂时不可用' })
+  await expect(errorAlert).toBeVisible({ timeout: 20_000 })
+
+  await errorAlert.getByRole('button', { name: '重试' }).click()
+  await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
+})
+
+test('键盘可聚焦并切换 RAG 证据 disclosure', async ({ page }) => {
+  await gotoConsult(page)
+
+  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
+  await page.getByRole('button', { name: '发送' }).click()
+  await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
+
+  const evidenceToggle = page.getByTestId('evidence-toggle').first()
+  await evidenceToggle.focus()
+  await expect(evidenceToggle).toBeFocused()
+  await evidenceToggle.press('Enter')
+  await expect(page.getByText('vec_mock_001').first()).toBeVisible()
+})
+
+test('患者 AI 问诊页没有 serious 或 critical Axe 违规', async ({ page }) => {
+  await gotoConsult(page)
+  await expect(page.locator('.el-message')).toHaveCount(0, { timeout: 5_000 })
+
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze()
+  const severeViolations = results.violations.filter(({ impact }) =>
+    impact === 'serious' || impact === 'critical')
+
+  expect(severeViolations).toEqual([])
 })

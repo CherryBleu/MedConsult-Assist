@@ -323,13 +323,19 @@ export const mockCreateSession = () => {
 
 // 发送消息获取AI回答（对齐 ai_chat_message 表字段）
 export const mockSendMessage = (sessionId, userMessage) => {
+  if (consumeFailOnce('mock_symptom_chat_fail_once')) {
+    return Promise.reject(new Error('AI 问诊服务暂时不可用，请稍后重试'))
+  }
+
   const answers = {
     '咳嗽有痰怎么办': '根据您的症状，初步考虑为呼吸道感染。建议：1. 多饮温水，保持呼吸道湿润；2. 注意休息，避免劳累；3. 若症状持续超过3天或出现高热、胸痛，请及时到呼吸内科就诊；4. 可暂时服用化痰药物缓解症状。以上建议仅供参考，具体诊疗请遵医嘱。',
+    '胸痛大汗怎么办': '胸痛伴大汗属于需要优先排除急性心血管事件的高风险表现。建议立即停止活动，尽快前往急诊科或拨打 120，由医生完成心电图、心肌酶和生命体征评估。AI 只能提供分诊提醒，不能替代急诊判断。',
     '胸闷是什么原因': '胸闷的常见原因包括：1. 心血管疾病：冠心病、心绞痛、心律失常等；2. 呼吸系统疾病：支气管炎、哮喘、气胸等；3. 情绪因素：焦虑、紧张也可能引发胸闷。若胸闷频繁发作或伴随胸痛、大汗，请立即就医。',
     'default': '已收到您的症状描述，正在为您分析。建议您补充以下信息：症状持续时间、是否有发热、是否有既往病史。温馨提示：AI分析仅供参考，不能替代医生诊断，如有不适请及时就医。'
   }
 
   const reply = answers[userMessage] || answers['default']
+  const highRisk = userMessage === '胸痛大汗怎么办'
   
   return {
     code: 0,
@@ -341,11 +347,28 @@ export const mockSendMessage = (sessionId, userMessage) => {
       answer: reply,
       aiAnswer: reply,
       answerSource: 'VECTOR_SEARCH_AND_RULE',
-      possibleCauses: ['急性支气管炎', '上呼吸道感染'],
-      suggestedDepartments: ['呼吸内科'],
-      riskLevel: 'LOW',
-      emergencyAdvice: 0,
-      vectorMatches: [
+      possibleCauses: highRisk ? ['急性冠脉综合征', '心绞痛', '急性心肌梗死'] : ['急性支气管炎', '上呼吸道感染'],
+      suggestedDepartments: highRisk ? ['急诊科', '心血管内科'] : ['呼吸内科'],
+      riskLevel: highRisk ? 'HIGH' : 'LOW',
+      emergencyAdvice: highRisk ? 1 : 0,
+      vectorMatches: highRisk ? [
+        {
+          vectorId: 'vec_mock_chest_001',
+          score: 0.91,
+          sourceId: 'DISEASE_JSON:急性冠脉综合征',
+          diseaseName: '急性冠脉综合征',
+          fieldName: 'symptom',
+          chunkText: '胸痛、出汗、胸闷等表现需优先排除急性冠脉综合征。'
+        },
+        {
+          vectorId: 'vec_mock_chest_002',
+          score: 0.86,
+          sourceId: 'DISEASE_JSON:心绞痛',
+          diseaseName: '心绞痛',
+          fieldName: 'cure_department',
+          chunkText: '疑似心血管急症建议先至急诊科评估，再由心血管内科进一步诊治。'
+        }
+      ] : [
         {
           vectorId: 'vec_mock_001',
           score: 0.89,
@@ -363,7 +386,15 @@ export const mockSendMessage = (sessionId, userMessage) => {
           chunkText: '推荐就诊科室包含呼吸内科。'
         }
       ],
-      citations: [
+      citations: highRisk ? [
+        {
+          sourceId: 'DISEASE_JSON:急性冠脉综合征',
+          diseaseName: '急性冠脉综合征',
+          matchedFields: ['symptom', 'cure_department'],
+          snippet: '胸痛伴大汗需优先排除急性冠脉综合征；建议急诊科及时评估。',
+          score: 0.91
+        }
+      ] : [
         {
           sourceId: 'DISEASE_JSON:急性支气管炎',
           diseaseName: '急性支气管炎',

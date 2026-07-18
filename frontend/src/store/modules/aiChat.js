@@ -41,6 +41,8 @@ const normalizeAiReply = (data) => {
   const payload = data || {}
   return {
     content: payload.answer || payload.aiAnswer || '暂无回复',
+    failed: Boolean(payload.failed),
+    retryText: payload.retryText || '',
     answerSource: payload.answerSource || '',
     possibleCauses: Array.isArray(payload.possibleCauses) ? payload.possibleCauses : [],
     suggestedDepartments: Array.isArray(payload.suggestedDepartments) ? payload.suggestedDepartments : [],
@@ -147,7 +149,13 @@ export const useAiChatStore = defineStore('aiChat', {
         this.addMessage({
           id: Date.now(),
           role: 'ai',
-          content: '抱歉，AI 问诊服务暂时不可用，请稍后重试。',
+          content: 'AI 问诊服务暂时不可用，请检查网络后重试。',
+          failed: true,
+          retryText: content,
+          riskLevel: '',
+          emergencyAdvice: false,
+          possibleCauses: [],
+          suggestedDepartments: [],
           citations: [],
           vectorMatches: []
         })
