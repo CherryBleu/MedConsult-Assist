@@ -19,8 +19,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Answers;
+import org.mockito.MockedStatic;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +38,6 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,6 +46,8 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -260,27 +264,55 @@ class OpenAiCompatibleClientTest {
         caller.setDaemon(true);
 
         caller.start();
-        assertTrue(generateCalled.await(2, TimeUnit.SECONDS));
-        caller.interrupt();
-        caller.join(2_000);
+        try {
+            assertTrue(generateCalled.await(2, TimeUnit.SECONDS));
+            caller.interrupt();
+            caller.join(2_000);
 
-        assertFalse(caller.isAlive());
-        assertEquals(Optional.empty(), result.get());
-        assertTrue(interrupted.get());
+            assertFalse(caller.isAlive());
+            assertEquals(Optional.empty(), result.get());
+            assertTrue(interrupted.get());
+        } finally {
+            caller.interrupt();
+            caller.join(2_000);
+        }
     }
 
     @Test
     void constructorShouldBuildEveryConfiguredModelAtMinimumAndExplicitTimeouts() {
-        OpenAiCompatibleClient minimumTimeout = new OpenAiCompatibleClient(validProperties(0, 0));
-        OpenAiCompatibleClient explicitTimeout = new OpenAiCompatibleClient(validProperties(8, 9));
+        OpenAiChatModel.OpenAiChatModelBuilder minimumChatBuilder = chatBuilder();
+        OpenAiChatModel.OpenAiChatModelBuilder explicitChatBuilder = chatBuilder();
+        OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder minimumStreamBuilder = streamBuilder();
+        OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder explicitStreamBuilder = streamBuilder();
+        OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder minimumEmbeddingBuilder = embeddingBuilder();
+        OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder explicitEmbeddingBuilder = embeddingBuilder();
 
-        assertInstanceOf(OpenAiChatModel.class, field(minimumTimeout, "jsonChatModel"));
-        assertInstanceOf(OpenAiChatModel.class, field(minimumTimeout, "textChatModel"));
-        assertInstanceOf(OpenAiStreamingChatModel.class, field(minimumTimeout, "streamingJsonChatModel"));
-        assertInstanceOf(OpenAiStreamingChatModel.class, field(minimumTimeout, "streamingTextChatModel"));
-        assertInstanceOf(OpenAiEmbeddingModel.class, field(minimumTimeout, "embeddingModel"));
-        assertNotNull(field(explicitTimeout, "jsonChatModel"));
-        assertNotNull(field(explicitTimeout, "embeddingModel"));
+        try (MockedStatic<OpenAiChatModel> chatModels = mockStatic(OpenAiChatModel.class);
+             MockedStatic<OpenAiStreamingChatModel> streamModels = mockStatic(OpenAiStreamingChatModel.class);
+             MockedStatic<OpenAiEmbeddingModel> embeddingModels = mockStatic(OpenAiEmbeddingModel.class)) {
+            chatModels.when(OpenAiChatModel::builder).thenReturn(
+                    minimumChatBuilder, minimumChatBuilder, explicitChatBuilder, explicitChatBuilder);
+            streamModels.when(OpenAiStreamingChatModel::builder).thenReturn(
+                    minimumStreamBuilder, minimumStreamBuilder, explicitStreamBuilder, explicitStreamBuilder);
+            embeddingModels.when(OpenAiEmbeddingModel::builder)
+                    .thenReturn(minimumEmbeddingBuilder, explicitEmbeddingBuilder);
+
+            new OpenAiCompatibleClient(validProperties(0, 0));
+            new OpenAiCompatibleClient(validProperties(8, 9));
+        }
+
+        verify(minimumChatBuilder, times(2)).timeout(Duration.ofSeconds(5));
+        verify(explicitChatBuilder, times(2)).timeout(Duration.ofSeconds(8));
+        verify(minimumStreamBuilder, times(2)).timeout(Duration.ofSeconds(5));
+        verify(explicitStreamBuilder, times(2)).timeout(Duration.ofSeconds(8));
+        verify(minimumEmbeddingBuilder).timeout(Duration.ofSeconds(5));
+        verify(explicitEmbeddingBuilder).timeout(Duration.ofSeconds(9));
+        verify(minimumChatBuilder, times(2)).baseUrl("https://llm.example/v1/");
+        verify(explicitChatBuilder, times(2)).baseUrl("https://llm.example/v1/");
+        verify(minimumStreamBuilder, times(2)).baseUrl("https://llm.example/v1/");
+        verify(explicitStreamBuilder, times(2)).baseUrl("https://llm.example/v1/");
+        verify(minimumEmbeddingBuilder).baseUrl("https://embedding.example/v1/");
+        verify(explicitEmbeddingBuilder).baseUrl("https://embedding.example/v1/");
     }
 
     @Test
@@ -329,13 +361,31 @@ class OpenAiCompatibleClientTest {
     }
 
     private static OpenAiCompatibleClient clientWith(String fieldName, Object model) {
-        OpenAiCompatibleClient client = new OpenAiCompatibleClient(validProperties(1, 1));
+        OpenAiCompatibleClient client = new OpenAiCompatibleClient(properties(null, null));
+        ReflectionTestUtils.setField(client, "properties", validProperties(1, 1));
         ReflectionTestUtils.setField(client, fieldName, model);
         return client;
     }
 
-    private static Object field(OpenAiCompatibleClient client, String fieldName) {
-        return ReflectionTestUtils.getField(client, fieldName);
+    private static OpenAiChatModel.OpenAiChatModelBuilder chatBuilder() {
+        OpenAiChatModel.OpenAiChatModelBuilder builder = mock(
+                OpenAiChatModel.OpenAiChatModelBuilder.class, Answers.RETURNS_SELF);
+        when(builder.build()).thenReturn(mock(OpenAiChatModel.class));
+        return builder;
+    }
+
+    private static OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder streamBuilder() {
+        OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder = mock(
+                OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder.class, Answers.RETURNS_SELF);
+        when(builder.build()).thenReturn(mock(OpenAiStreamingChatModel.class));
+        return builder;
+    }
+
+    private static OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder embeddingBuilder() {
+        OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder builder = mock(
+                OpenAiEmbeddingModel.OpenAiEmbeddingModelBuilder.class, Answers.RETURNS_SELF);
+        when(builder.build()).thenReturn(mock(OpenAiEmbeddingModel.class));
+        return builder;
     }
 
     private static <T> T invoke(String methodName, Object argument) {
