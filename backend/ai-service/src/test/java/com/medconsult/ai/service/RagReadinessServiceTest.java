@@ -10,7 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -73,7 +75,65 @@ class RagReadinessServiceTest {
         assertTrue(readiness.checks().stream().anyMatch(check -> "embedding".equals(check.name()) && "DOWN".equals(check.status())));
     }
 
+    @Test
+    void runShouldMarkReadyWhenStartupCheckIsDisabled() {
+        MongoDiseaseRepository mongo = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvus = mock(MilvusRestClient.class);
+        OpenAiCompatibleClient embedding = mock(OpenAiCompatibleClient.class);
+        RagReadinessService service = new RagReadinessService(
+                properties(8807, 8807, 3, false, true), mongo, milvus, embedding);
+
+        service.run(null);
+
+        RagReadinessService.RagReadiness readiness = service.current();
+        assertTrue(readiness.ready());
+        assertEquals("CHECK_DISABLED", readiness.checks().getFirst().reason());
+    }
+
+    @Test
+    void runShouldThrowWhenFailFastIsEnabledAndReadinessIsDown() {
+        MongoDiseaseRepository mongo = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvus = mock(MilvusRestClient.class);
+        OpenAiCompatibleClient embedding = mock(OpenAiCompatibleClient.class);
+        when(mongo.countDocuments()).thenReturn(1L);
+        when(milvus.countEntities()).thenReturn(1L);
+        when(embedding.embedOne("RAG_SELF_CHECK")).thenReturn(Optional.empty());
+        RagReadinessService service = new RagReadinessService(
+                properties(8807, 8807, 3, true, true), mongo, milvus, embedding);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.run(null));
+
+        assertTrue(error.getMessage().contains("RAG knowledge base is not ready"));
+        assertFalse(service.current().ready());
+    }
+
+    @Test
+    void refreshShouldReportUnavailableCountsAndEmbedding() {
+        MongoDiseaseRepository mongo = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvus = mock(MilvusRestClient.class);
+        OpenAiCompatibleClient embedding = mock(OpenAiCompatibleClient.class);
+        when(mongo.countDocuments()).thenReturn(-1L);
+        when(milvus.countEntities()).thenReturn(-1L);
+        when(embedding.embedOne("RAG_SELF_CHECK")).thenReturn(Optional.empty());
+        RagReadinessService service = new RagReadinessService(properties(0, 0, 0), mongo, milvus, embedding);
+
+        RagReadinessService.RagReadiness readiness = service.refresh();
+
+        assertFalse(readiness.ready());
+        assertTrue(readiness.checks().stream()
+                .anyMatch(check -> "mongo".equals(check.name()) && "COUNT_UNAVAILABLE".equals(check.reason())));
+        assertTrue(readiness.checks().stream()
+                .anyMatch(check -> "milvus".equals(check.name()) && "COUNT_UNAVAILABLE".equals(check.reason())));
+        assertTrue(readiness.checks().stream()
+                .anyMatch(check -> "embedding".equals(check.name()) && "EMBEDDING_UNAVAILABLE".equals(check.reason())));
+    }
+
     private static AiProperties properties(long expectedMongo, long expectedMilvus, int expectedDimension) {
+        return properties(expectedMongo, expectedMilvus, expectedDimension, true, false);
+    }
+
+    private static AiProperties properties(long expectedMongo, long expectedMilvus, int expectedDimension,
+                                           boolean startupCheckEnabled, boolean failFast) {
         return new AiProperties(
                 new AiProperties.LlmProperties("http://llm", "key", "model", 5),
                 new AiProperties.EmbeddingProperties("http://embedding", "key", "model", 5),
@@ -85,7 +145,8 @@ class RagReadinessServiceTest {
                 new AiProperties.FileStorageProperties("http://minio", "http://minio", "ak", "sk", "us-east-1", "bucket", "imaging", "chunks", true, 300),
                 new AiProperties.InternalProperties("ai-service", "key"),
                 new AiProperties.RateLimitProperties(true, 60, 60, false, Map.of()),
-                new AiProperties.RagProperties(expectedMongo, expectedMilvus, expectedDimension, true, false)
+                new AiProperties.RagProperties(expectedMongo, expectedMilvus, expectedDimension,
+                        startupCheckEnabled, failFast)
         );
     }
 }

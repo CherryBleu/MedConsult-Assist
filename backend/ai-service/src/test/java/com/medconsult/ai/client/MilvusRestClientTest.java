@@ -260,6 +260,71 @@ class MilvusRestClientTest {
         assertEquals("COSINE", properties.metricType());
         assertEquals(15, properties.searchTimeoutSeconds());
         assertEquals(Duration.ofSeconds(15), MilvusRestClient.searchTimeout(properties));
+        assertEquals(Duration.ofSeconds(15), MilvusRestClient.searchTimeout(null));
+    }
+
+    @Test
+    void countEntitiesShouldParseNestedArrayCountsAndReturnMinusOneForInvalidJsonOrUri() throws Exception {
+        HttpServer nested = server("/v2/vectordb/collections/get_stats", new AtomicReference<>(),
+                new AtomicReference<>(), 200, "{\"code\":0,\"data\":[{\"count\":42}]}");
+        nested.start();
+        try {
+            String uri = "http://127.0.0.1:" + nested.getAddress().getPort();
+            assertEquals(42L, new MilvusRestClient(properties(uri, 0.6, "COSINE", 2)).countEntities());
+        } finally {
+            nested.stop(0);
+        }
+
+        HttpServer invalidJson = server("/v2/vectordb/collections/get_stats", new AtomicReference<>(),
+                new AtomicReference<>(), 200, "not-json");
+        invalidJson.start();
+        try {
+            String uri = "http://127.0.0.1:" + invalidJson.getAddress().getPort();
+            assertEquals(-1L, new MilvusRestClient(properties(uri, 0.6, "COSINE", 2)).countEntities());
+        } finally {
+            invalidJson.stop(0);
+        }
+
+        assertEquals(-1L, new MilvusRestClient(properties("http://[invalid", 0.6, "COSINE", 2))
+                .countEntities());
+    }
+
+    @Test
+    void searchShouldSkipMissingAndLowScoresAndDefaultMetadataFields() throws Exception {
+        String response = """
+                {"code":0,"data":[
+                  {"id":"missing","name":"NoScore","text":"plain text","metadata":{}},
+                  {"id":"low","name":"LowScore","text":"plain text","metadata":{},"score":0.1},
+                  {"id":"ok","name":"Plain","text":"plain description","metadata":null,"score":0.8}
+                ]}
+                """;
+        HttpServer server = server("/v2/vectordb/entities/search", new AtomicReference<>(),
+                new AtomicReference<>(), 200, response);
+        server.start();
+        try {
+            String uri = "http://127.0.0.1:" + server.getAddress().getPort();
+            MilvusRestClient client = new MilvusRestClient(properties(uri, 0.6, "COSINE", 2));
+
+            List<DiseaseKnowledge> matches = client.search(List.of(0.1f, 0.2f), 3);
+
+            assertEquals(1, matches.size());
+            DiseaseKnowledge match = matches.getFirst();
+            assertEquals("ok", match.vectorId());
+            assertEquals("Plain", match.diseaseName());
+            assertEquals("plain description", match.desc());
+            assertTrue(match.symptoms().isEmpty());
+            assertTrue(match.metadata().isEmpty());
+            assertEquals("text", match.fieldName());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void searchShouldReturnEmptyForInvalidUriRuntimeFailure() {
+        MilvusRestClient client = new MilvusRestClient(properties("http://[invalid", 0.6, "COSINE", 2));
+
+        assertTrue(client.search(List.of(0.1f), 1).isEmpty());
     }
 
     private static AiProperties properties(String milvusUri, double minScore, String metricType, int timeoutSeconds) {
