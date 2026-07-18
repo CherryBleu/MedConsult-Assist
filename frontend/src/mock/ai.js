@@ -69,9 +69,9 @@ export const mockImagingSubmit = (data) => {
     taskId,
     taskNo: taskId,
     status: 'PENDING',
-    imagingType: data.imagingType || 'CT',
+    imagingType: data.imageType || 'CT',
     bodyPart: data.bodyPart || '胸部',
-    imageUrl: data.imageUrl || '',
+    fileIds: Array.isArray(data.fileIds) ? data.fileIds : [],
     createdAt: new Date().toLocaleString(),
     pollCount: 0
   }
@@ -163,7 +163,7 @@ export const mockImagingResult = (taskId) => {
       suggestions: task.suggestions,
       reviewStatus: task.reviewStatus,
       reviewResult: task.reviewResult,
-      doctorOpinion: task.doctorOpinion,
+      reviewComment: task.reviewComment,
       reviewedBy: task.reviewedBy,
       reviewedAt: task.reviewedAt,
       createdAt: task.createdAt,
@@ -177,20 +177,23 @@ export const mockReviewImagingDetection = (taskId, data) => {
   if (task) {
     task.reviewStatus = 'REVIEWED'
     task.reviewResult = data.reviewResult
-    task.doctorOpinion = data.doctorOpinion
-    task.reviewedBy = '张医生'
-    task.reviewedAt = new Date().toLocaleString()
-    if (data.correctedRegions) {
-      task.regions = data.correctedRegions
-    }
-    if (data.correctedDiagnosis) {
-      task.aiDiagnosis = data.correctedDiagnosis
-    }
+    task.reviewComment = data.reviewComment
+    task.reviewedBy = 900
+    task.reviewedAt = new Date().toISOString()
   }
   return {
     code: 0,
     message: '复核成功',
-    data: null
+    data: task
+      ? {
+          detectionId: taskId,
+          reviewStatus: task.reviewStatus,
+          reviewResult: task.reviewResult,
+          reviewComment: task.reviewComment,
+          reviewedBy: task.reviewedBy,
+          reviewedAt: task.reviewedAt
+        }
+      : null
   }
 }
 

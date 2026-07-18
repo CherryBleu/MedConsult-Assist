@@ -24,6 +24,8 @@ import com.medconsult.ai.util.JsonUtils;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.mq.MqConstants;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -32,6 +34,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
 
@@ -54,6 +58,7 @@ public class ImagingDetectionService {
     private final RabbitTemplate rabbitTemplate;
     private final MedicalImageFetcher imageFetcher;
     private final MedicalVisionClient visionClient;
+    private final FileUploadService fileUploadService;
 
     public ImagingDetectionService(OpenAiCompatibleClient llmClient,
                                    AiReportTextAnalysisMapper reportTextAnalysisMapper,
@@ -62,7 +67,8 @@ public class ImagingDetectionService {
                                    AiCallLogService callLogService,
                                    RabbitTemplate rabbitTemplate,
                                    MedicalImageFetcher imageFetcher,
-                                   MedicalVisionClient visionClient) {
+                                   MedicalVisionClient visionClient,
+                                   FileUploadService fileUploadService) {
         this.llmClient = llmClient;
         this.reportTextAnalysisMapper = reportTextAnalysisMapper;
         this.imageDetectionMapper = imageDetectionMapper;
@@ -71,6 +77,7 @@ public class ImagingDetectionService {
         this.rabbitTemplate = rabbitTemplate;
         this.imageFetcher = imageFetcher;
         this.visionClient = visionClient;
+        this.fileUploadService = fileUploadService;
     }
 
     public ReportAnalysisResponse analyzeReport(ReportAnalysisRequest request) {
@@ -105,15 +112,26 @@ public class ImagingDetectionService {
     }
 
     public ImageDetectionResponse submitImageDetection(ImageDetectionRequest request) {
+        JwtPayload actor = requireImagingSubmitter();
+        Long requestedPatientId = resolveSubmittedPatientId(request.patientId(), actor);
+        Long requestedRecordId = numericContextId(request.recordId(), "recordId");
+        ResolvedImageSources resolvedSources = resolveSubmittedSources(
+                request, actor, requestedPatientId, requestedRecordId);
+        Long patientId = resolvedSources.patientId();
+        Long recordId = resolvedSources.recordId();
+        List<String> imageSources = resolvedSources.sources();
+        List<String> auditSources = resolvedSources.auditSources();
         String detectionNo = BusinessIds.next("IMG");
         LocalDateTime now = LocalDateTime.now();
         AiImageDetectionEntity entity = new AiImageDetectionEntity();
         entity.setDetectionNo(detectionNo);
-        entity.setPatientId(BusinessIds.numericId(request.patientId()));
-        entity.setRecordId(BusinessIds.numericId(request.recordId()));
+        entity.setPatientId(patientId);
+        entity.setRecordId(recordId);
+        entity.setSubmittedByUserId(actor.isUser() ? actor.userId() : null);
+        entity.setSubmittedByServiceCode(actor.isService() ? actor.serviceCode() : null);
         entity.setImageType(request.imageType());
-        entity.setImageUrls(JsonUtils.toJson(request.imageUrls()));
-        entity.setStorageType(request.storageType() == null || request.storageType().isBlank() ? "OSS" : request.storageType());
+        entity.setImageUrls(JsonUtils.toJson(imageSources));
+        entity.setStorageType(resolvedSources.storageType());
         entity.setStatus("PENDING");
         entity.setAbnormalDetected(0);
         entity.setFindings(JsonUtils.toJson(List.of()));
@@ -124,8 +142,9 @@ public class ImagingDetectionService {
         entity.setUpdatedAt(now);
         imageDetectionMapper.insert(entity);
 
-        callLogService.success("IMAGING_DETECTION", request.patientId(), detectionNo, entity.getExternalModel(),
-                JsonUtils.toJson(request.imageUrls()), "PENDING", null, 0);
+        String patientReference = patientReference(request.patientId(), patientId);
+        callLogService.success("IMAGING_DETECTION", patientReference, detectionNo, entity.getExternalModel(),
+                JsonUtils.toJson(auditSources), "PENDING", null, 0);
         try {
             // 影像检测任务发到 ai.imaging exchange（架构文档 §4.2），路由键 ai.image.detect
             rabbitTemplate.convertAndSend(MqConstants.EXCHANGE_AI_IMAGING, MqConstants.RK_AI_IMAGE_DETECT,
@@ -136,11 +155,11 @@ public class ImagingDetectionService {
             entity.setStatus("FAILED");
             entity.setUpdatedAt(LocalDateTime.now());
             imageDetectionMapper.updateById(entity);
-            callLogService.failed("IMAGING_DETECTION_QUEUE", request.patientId(), detectionNo, entity.getExternalModel(),
-                    JsonUtils.toJson(request.imageUrls()), 0, ex);
-            return new ImageDetectionResponse(detectionNo, "FAILED", false, List.of(), disclaimer());
+            callLogService.failed("IMAGING_DETECTION_QUEUE", patientReference, detectionNo, entity.getExternalModel(),
+                    JsonUtils.toJson(auditSources), 0, ex);
+            return toResponse(entity);
         }
-        return new ImageDetectionResponse(detectionNo, "PENDING", false, List.of(), disclaimer());
+        return toResponse(entity);
     }
 
     public void processImageDetection(String detectionId) {
@@ -152,6 +171,7 @@ public class ImagingDetectionService {
         entity.setStatus("PROCESSING");
         entity.setUpdatedAt(LocalDateTime.now());
         imageDetectionMapper.updateById(entity);
+        String auditSources = auditImageSourcesJson(entity.getImageUrls());
         try {
             Map<String, Object> result = analyzeImagePayload(entity);
             List<Map<String, Object>> findings = listMap(result.get("findings"));
@@ -163,20 +183,21 @@ public class ImagingDetectionService {
             entity.setUpdatedAt(LocalDateTime.now());
             imageDetectionMapper.updateById(entity);
             callLogService.success("IMAGING_DETECTION", BusinessIds.businessOrEmpty(String.valueOf(entity.getPatientId())), detectionId,
-                    entity.getExternalModel(), entity.getImageUrls(), JsonUtils.toJson(result), firstRisk(findings),
+                    entity.getExternalModel(), auditSources, JsonUtils.toJson(result), firstRisk(findings),
                     System.currentTimeMillis() - started);
         } catch (RuntimeException ex) {
             entity.setStatus("FAILED");
             entity.setUpdatedAt(LocalDateTime.now());
             imageDetectionMapper.updateById(entity);
             callLogService.failed("IMAGING_DETECTION", BusinessIds.businessOrEmpty(String.valueOf(entity.getPatientId())), detectionId,
-                    entity.getExternalModel(), entity.getImageUrls(), System.currentTimeMillis() - started, ex);
+                    entity.getExternalModel(), auditSources, System.currentTimeMillis() - started, ex);
             throw ex;
         }
     }
 
     public ImageDetectionResponse getImageDetection(String detectionId) {
         AiImageDetectionEntity entity = findImageByNo(detectionId);
+        enforceDetectionReadAccess(entity);
         return toResponse(entity);
     }
 
@@ -189,12 +210,15 @@ public class ImagingDetectionService {
      * DOCTOR/管理员尊重入参（可查接诊范围内患者）。
      */
     public List<ImageDetectionResponse> listByPatient(String patientId) {
-        Long effectivePatientId = resolvePatientScope(patientId);
+        DetectionListScope scope = resolveListScope(patientId);
         LambdaQueryWrapper<AiImageDetectionEntity> wrapper = new LambdaQueryWrapper<AiImageDetectionEntity>()
                 .orderByDesc(AiImageDetectionEntity::getCreatedAt)
                 .last("limit 200");
-        if (effectivePatientId != null) {
-            wrapper.eq(AiImageDetectionEntity::getPatientId, effectivePatientId);
+        if (scope.patientId() != null) {
+            wrapper.eq(AiImageDetectionEntity::getPatientId, scope.patientId());
+        }
+        if (scope.submittedByUserId() != null) {
+            wrapper.eq(AiImageDetectionEntity::getSubmittedByUserId, scope.submittedByUserId());
         }
         return imageDetectionMapper.selectList(wrapper).stream()
                 .map(this::toResponse)
@@ -209,8 +233,8 @@ public class ImagingDetectionService {
      *   <li>匿名：拒绝（401）</li>
      * </ul>
      */
-    private Long resolvePatientScope(String patientId) {
-        com.medconsult.common.security.JwtPayload payload = com.medconsult.common.security.SecurityContext.getPayload();
+    private DetectionListScope resolveListScope(String patientId) {
+        JwtPayload payload = SecurityContext.getPayload();
         if (payload == null || !payload.isUser()) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
         }
@@ -219,38 +243,54 @@ public class ImagingDetectionService {
             if (selfPatientId == null) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询影像记录");
             }
-            return selfPatientId;
+            return new DetectionListScope(selfPatientId, null);
         }
-        return StringUtils.hasText(patientId) ? BusinessIds.numericId(patientId) : null;
+        Long requestedPatientId = numericPatientId(patientId);
+        if (hasActiveRole(payload, "DOCTOR")) {
+            if (payload.userId() == null) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "doctor identity is incomplete");
+            }
+            return new DetectionListScope(requestedPatientId, payload.userId());
+        }
+        if (!hasActiveRole(payload, "HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "current role cannot query imaging detections");
+        }
+        return new DetectionListScope(requestedPatientId, null);
     }
 
     /** 是否 PATIENT 主角色 */
-    private static boolean isPatient(com.medconsult.common.security.JwtPayload p) {
-        if (p == null) return false;
-        if ("PATIENT".equals(p.primaryRole())) return true;
-        return p.roles() != null && p.roles().contains("PATIENT");
+    private static boolean isPatient(JwtPayload payload) {
+        return payload != null && hasActiveRole(payload, "PATIENT");
     }
 
     public ImagingReviewResponse reviewImageDetection(String detectionId, AiReviewRequest request) {
+        long reviewerId = requireReviewerId();
         AiImageDetectionEntity entity = findImageByNo(detectionId);
+        enforceDetectionReadAccess(entity);
         entity.setReviewStatus("REVIEWED");
-        entity.setReviewedBy(BusinessIds.numericId(request.reviewedBy()));
+        entity.setReviewedBy(reviewerId);
+        entity.setReviewResult(request.reviewResult());
         entity.setReviewComment(request.reviewComment());
         entity.setReviewedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         imageDetectionMapper.updateById(entity);
-        return new ImagingReviewResponse(detectionId, "REVIEWED");
+        return toReviewResponse(detectionId, entity.getReviewStatus(), entity.getReviewResult(),
+                entity.getReviewComment(), entity.getReviewedBy(), entity.getReviewedAt());
     }
 
     public ImagingReviewResponse reviewReportAnalysis(String analysisId, AiReviewRequest request) {
+        long reviewerId = requireReviewerId();
         AiReportTextAnalysisEntity entity = findReportByNo(analysisId);
         entity.setReviewStatus("REVIEWED");
-        entity.setReviewedBy(BusinessIds.numericId(request.reviewedBy()));
+        entity.setReviewedBy(reviewerId);
+        entity.setReviewResult(request.reviewResult());
         entity.setReviewComment(request.reviewComment());
         entity.setReviewedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         reportTextAnalysisMapper.updateById(entity);
-        return new ImagingReviewResponse(analysisId, "REVIEWED");
+        return toReviewResponse(analysisId, entity.getReviewStatus(), entity.getReviewResult(),
+                entity.getReviewComment(), entity.getReviewedBy(), entity.getReviewedAt());
     }
 
     private ImageDetectionResponse toResponse(AiImageDetectionEntity entity) {
@@ -259,8 +299,23 @@ public class ImagingDetectionService {
                 entity.getStatus(),
                 entity.getAbnormalDetected() != null && entity.getAbnormalDetected() == 1,
                 JsonUtils.toListMap(entity.getFindings()),
+                entity.getReviewStatus(),
+                entity.getReviewResult(),
+                entity.getReviewComment(),
+                entity.getReviewedBy(),
+                entity.getReviewedAt(),
                 disclaimer()
         );
+    }
+
+    private static ImagingReviewResponse toReviewResponse(String detectionId,
+                                                          String reviewStatus,
+                                                          String reviewResult,
+                                                          String reviewComment,
+                                                          Long reviewedBy,
+                                                          LocalDateTime reviewedAt) {
+        return new ImagingReviewResponse(
+                detectionId, reviewStatus, reviewResult, reviewComment, reviewedBy, reviewedAt);
     }
 
     private AiImageDetectionEntity findImageByNo(String detectionId) {
@@ -298,7 +353,184 @@ public class ImagingDetectionService {
         List<MedicalImagePayload> images = imageFetcher.fetch(JsonUtils.toStringList(entity.getImageUrls()));
         return visionClient.detect(entity.getImageType(), images)
                 .map(node -> JsonUtils.MAPPER.convertValue(node, Map.class))
-                .orElseGet(() -> imageFallback(images));
+                .orElseThrow(() -> new IllegalStateException("vision model returned no result"));
+    }
+
+    private ResolvedImageSources resolveSubmittedSources(ImageDetectionRequest request,
+                                                          JwtPayload actor,
+                                                          Long requestedPatientId,
+                                                          Long requestedRecordId) {
+        boolean hasFileIds = request.fileIds() != null && !request.fileIds().isEmpty();
+        boolean hasLegacyUrls = request.imageUrls() != null && !request.imageUrls().isEmpty();
+        if (hasFileIds == hasLegacyUrls) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "exactly one of fileIds or legacy imageUrls is required");
+        }
+        if (hasFileIds) {
+            FileUploadService.DetectionFileResolution resolution = fileUploadService.resolveDetectionFiles(
+                    request.fileIds(), requestedPatientId, requestedRecordId);
+            List<String> locators = resolution.locators();
+            imageFetcher.validateSources(locators);
+            List<String> canonicalLocators = List.copyOf(locators);
+            return new ResolvedImageSources(
+                    canonicalLocators, canonicalLocators, "MINIO",
+                    resolution.patientId(), resolution.recordId());
+        }
+        if (!actor.isService()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "user imaging requests must reference uploaded fileIds");
+        }
+        imageFetcher.validateLegacyHttpSources(request.imageUrls());
+        List<String> auditSources = auditImageSources(request.imageUrls());
+        String storageType = StringUtils.hasText(request.storageType())
+                ? request.storageType().trim()
+                : "HTTP";
+        return new ResolvedImageSources(
+                List.copyOf(request.imageUrls()), auditSources, storageType,
+                requestedPatientId, requestedRecordId);
+    }
+
+    private static JwtPayload requireImagingSubmitter() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || (!payload.isUser() && !payload.isService())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "authentication is required");
+        }
+        if (payload.isUser() && payload.userId() == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user identity is incomplete");
+        }
+        if (payload.isService() && !StringUtils.hasText(payload.serviceCode())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "service identity is incomplete");
+        }
+        if (payload.isUser() && !isPatient(payload) && !hasActiveRole(payload, "DOCTOR")
+                && !hasActiveRole(payload, "HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "current role cannot submit imaging detection");
+        }
+        return payload;
+    }
+
+    private static Long resolveSubmittedPatientId(String requestedPatientId, JwtPayload actor) {
+        Long requested = numericPatientId(requestedPatientId);
+        if (actor.isUser() && isPatient(actor)) {
+            if (actor.patientId() == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN,
+                        "current account is not linked to a patient profile");
+            }
+            if (requested != null && !actor.patientId().equals(requested)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN,
+                        "patientId must match the current patient");
+            }
+            return actor.patientId();
+        }
+        return requested;
+    }
+
+    private static Long numericPatientId(String patientId) {
+        return numericContextId(patientId, "patientId");
+    }
+
+    private static Long numericContextId(String value, String fieldName) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        Long numeric = BusinessIds.numericId(value);
+        if (numeric == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "invalid " + fieldName);
+        }
+        return numeric;
+    }
+
+    private static void enforceDetectionReadAccess(AiImageDetectionEntity entity) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || (!payload.isUser() && !payload.isService())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "authentication is required");
+        }
+        if (payload.isService()) {
+            if (StringUtils.hasText(payload.serviceCode())
+                    && payload.serviceCode().equals(entity.getSubmittedByServiceCode())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "service did not submit this imaging detection");
+        }
+        if (isPatient(payload)) {
+            if (payload.patientId() != null && payload.patientId().equals(entity.getPatientId())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "no permission to access this imaging detection");
+        }
+        if (hasActiveRole(payload, "DOCTOR")) {
+            if (payload.userId() != null && payload.userId().equals(entity.getSubmittedByUserId())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "doctor did not submit this imaging detection");
+        }
+        if (hasActiveRole(payload, "HOSPITAL_ADMIN")) {
+            return;
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN,
+                "current role cannot access imaging detections");
+    }
+
+    private static long requireReviewerId() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user login is required");
+        }
+        if (!hasActiveRole(payload, "DOCTOR") && !hasActiveRole(payload, "HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "current role cannot review imaging results");
+        }
+        Long reviewerId = payload.doctorId() != null ? payload.doctorId() : payload.userId();
+        if (reviewerId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "reviewer identity is incomplete");
+        }
+        return reviewerId;
+    }
+
+    private static boolean hasActiveRole(JwtPayload payload, String role) {
+        if (StringUtils.hasText(payload.primaryRole())) {
+            return role.equals(payload.primaryRole());
+        }
+        return payload.hasRole(role);
+    }
+
+    private static List<String> auditImageSources(List<String> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return List.of();
+        }
+        return sources.stream()
+                .map(ImagingDetectionService::redactImageSource)
+                .toList();
+    }
+
+    private static String auditImageSourcesJson(String sourcesJson) {
+        return JsonUtils.toJson(auditImageSources(JsonUtils.toStringList(sourcesJson)));
+    }
+
+    private static String redactImageSource(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(value);
+            if (!StringUtils.hasText(uri.getScheme()) || !StringUtils.hasText(uri.getHost())) {
+                return "[redacted-image-source]";
+            }
+            return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(),
+                    uri.getPath(), null, null).toString();
+        } catch (IllegalArgumentException | URISyntaxException ex) {
+            return "[redacted-image-source]";
+        }
+    }
+
+    private static String patientReference(String requestedPatientId, Long patientId) {
+        if (StringUtils.hasText(requestedPatientId)) {
+            return requestedPatientId;
+        }
+        return patientId == null ? "" : patientId.toString();
     }
 
     private String provider(ExternalModelDto externalModel) {
@@ -328,20 +560,6 @@ public class ImagingDetectionService {
         );
     }
 
-    private static Map<String, Object> imageFallback(List<MedicalImagePayload> images) {
-        return Map.of(
-                "abnormalDetected", false,
-                "findings", List.of(),
-                "imageFiles", images.stream()
-                        .map(image -> Map.of(
-                                "sourceUrl", image.sourceUrl(),
-                                "contentType", image.contentType(),
-                                "byteSize", image.byteSize()
-                        ))
-                        .toList()
-        );
-    }
-
     private static List<Map<String, Object>> listMap(Object value) {
         if (value instanceof List<?> list) {
             return list.stream().filter(Map.class::isInstance).map(item -> (Map<String, Object>) item).toList();
@@ -368,5 +586,15 @@ public class ImagingDetectionService {
             return traceId;
         }
         return "trace-" + java.util.UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record ResolvedImageSources(List<String> sources,
+                                        List<String> auditSources,
+                                        String storageType,
+                                        Long patientId,
+                                        Long recordId) {
+    }
+
+    private record DetectionListScope(Long patientId, Long submittedByUserId) {
     }
 }

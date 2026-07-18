@@ -35,7 +35,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -125,6 +128,60 @@ public class FileUploadService {
         }
         enforceReadOwnership(payload, entity);
         return toResponse(entity);
+    }
+
+    public List<String> resolveDetectionFileLocators(List<String> fileIds) {
+        return resolveDetectionFiles(fileIds, null, null).locators();
+    }
+
+    public DetectionFileResolution resolveDetectionFiles(List<String> fileIds,
+                                                          Long requestedPatientId,
+                                                          Long requestedRecordId) {
+        List<String> normalizedIds = normalizeDetectionFileIds(fileIds);
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "authentication is required");
+        }
+        List<String> locators = new ArrayList<>(normalizedIds.size());
+        Long resolvedPatientId = null;
+        Long resolvedRecordId = null;
+        boolean firstFile = true;
+        for (String fileId : normalizedIds) {
+            AiFileUploadEntity entity = fileUploadMapper.selectOne(new LambdaQueryWrapper<AiFileUploadEntity>()
+                    .eq(AiFileUploadEntity::getFileNo, fileId)
+                    .last("limit 1"));
+            if (entity == null || !"COMPLETED".equals(entity.getStatus())
+                    || !"MINIO".equals(entity.getStorageType())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "file is unavailable");
+            }
+            enforceDetectionOwnership(payload, entity);
+            if (!bucket().equals(entity.getBucket())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "file bucket is not trusted");
+            }
+            String objectKey = entity.getObjectKey();
+            if (!StringUtils.hasText(objectKey)) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "file object is unavailable");
+            }
+            if (objectKey.startsWith("/") || objectKey.contains("?") || objectKey.contains("#")
+                    || objectKey.contains("\\") || containsParentSegment(objectKey)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "file object key is not trusted");
+            }
+            locators.add(fileLocator(entity.getBucket(), objectKey));
+            if (firstFile) {
+                resolvedPatientId = entity.getPatientId();
+                resolvedRecordId = entity.getRecordId();
+                firstFile = false;
+            } else {
+                requireConsistentFileContext("patientId", resolvedPatientId, entity.getPatientId());
+                requireConsistentFileContext("recordId", resolvedRecordId, entity.getRecordId());
+            }
+        }
+        requireRequestedContextMatch("patientId", requestedPatientId, resolvedPatientId);
+        requireRequestedContextMatch("recordId", requestedRecordId, resolvedRecordId);
+        return new DetectionFileResolution(
+                List.copyOf(locators),
+                requestedPatientId == null ? resolvedPatientId : requestedPatientId,
+                requestedRecordId == null ? resolvedRecordId : requestedRecordId);
     }
 
     private void ensureBucket() {
@@ -444,6 +501,66 @@ public class FileUploadService {
         throw new BusinessException(ErrorCode.FORBIDDEN, "no permission to access this file");
     }
 
+    private static void enforceDetectionOwnership(JwtPayload payload, AiFileUploadEntity entity) {
+        if (payload.isService()) {
+            if (StringUtils.hasText(payload.serviceCode())
+                    && payload.serviceCode().equals(entity.getUploadedByServiceCode())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN, "no permission to use this file");
+        }
+        if (!payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "authentication is required");
+        }
+        if (!isActiveRole(payload, "PATIENT") && !isActiveRole(payload, "DOCTOR")
+                && !isActiveRole(payload, "HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "current role cannot use medical images");
+        }
+        enforceReadOwnership(payload, entity);
+    }
+
+    private static List<String> normalizeDetectionFileIds(List<String> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "fileIds are required");
+        }
+        if (fileIds.size() > 8) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "at most 8 images are allowed");
+        }
+        Set<String> normalized = new LinkedHashSet<>();
+        for (String fileId : fileIds) {
+            if (!StringUtils.hasText(fileId)) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "fileId must not be blank");
+            }
+            if (!normalized.add(fileId.trim())) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "duplicate fileId is not allowed");
+            }
+        }
+        return List.copyOf(normalized);
+    }
+
+    private static boolean containsParentSegment(String objectKey) {
+        for (String segment : objectKey.split("/", -1)) {
+            if ("..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void requireConsistentFileContext(String fieldName, Long expected, Long actual) {
+        if (!Objects.equals(expected, actual)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR,
+                    "selected files have inconsistent " + fieldName);
+        }
+    }
+
+    private static void requireRequestedContextMatch(String fieldName, Long requested, Long resolved) {
+        if (requested != null && !requested.equals(resolved)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "file " + fieldName + " does not match requested task " + fieldName);
+        }
+    }
+
     private static boolean isActiveRole(JwtPayload payload, String role) {
         if (StringUtils.hasText(payload.primaryRole())) {
             return role.equals(payload.primaryRole());
@@ -501,5 +618,8 @@ public class FileUploadService {
     }
 
     private record UploadOwner(Long patientId, Long userId, String serviceCode) {
+    }
+
+    public record DetectionFileResolution(List<String> locators, Long patientId, Long recordId) {
     }
 }

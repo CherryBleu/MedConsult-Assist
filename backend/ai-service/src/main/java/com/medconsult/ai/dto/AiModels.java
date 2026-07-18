@@ -4,8 +4,10 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -204,7 +206,8 @@ public final class AiModels {
             String patientId,
             String recordId,
             @NotBlank String imageType,
-            @NotEmpty List<String> imageUrls,
+            List<String> fileIds,
+            List<String> imageUrls,
             String storageType,
             ExternalModelDto externalModel
     ) {
@@ -215,6 +218,11 @@ public final class AiModels {
             String status,
             boolean abnormalDetected,
             List<Map<String, Object>> findings,
+            String reviewStatus,
+            String reviewResult,
+            String reviewComment,
+            Long reviewedBy,
+            LocalDateTime reviewedAt,
             String disclaimer
     ) {
     }
@@ -248,13 +256,18 @@ public final class AiModels {
 
     public record ImagingReviewResponse(
             String detectionId,
-            String reviewStatus
+            String reviewStatus,
+            String reviewResult,
+            String reviewComment,
+            Long reviewedBy,
+            LocalDateTime reviewedAt
     ) {
     }
 
     public record AiReviewRequest(
-            @NotBlank String reviewedBy,
-            @NotBlank String reviewResult,
+            String reviewedBy,
+            @NotBlank
+            @Pattern(regexp = "CONFIRMED|CORRECTED|REJECTED") String reviewResult,
             String reviewComment
     ) {
     }

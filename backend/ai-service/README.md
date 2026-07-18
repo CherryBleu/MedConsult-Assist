@@ -41,7 +41,7 @@ X-Trigger-User-Id: 123
 | 用药分析 | 已实现 | 先走受控函数分析，再由大模型生成说明 |
 | 报告文本分析 | 已实现 | 独立表 `ai_report_text_analysis` |
 | 影像图像检测 | 已实现 | 独立表 `ai_image_detection`，提交后返回 `PENDING` |
-| 影像文件上传 | 已实现 | 上传到 MinIO，记录 `ai_file_upload`，返回可用于图像检测的 `fileUrl` |
+| 影像文件上传 | 已实现 | 上传到 MinIO，记录 `ai_file_upload`；公共检测请求引用返回的 `fileId` |
 | AI 反馈 | 已实现 | 支持结果反馈与查询 |
 | AI 调用日志 | 已实现 | 支持 trace、调用方、用户、requestId、缓存命中、Token 拆分和预估成本字段 |
 | 内部接口 | 已实现 | `/internal/ai/*`，优先通过 Bearer 服务 Token 保护，兼容 `X-Service-Api-Key` |
@@ -77,7 +77,7 @@ POST /api/v1/ai/symptom-chat
 | 能力 | 接口 | 表 | 返回方式 |
 | --- | --- | --- | --- |
 | 报告文本分析 | `POST /api/v1/ai/report-analysis` | `ai_report_text_analysis` | 同步返回 `COMPLETED` |
-| 影像图像检测 | `POST /api/v1/ai/image-detection` | `ai_image_detection` | 提交返回 `PENDING`，后续查询 |
+| 影像图像检测 | `POST /api/v1/ai/imaging-detection` | `ai_image_detection` | 提交返回 `PENDING`，后续查询 |
 
 影像图像检测前应先上传文件：
 
@@ -86,7 +86,7 @@ POST /api/v1/files/upload
 POST /api/v1/files/upload/chunk
 ```
 
-上传接口会把文件写入 MinIO，并在 `ai_file_upload` 记录元数据。返回的 `fileUrl` 可直接放入 `imageUrls` 调用 `POST /api/v1/ai/image-detection`。
+上传接口会把文件写入 MinIO，并在 `ai_file_upload` 记录元数据。患者端和医生端必须把返回的 `fileId` 放入 `fileIds`，调用 `POST /api/v1/ai/imaging-detection`；短时 `fileUrl` 仅用于授权查看，不得回传给检测接口。`imageUrls` 只保留给携带 SERVICE JWT 的历史兼容调用，并且必须命中已配置的 MinIO endpoint/public endpoint allowlist。
 
 ## 5. 流式接口
 
@@ -126,6 +126,60 @@ mysql -uroot -p123456 medconsult < src\main\resources\db\schema-ai.sql
 ```powershell
 mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-architecture-20260710.sql
 mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-call-log-observability-20260718.sql
+```
+
+### 6.1 影像安全迁移上线前置条件
+
+`upgrade-ai-imaging-security-20260718.sql` 必须在独立维护窗口中执行，步骤如下：
+
+1. 停止新的影像检测提交。先执行以下 dry-run 查询；结果非 `0` 时，只保留现有影像消费者排空任务，并重复查询，直到 `PENDING`/`PROCESSING` 总数为 `0`。
+
+   ```sql
+   SELECT COUNT(*) AS in_flight_count
+   FROM ai_image_detection
+   WHERE status IN ('PENDING', 'PROCESSING');
+   ```
+
+2. 确认排空后，停止影像消费者以及影像检测、报告分析和审核相关的全部写入，维护窗口内不得恢复写入。
+3. 备份 `ai_image_detection` 和 `ai_report_text_analysis`，并确认备份文件可读。例如：
+
+   ```powershell
+   mysqldump -uroot -p --single-transaction --result-file=ai-imaging-before-20260718.sql medconsult ai_image_detection ai_report_text_analysis
+   ```
+
+4. 仅在上述条件全部满足后执行增量迁移：
+
+   ```powershell
+   mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-imaging-security-20260718.sql
+   ```
+
+该迁移只新增字段和索引，不删除或改写现有数据，也不得根据患者、文件上传者或调用日志推断并回填提交者归属。历史数据的 `submitted_by_user_id` 和 `submitted_by_service_code` 保持 `NULL`：这类记录只允许对应患者本人和 `HOSPITAL_ADMIN` 读取，医生和服务调用方不可读取。
+
+迁移后执行以下查询。字段查询应返回 4 行，索引查询应返回 2 行；`null_submitter_count` 是保留的历史空归属数量，不应据此执行回填；恢复流量前 `in_flight_count` 应为 `0`。
+
+```sql
+SELECT table_name, column_name, column_type, is_nullable
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND ((table_name = 'ai_report_text_analysis' AND column_name = 'review_result')
+    OR (table_name = 'ai_image_detection' AND column_name IN
+        ('submitted_by_user_id', 'submitted_by_service_code', 'review_result')))
+ORDER BY table_name, ordinal_position;
+
+SELECT table_name, index_name, column_name
+FROM information_schema.statistics
+WHERE table_schema = DATABASE()
+  AND table_name = 'ai_image_detection'
+  AND index_name IN ('idx_ai_image_submitter_user', 'idx_ai_image_submitter_service')
+ORDER BY index_name, seq_in_index;
+
+SELECT COUNT(*) AS null_submitter_count
+FROM ai_image_detection
+WHERE submitted_by_user_id IS NULL AND submitted_by_service_code IS NULL;
+
+SELECT COUNT(*) AS in_flight_count
+FROM ai_image_detection
+WHERE status IN ('PENDING', 'PROCESSING');
 ```
 
 核心新增和调整包括：
@@ -229,8 +283,8 @@ src/main/resources/application.yml
 - drug-service 提供药品风险信息只读内部接口。
 - medical-record-service 提供病历全文只读内部接口，AI 域不直接读取病历表。
 - 调用方统一传入 `Authorization: Bearer ${AI_INTERNAL_SERVICE_TOKEN}`、`X-Caller-Service`、`X-Trace-Id`。
-- 异步图像检测外部调用方通过 `GET /api/v1/ai/image-detection/{detectionId}` 轮询结果。
-- 异步图像检测内部调用方通过 `GET /internal/ai/image-detection/{detectionId}` 轮询结果。
+- 异步图像检测外部调用方通过 `GET /api/v1/ai/imaging-detection/{detectionId}` 轮询结果。
+- 异步图像检测内部调用方通过 `GET /internal/ai/imaging-detection/{detectionId}` 轮询结果。
 
 ## 10. 验证命令
 

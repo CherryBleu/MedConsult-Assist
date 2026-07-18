@@ -3,9 +3,13 @@ package com.medconsult.ai.client;
 import com.medconsult.ai.client.MedicalImageFetcher.MedicalImagePayload;
 import com.medconsult.ai.config.AiProperties;
 import com.sun.net.httpserver.HttpServer;
+import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
+import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -18,8 +22,88 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class MedicalImageFetcherTest {
+
+    @Test
+    void fetchShouldReadTrustedMinioLocatorWithConfiguredCredentials() throws Exception {
+        byte[] image = {1, 2, 3};
+        MinioClient minio = mock(MinioClient.class);
+        GetObjectResponse response = streamResponse(image, new AtomicInteger());
+        when(minio.getObject(any(GetObjectArgs.class))).thenReturn(response);
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), minio);
+
+        MedicalImagePayload payload = fetcher.fetch(
+                List.of("minio://medical/studies/scan.dcm")).getFirst();
+
+        assertEquals("minio://medical/studies/scan.dcm", payload.sourceUrl());
+        assertEquals("application/dicom", payload.contentType());
+        assertEquals(3, payload.byteSize());
+        assertEquals("data:application/dicom;base64,AQID", payload.dataUrl());
+        ArgumentCaptor<GetObjectArgs> args = ArgumentCaptor.forClass(GetObjectArgs.class);
+        verify(minio).getObject(args.capture());
+        assertEquals("medical", args.getValue().bucket());
+        assertEquals("studies/scan.dcm", args.getValue().object());
+    }
+
+    @Test
+    void fetchShouldRejectUntrustedMinioLocatorFormsBeforeObjectRead() throws Exception {
+        MinioClient minio = mock(MinioClient.class);
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), minio);
+        List<String> invalid = List.of(
+                "minio://other-bucket/study.dcm",
+                "minio://user@medical/study.dcm",
+                "minio://medical/study.dcm?token=secret",
+                "minio://medical/study.dcm#fragment",
+                "minio://medical/"
+        );
+
+        for (String locator : invalid) {
+            assertThrows(IllegalArgumentException.class, () -> fetcher.fetch(List.of(locator)), locator);
+        }
+
+        verify(minio, org.mockito.Mockito.never()).getObject(any(GetObjectArgs.class));
+    }
+
+    @Test
+    void fetchShouldStopReadingMinioAtMaxBytesPlusOne() throws Exception {
+        byte[] image = new byte[100];
+        MinioClient minio = mock(MinioClient.class);
+        AtomicInteger bytesSupplied = new AtomicInteger();
+        GetObjectResponse response = streamResponse(image, bytesSupplied);
+        when(minio.getObject(any(GetObjectArgs.class))).thenReturn(response);
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 3), minio);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fetcher.fetch(List.of("minio://medical/studies/large.dcm")));
+
+        assertEquals("image exceeds max bytes: 4", error.getMessage());
+        assertEquals(4, bytesSupplied.get());
+    }
+
+    @Test
+    void fetchShouldRejectMoreThanEightImagesBeforeNetworkIo() throws Exception {
+        MinioClient minio = mock(MinioClient.class);
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), minio);
+        List<String> locators = java.util.stream.IntStream.range(0, 9)
+                .mapToObj(i -> "minio://medical/studies/" + i + ".dcm")
+                .toList();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fetcher.fetch(locators));
+
+        assertEquals("at most 8 images are allowed", error.getMessage());
+        verify(minio, org.mockito.Mockito.never()).getObject(any(GetObjectArgs.class));
+    }
 
     @Test
     void fetchShouldDownloadMinioObjectSkipBlankUrlsAndBuildDataUrl() throws Exception {
@@ -131,6 +215,27 @@ class MedicalImageFetcherTest {
 
         assertEquals("image fetch failed: " + url, error.getMessage());
         assertTrue(error.getCause() instanceof IOException);
+    }
+
+    @Test
+    void fetchShouldRedactLegacyCredentialsFromConnectionFailureMessage() throws Exception {
+        int unusedPort;
+        try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
+            unusedPort = socket.getLocalPort();
+        }
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(properties(
+                "http://127.0.0.1:" + unusedPort, "", 1, 1024));
+        String credentialUrl = "http://legacy-user:legacy-password@127.0.0.1:" + unusedPort
+                + "/unavailable.jpg?X-Amz-Credential=credential&X-Amz-Signature=secret";
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fetcher.fetch(List.of(credentialUrl)));
+
+        assertEquals("image fetch failed: http://127.0.0.1:" + unusedPort + "/unavailable.jpg",
+                error.getMessage());
+        assertTrue(error.getCause() instanceof IOException);
+        assertTrue(!error.getMessage().contains("legacy-password"));
+        assertTrue(!error.getMessage().contains("X-Amz-Signature"));
     }
 
     @Test
@@ -355,5 +460,25 @@ class MedicalImageFetcherTest {
 
     private static AiProperties propertiesWithNoVisionConfiguration() {
         return new AiProperties(null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    private static GetObjectResponse streamResponse(byte[] bytes, AtomicInteger bytesSupplied) throws Exception {
+        GetObjectResponse response = mock(GetObjectResponse.class);
+        AtomicInteger offset = new AtomicInteger();
+        when(response.read(any(byte[].class), anyInt(), anyInt())).thenAnswer(invocation -> {
+            byte[] target = invocation.getArgument(0);
+            int targetOffset = invocation.getArgument(1);
+            int requested = invocation.getArgument(2);
+            int remaining = bytes.length - offset.get();
+            if (remaining <= 0) {
+                return -1;
+            }
+            int count = Math.min(requested, remaining);
+            System.arraycopy(bytes, offset.get(), target, targetOffset, count);
+            offset.addAndGet(count);
+            bytesSupplied.addAndGet(count);
+            return count;
+        });
+        return response;
     }
 }

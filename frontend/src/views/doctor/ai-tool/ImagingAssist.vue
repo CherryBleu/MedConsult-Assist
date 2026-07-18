@@ -188,8 +188,10 @@
                 <el-tag :type="getReviewTagType(currentTask.reviewResult)" style="margin-bottom: 12px">
                   {{ getReviewResultText(currentTask.reviewResult) }}
                 </el-tag>
-                <p><strong>医生意见：</strong>{{ currentTask.doctorOpinion }}</p>
-                <p class="review-meta">审核医生：{{ currentTask.reviewedBy }} | {{ currentTask.reviewedAt }}</p>
+                <p><strong>医生意见：</strong>{{ currentTask.reviewComment }}</p>
+                <p v-if="currentTask.reviewedBy || currentTask.reviewedAt" class="review-meta">
+                  审核医生：{{ currentTask.reviewedBy || '-' }} | {{ currentTask.reviewedAt || '-' }}
+                </p>
               </div>
 
               <div v-else class="review-section">
@@ -197,22 +199,22 @@
                 <el-form label-width="100px">
                   <el-form-item label="审核结果">
                     <el-radio-group v-model="reviewForm.reviewResult">
-                      <el-radio value="CONFIRM">
+                      <el-radio value="CONFIRMED">
                         <el-tag type="success" size="small">确认</el-tag>
                         同意AI检测结果
                       </el-radio>
-                      <el-radio value="CORRECT">
+                      <el-radio value="CORRECTED">
                         <el-tag type="warning" size="small">修正</el-tag>
                         修正AI检测结果
                       </el-radio>
-                      <el-radio value="REJECT">
+                      <el-radio value="REJECTED">
                         <el-tag type="danger" size="small">驳回</el-tag>
                         AI检测不准确
                       </el-radio>
                     </el-radio-group>
                   </el-form-item>
 
-                  <el-form-item v-if="reviewForm.reviewResult === 'CORRECT'" label="修正诊断">
+                  <el-form-item v-if="reviewForm.reviewResult === 'CORRECTED'" label="修正诊断">
                     <el-input
                       v-model="reviewForm.correctedDiagnosis"
                       type="textarea"
@@ -284,7 +286,7 @@ const imagingForm = reactive({
 })
 
 const reviewForm = reactive({
-  reviewResult: 'CONFIRM',
+  reviewResult: 'CONFIRMED',
   correctedDiagnosis: '',
   doctorOpinion: ''
 })
@@ -401,21 +403,21 @@ const submitDetection = async () => {
   progressText.value = '正在上传影像文件...'
 
   try {
-    // 1. 上传图片到 MinIO，获取可访问的 http(s) URL（blob: URL 后端无法拉取）
+    // 1. 上传图片到 MinIO，后续检测仅引用服务端返回的 fileId。
     const uploadRes = await uploadImageFileApi(imageFile.value)
-    const fileUrl = uploadRes.data?.fileUrl
-    if (!fileUrl) {
-      throw new Error('文件上传失败：未返回 fileUrl')
+    const fileId = uploadRes.data?.fileId
+    if (!fileId) {
+      throw new Error('文件上传失败：未返回 fileId')
     }
 
-    // 2. 提交检测任务（后端 DTO: imageType + imageUrls List）
+    // 2. 提交检测任务（后端 DTO: imageType + fileIds List）
     // 注意：imagingForm.patientName 是医生手输的患者姓名（非患者主键 ID），
     // 不能作为 patientId 提交（后端 numericId 会把它解析成脏数据落库）。
     // 医生端影像辅助不强绑定患者档案，patientId 留空。
     progressText.value = '正在提交检测任务...'
     const res = await submitImagingDetectionApi({
       imageType: imagingForm.imagingType,
-      imageUrls: [fileUrl]
+      fileIds: [fileId]
     })
     currentTaskId.value = res.data.detectionId || res.data.taskId
     ElMessage.success('检测任务已提交，正在处理中...')
@@ -522,7 +524,7 @@ const viewTask = async (row) => {
 }
 
 const resetReviewForm = () => {
-  reviewForm.reviewResult = 'CONFIRM'
+  reviewForm.reviewResult = 'CONFIRMED'
   reviewForm.correctedDiagnosis = ''
   reviewForm.doctorOpinion = ''
 }
@@ -532,7 +534,7 @@ const submitReview = async () => {
     ElMessage.warning('请填写医生意见')
     return
   }
-  if (reviewForm.reviewResult === 'CORRECT' && !reviewForm.correctedDiagnosis.trim()) {
+  if (reviewForm.reviewResult === 'CORRECTED' && !reviewForm.correctedDiagnosis.trim()) {
     ElMessage.warning('请填写修正后的诊断')
     return
   }
@@ -545,19 +547,14 @@ const submitReview = async () => {
 
   reviewing.value = true
   try {
-    // 后端 AiReviewRequest: {reviewedBy, reviewResult, reviewComment}
-    await reviewImagingDetectionApi(currentTaskId.value, {
-      reviewedBy: userStore.userInfo?.name || userStore.userInfo?.username || '当前医生',
+    // reviewer 身份由后端从 JWT 推导，客户端不能指定。
+    const reviewRes = await reviewImagingDetectionApi(currentTaskId.value, {
       reviewResult: reviewForm.reviewResult,
-      reviewComment: reviewForm.doctorOpinion + (reviewForm.reviewResult === 'CORRECT' ? ' 修正诊断: ' + reviewForm.correctedDiagnosis : '')
+      reviewComment: reviewForm.doctorOpinion + (reviewForm.reviewResult === 'CORRECTED' ? ' 修正诊断: ' + reviewForm.correctedDiagnosis : '')
     })
     ElMessage.success('审核提交成功')
-    currentTask.value.reviewStatus = 'REVIEWED'
-    currentTask.value.reviewResult = reviewForm.reviewResult
-    currentTask.value.doctorOpinion = reviewForm.doctorOpinion
-    currentTask.value.reviewedBy = userStore.userInfo?.name || userStore.userInfo?.username || '当前医生'
-    currentTask.value.reviewedAt = new Date().toLocaleString()
-    if (reviewForm.reviewResult === 'CORRECT') {
+    Object.assign(currentTask.value, reviewRes.data || {})
+    if (reviewForm.reviewResult === 'CORRECTED') {
       currentTask.value.aiDiagnosis = reviewForm.correctedDiagnosis
     }
     getTaskList()
@@ -571,12 +568,20 @@ const submitReview = async () => {
 }
 
 const getReviewResultText = (result) => {
-  const map = { CONFIRM: '医生已确认结果', CORRECT: '医生已修正结果', REJECT: '医生已驳回' }
+  const map = {
+    CONFIRM: '医生已确认结果', CONFIRMED: '医生已确认结果',
+    CORRECT: '医生已修正结果', CORRECTED: '医生已修正结果',
+    REJECT: '医生已驳回', REJECTED: '医生已驳回'
+  }
   return map[result] || '待审核'
 }
 
 const getReviewTagType = (result) => {
-  const map = { CONFIRM: 'success', CORRECT: 'warning', REJECT: 'danger' }
+  const map = {
+    CONFIRM: 'success', CONFIRMED: 'success',
+    CORRECT: 'warning', CORRECTED: 'warning',
+    REJECT: 'danger', REJECTED: 'danger'
+  }
   return map[result] || 'info'
 }
 

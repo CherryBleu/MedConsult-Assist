@@ -23,6 +23,7 @@ public class AiReportTextAnalysisEntity {
     private Integer latencyMs;
     private String reviewStatus;
     private Long reviewedBy;
+    private String reviewResult;
     private String reviewComment;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -146,6 +147,14 @@ public class AiReportTextAnalysisEntity {
 
     public void setReviewedBy(Long reviewedBy) {
         this.reviewedBy = reviewedBy;
+    }
+
+    public String getReviewResult() {
+        return reviewResult;
+    }
+
+    public void setReviewResult(String reviewResult) {
+        this.reviewResult = reviewResult;
     }
 
     public String getReviewComment() {

@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS ai_report_text_analysis (
     latency_ms INT NULL,
     review_status VARCHAR(20) NOT NULL DEFAULT 'UNREVIEWED',
     reviewed_by BIGINT NULL,
+    review_result VARCHAR(32) NULL,
     review_comment VARCHAR(1000) NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -110,6 +111,8 @@ CREATE TABLE IF NOT EXISTS ai_image_detection (
     detection_no VARCHAR(32) NOT NULL UNIQUE,
     patient_id BIGINT NULL,
     record_id BIGINT NULL,
+    submitted_by_user_id BIGINT NULL,
+    submitted_by_service_code VARCHAR(64) NULL,
     image_type VARCHAR(50) NOT NULL,
     image_urls JSON NULL,
     storage_type VARCHAR(20) NULL,
@@ -121,12 +124,15 @@ CREATE TABLE IF NOT EXISTS ai_image_detection (
     latency_ms INT NULL,
     review_status VARCHAR(20) NOT NULL DEFAULT 'UNREVIEWED',
     reviewed_by BIGINT NULL,
+    review_result VARCHAR(32) NULL,
     review_comment VARCHAR(1000) NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     reviewed_at DATETIME NULL,
     INDEX idx_ai_image_patient (patient_id),
-    INDEX idx_ai_image_record (record_id)
+    INDEX idx_ai_image_record (record_id),
+    INDEX idx_ai_image_submitter_user (submitted_by_user_id),
+    INDEX idx_ai_image_submitter_service (submitted_by_service_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS ai_feedback (

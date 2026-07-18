@@ -12,6 +12,8 @@ public class AiImageDetectionEntity {
     private String detectionNo;
     private Long patientId;
     private Long recordId;
+    private Long submittedByUserId;
+    private String submittedByServiceCode;
     private String imageType;
     private String imageUrls;
     private String storageType;
@@ -23,6 +25,7 @@ public class AiImageDetectionEntity {
     private Integer latencyMs;
     private String reviewStatus;
     private Long reviewedBy;
+    private String reviewResult;
     private String reviewComment;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -58,6 +61,22 @@ public class AiImageDetectionEntity {
 
     public void setRecordId(Long recordId) {
         this.recordId = recordId;
+    }
+
+    public Long getSubmittedByUserId() {
+        return submittedByUserId;
+    }
+
+    public void setSubmittedByUserId(Long submittedByUserId) {
+        this.submittedByUserId = submittedByUserId;
+    }
+
+    public String getSubmittedByServiceCode() {
+        return submittedByServiceCode;
+    }
+
+    public void setSubmittedByServiceCode(String submittedByServiceCode) {
+        this.submittedByServiceCode = submittedByServiceCode;
     }
 
     public String getImageType() {
@@ -146,6 +165,14 @@ public class AiImageDetectionEntity {
 
     public void setReviewedBy(Long reviewedBy) {
         this.reviewedBy = reviewedBy;
+    }
+
+    public String getReviewResult() {
+        return reviewResult;
+    }
+
+    public void setReviewResult(String reviewResult) {
+        this.reviewResult = reviewResult;
     }
 
     public String getReviewComment() {

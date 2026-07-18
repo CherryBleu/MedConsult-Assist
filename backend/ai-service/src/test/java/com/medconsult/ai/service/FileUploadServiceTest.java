@@ -609,6 +609,127 @@ class FileUploadServiceTest {
     }
 
     @Test
+    void resolveDetectionFileLocatorsShouldAuthorizeUserAndReturnCanonicalMinioLocators() {
+        bind(user(502L, "PATIENT", 42L));
+        AiFileUploadEntity first = completedEntity();
+        first.setFileNo("FILE-1");
+        first.setObjectKey("imaging/first.dcm");
+        AiFileUploadEntity second = completedEntity();
+        second.setFileNo("FILE-2");
+        second.setObjectKey("imaging/second.dcm");
+        when(mapper.selectOne(any())).thenReturn(first, second);
+
+        List<String> locators = service.resolveDetectionFileLocators(List.of("FILE-1", "FILE-2"));
+
+        assertEquals(List.of(
+                "minio://medical-images/imaging/first.dcm",
+                "minio://medical-images/imaging/second.dcm"), locators);
+        verifyNoInteractions(presignClient);
+    }
+
+    @Test
+    void resolveDetectionFilesShouldReturnLocatorsAndDeriveConsistentContext() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity first = completedEntity();
+        first.setFileNo("FILE-1");
+        first.setRecordId(81L);
+        first.setObjectKey("imaging/first.dcm");
+        AiFileUploadEntity second = completedEntity();
+        second.setFileNo("FILE-2");
+        second.setRecordId(81L);
+        second.setObjectKey("imaging/second.dcm");
+        when(mapper.selectOne(any())).thenReturn(first, second);
+
+        FileUploadService.DetectionFileResolution resolution = service.resolveDetectionFiles(
+                List.of("FILE-1", "FILE-2"), null, null);
+
+        assertEquals(List.of(
+                "minio://medical-images/imaging/first.dcm",
+                "minio://medical-images/imaging/second.dcm"), resolution.locators());
+        assertEquals(42L, resolution.patientId());
+        assertEquals(81L, resolution.recordId());
+    }
+
+    @Test
+    void resolveDetectionFilesShouldRejectTaskContextMismatchAndMixedFileContext() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity patientOne = completedEntity();
+        patientOne.setRecordId(81L);
+        when(mapper.selectOne(any())).thenReturn(patientOne);
+
+        BusinessException crossPatient = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFiles(List.of("FILE-1"), 43L, 81L));
+
+        AiFileUploadEntity recordOne = completedEntity();
+        recordOne.setRecordId(81L);
+        AiFileUploadEntity recordTwo = completedEntity();
+        recordTwo.setFileNo("FILE-2");
+        recordTwo.setRecordId(82L);
+        when(mapper.selectOne(any())).thenReturn(recordOne, recordTwo);
+
+        BusinessException mixedRecord = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFiles(List.of("FILE-1", "FILE-2"), 42L, null));
+
+        assertEquals(ErrorCode.FORBIDDEN, crossPatient.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, mixedRecord.getErrorCode());
+        verifyNoInteractions(presignClient);
+    }
+
+    @Test
+    void resolveDetectionFileLocatorsShouldRequireSameServiceUploader() {
+        bind(serviceIdentity("medical-record-service"));
+        AiFileUploadEntity entity = completedEntity();
+        entity.setPatientId(null);
+        entity.setUploadedByUserId(null);
+        entity.setUploadedByServiceCode("medical-record-service");
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        assertEquals(List.of("minio://medical-images/imaging/scan.png"),
+                service.resolveDetectionFileLocators(List.of("FILE-1")));
+
+        bind(serviceIdentity("outpatient-service"));
+        BusinessException forbidden = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1")));
+        assertEquals(ErrorCode.FORBIDDEN, forbidden.getErrorCode());
+    }
+
+    @Test
+    void resolveDetectionFileLocatorsShouldRejectUnavailableOrUntrustedMetadata() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity incomplete = completedEntity();
+        incomplete.setStatus("UPLOADING");
+        AiFileUploadEntity wrongStorage = completedEntity();
+        wrongStorage.setStorageType("OSS");
+        AiFileUploadEntity wrongBucket = completedEntity();
+        wrongBucket.setBucket("other-bucket");
+        when(mapper.selectOne(any())).thenReturn(incomplete, wrongStorage, wrongBucket);
+
+        BusinessException incompleteError = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1")));
+        BusinessException storageError = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-2")));
+        BusinessException bucketError = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-3")));
+
+        assertEquals(ErrorCode.NOT_FOUND, incompleteError.getErrorCode());
+        assertEquals(ErrorCode.NOT_FOUND, storageError.getErrorCode());
+        assertEquals(ErrorCode.FORBIDDEN, bucketError.getErrorCode());
+        verifyNoInteractions(presignClient);
+    }
+
+    @Test
+    void resolveDetectionFileLocatorsShouldRejectBlankAndDuplicateIds() {
+        BusinessException blank = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of(" ")));
+        BusinessException duplicate = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1", "FILE-1")));
+
+        assertEquals(ErrorCode.PARAM_ERROR, blank.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, duplicate.getErrorCode());
+        verifyNoInteractions(mapper, presignClient);
+    }
+
+    @Test
     void getFileShouldAllowPatientOwnerEvenWhenUploadedByAnotherUser() {
         bind(user(502L, "PATIENT", 42L));
         AiFileUploadEntity entity = completedEntity();
@@ -867,6 +988,7 @@ class FileUploadServiceTest {
         entity.setBucket("medical-images");
         entity.setObjectKey("imaging/scan.png");
         entity.setOriginalFilename("scan.png");
+        entity.setStatus("COMPLETED");
         return entity;
     }
 }

@@ -133,8 +133,10 @@
                   <el-tag :type="getReviewTagType(detectionResult.reviewResult)" size="small" style="margin-bottom: 8px">
                     {{ getReviewResultText(detectionResult.reviewResult) }}
                   </el-tag>
-                  <p>{{ detectionResult.doctorOpinion }}</p>
-                  <p class="review-meta">审核医生：{{ detectionResult.reviewedBy }} | {{ detectionResult.reviewedAt }}</p>
+                  <p>{{ detectionResult.reviewComment }}</p>
+                  <p v-if="detectionResult.reviewedBy || detectionResult.reviewedAt" class="review-meta">
+                    审核医生：{{ detectionResult.reviewedBy || '-' }} | {{ detectionResult.reviewedAt || '-' }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -307,18 +309,18 @@ const submitDetection = async () => {
   progressText.value = '正在上传影像文件...'
 
   try {
-    // 1. 上传图片到 MinIO，获取可访问的 http(s) URL（blob: URL 后端无法拉取）
+    // 1. 上传图片到 MinIO，后续检测仅引用服务端返回的 fileId。
     const uploadRes = await uploadImageFileApi(imageFile.value)
-    const fileUrl = uploadRes.data?.fileUrl
-    if (!fileUrl) {
-      throw new Error('文件上传失败：未返回 fileUrl')
+    const fileId = uploadRes.data?.fileId
+    if (!fileId) {
+      throw new Error('文件上传失败：未返回 fileId')
     }
 
-    // 2. 提交检测任务（后端 DTO: imageType + imageUrls List）
+    // 2. 提交检测任务（后端 DTO: imageType + fileIds List）
     progressText.value = '正在提交检测任务...'
     const res = await submitImagingDetectionApi({
       imageType: imagingForm.imagingType,
-      imageUrls: [fileUrl],
+      fileIds: [fileId],
       patientId: userStore.userInfo?.patientId
     })
     currentTaskId.value = res.data.detectionId || res.data.taskId
@@ -399,12 +401,20 @@ const startPolling = () => {
 }
 
 const getReviewResultText = (result) => {
-  const map = { CONFIRM: '确认结果', CORRECT: '已修正', REJECT: '驳回' }
+  const map = {
+    CONFIRM: '确认结果', CONFIRMED: '确认结果',
+    CORRECT: '已修正', CORRECTED: '已修正',
+    REJECT: '驳回', REJECTED: '驳回'
+  }
   return map[result] || '待审核'
 }
 
 const getReviewTagType = (result) => {
-  const map = { CONFIRM: 'success', CORRECT: 'warning', REJECT: 'danger' }
+  const map = {
+    CONFIRM: 'success', CONFIRMED: 'success',
+    CORRECT: 'warning', CORRECTED: 'warning',
+    REJECT: 'danger', REJECTED: 'danger'
+  }
   return map[result] || 'info'
 }
 

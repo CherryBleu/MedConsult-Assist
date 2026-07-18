@@ -117,21 +117,22 @@ export const medicationAnalysisApi = (data) => {
 }
 
 // 提交影像异常检测
-// 后端 ImageDetectionRequest 要求 {imageType, imageUrls: List<String>, patientId?, recordId?}
-// imageUrls 必须是可访问的 http(s) URL（MinIO/OSS），不能是 blob: URL。
-// 前端需先调用 uploadImageFileApi 上传图片获取 URL，再提交检测。
+// 公共端 ImageDetectionRequest 使用 {imageType, fileIds: List<String>, patientId?, recordId?}。
+// 前端先上传文件获取不透明 fileId；imageUrls 仅供可信服务兼容历史数据。
 export const submitImagingDetectionApi = (data) => {
+  const payload = { ...data, fileIds: Array.isArray(data?.fileIds) ? data.fileIds : [] }
+  delete payload.imageUrls
   if (USE_MOCK) {
-    return Promise.resolve(mockImagingSubmit(data))
+    return Promise.resolve(mockImagingSubmit(payload))
   }
   return request({
     url: '/ai/imaging-detection',
     method: 'post',
-    data
+    data: payload
   })
 }
 
-// 上传医学影像文件到 MinIO，返回可访问的 http(s) URL
+// 上传医学影像文件到 MinIO，后续业务请求仅引用返回的 fileId。
 // 后端 POST /api/v1/files/upload (multipart/form-data) → FileUploadResponse {fileUrl, fileId, ...}
 export const uploadImageFileApi = (file) => {
   if (USE_MOCK) {
@@ -148,7 +149,7 @@ export const uploadImageFileApi = (file) => {
 }
 
 // 查询影像检测结果
-// 后端返回 ImageDetectionResponse {detectionId, status, abnormalDetected, findings, disclaimer}
+// 后端返回检测结果及 reviewStatus/reviewResult/reviewComment/reviewedBy/reviewedAt 复核字段。
 // 前端期望 taskId → 映射为 detectionId
 export const getImagingResultApi = (detectionId) => {
   if (USE_MOCK) {
@@ -161,15 +162,19 @@ export const getImagingResultApi = (detectionId) => {
 }
 
 // 医生复核影像检测结果
-// 后端 AiReviewRequest 需要 {reviewedBy, reviewResult, reviewComment}
+// reviewedBy 由服务端从 JWT 推导，客户端只提交复核结论和意见。
 export const reviewImagingDetectionApi = (detectionId, data) => {
+  const payload = {
+    reviewResult: data?.reviewResult,
+    reviewComment: data?.reviewComment
+  }
   if (USE_MOCK) {
-    return Promise.resolve(mockReviewImagingDetection(detectionId, data))
+    return Promise.resolve(mockReviewImagingDetection(detectionId, payload))
   }
   return request({
     url: `/ai/imaging-detection/${detectionId}/review`,
     method: 'put',
-    data
+    data: payload
   })
 }
 

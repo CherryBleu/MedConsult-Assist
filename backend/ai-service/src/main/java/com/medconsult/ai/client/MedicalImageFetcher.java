@@ -1,11 +1,18 @@
 package com.medconsult.ai.client;
 
 import com.medconsult.ai.config.AiProperties;
+import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
+import io.minio.MinioClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -17,13 +24,21 @@ import java.util.Locale;
 
 @Component
 public class MedicalImageFetcher {
+    private static final int MAX_IMAGES = 8;
     private final HttpClient httpClient;
     private final AiProperties properties;
     private final List<Origin> allowedOrigins;
+    private final MinioClient minioClient;
 
+    @Autowired
     public MedicalImageFetcher(AiProperties properties) {
+        this(properties, configuredMinioClient(properties));
+    }
+
+    public MedicalImageFetcher(AiProperties properties, MinioClient minioClient) {
         this.properties = properties;
         this.allowedOrigins = configuredStorageOrigins(properties == null ? null : properties.fileStorage());
+        this.minioClient = minioClient;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -31,6 +46,7 @@ public class MedicalImageFetcher {
     }
 
     public List<MedicalImagePayload> fetch(List<String> imageUrls) {
+        validateImageCount(imageUrls);
         List<MedicalImagePayload> payloads = new ArrayList<>();
         for (String imageUrl : imageUrls == null ? List.<String>of() : imageUrls) {
             if (!StringUtils.hasText(imageUrl)) {
@@ -41,13 +57,69 @@ public class MedicalImageFetcher {
         return payloads;
     }
 
+    public void validateSources(List<String> imageLocators) {
+        validateImageCount(imageLocators);
+        if (imageLocators == null || imageLocators.isEmpty()) {
+            throw new IllegalArgumentException("image sources are required");
+        }
+        for (String locator : imageLocators) {
+            if (!StringUtils.hasText(locator)) {
+                throw new IllegalArgumentException("image source must not be blank");
+            }
+            URI uri = parseUri(locator);
+            if (!"minio".equalsIgnoreCase(uri.getScheme())) {
+                throw new IllegalArgumentException("image source must be a canonical minio locator: " + locator);
+            }
+            parseMinioLocation(uri);
+        }
+    }
+
+    public void validateLegacyHttpSources(List<String> imageUrls) {
+        validateImageCount(imageUrls);
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            throw new IllegalArgumentException("image sources are required");
+        }
+        for (String imageUrl : imageUrls) {
+            if (!StringUtils.hasText(imageUrl)) {
+                throw new IllegalArgumentException("image source must not be blank");
+            }
+            URI uri = parseUri(imageUrl);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                throw new IllegalArgumentException("legacy image source must be an http(s) url: " + imageUrl);
+            }
+            guardSsrf(uri);
+            guardConfiguredStorageOrigin(uri);
+        }
+    }
+
     private MedicalImagePayload fetchOne(String imageUrl) {
-        URI uri = URI.create(imageUrl);
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
+        URI uri = parseUri(imageUrl);
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
         return switch (scheme) {
+            case "minio" -> fetchMinio(uri);
             case "http", "https" -> fetchHttp(uri);
             default -> throw new IllegalArgumentException("image url must be OSS/MinIO http(s) url: " + imageUrl);
         };
+    }
+
+    private MedicalImagePayload fetchMinio(URI uri) {
+        MinioLocation location = parseMinioLocation(uri);
+        if (minioClient == null) {
+            throw new IllegalStateException("MINIO client is not configured");
+        }
+        try (GetObjectResponse response = minioClient.getObject(GetObjectArgs.builder()
+                .bucket(location.bucket())
+                .object(location.objectKey())
+                .build())) {
+            byte[] bytes = readBounded(response);
+            String contentType = guessContentType(location.objectKey());
+            return new MedicalImagePayload(uri.toString(), contentType, bytes.length, dataUrl(contentType, bytes));
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("image fetch failed: " + uri, ex);
+        }
     }
 
     /**
@@ -74,18 +146,20 @@ public class MedicalImageFetcher {
                     .timeout(Duration.ofSeconds(timeoutSeconds()))
                     .GET()
                     .build();
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("image fetch failed: HTTP " + response.statusCode());
+            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            try (InputStream body = response.body()) {
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new IllegalStateException("image fetch failed: HTTP " + response.statusCode());
+                }
+                byte[] bytes = readBounded(body);
+                String contentType = response.headers().firstValue("content-type").orElse(guessContentType(uri.getPath()));
+                return new MedicalImagePayload(uri.toString(), contentType, bytes.length, dataUrl(contentType, bytes));
             }
-            byte[] bytes = limit(response.body());
-            String contentType = response.headers().firstValue("content-type").orElse(guessContentType(uri.getPath()));
-            return new MedicalImagePayload(uri.toString(), contentType, bytes.length, dataUrl(contentType, bytes));
         } catch (IOException ex) {
-            throw new IllegalStateException("image fetch failed: " + uri, ex);
+            throw new IllegalStateException("image fetch failed: " + redactedSource(uri), ex);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("image fetch interrupted: " + uri, ex);
+            throw new IllegalStateException("image fetch interrupted: " + redactedSource(uri), ex);
         }
     }
 
@@ -116,11 +190,27 @@ public class MedicalImageFetcher {
         }
     }
 
-    private byte[] limit(byte[] bytes) {
-        if (bytes.length > maxBytesPerImage()) {
-            throw new IllegalStateException("image exceeds max bytes: " + bytes.length);
+    private byte[] readBounded(InputStream input) throws IOException {
+        long maxBytes = maxBytesPerImage();
+        if (maxBytes >= Integer.MAX_VALUE) {
+            throw new IllegalStateException("image max bytes must be less than " + Integer.MAX_VALUE);
         }
-        return bytes;
+        ByteArrayOutputStream output = new ByteArrayOutputStream((int) Math.min(maxBytes, 8192));
+        byte[] buffer = new byte[8192];
+        long total = 0;
+        while (total <= maxBytes) {
+            int remaining = (int) Math.min(buffer.length, maxBytes + 1 - total);
+            int read = input.read(buffer, 0, remaining);
+            if (read < 0) {
+                return output.toByteArray();
+            }
+            output.write(buffer, 0, read);
+            total += read;
+            if (total > maxBytes) {
+                throw new IllegalStateException("image exceeds max bytes: " + total);
+            }
+        }
+        throw new IllegalStateException("image exceeds max bytes: " + total);
     }
 
     private static String dataUrl(String contentType, byte[] bytes) {
@@ -151,6 +241,79 @@ public class MedicalImageFetcher {
         return "image/jpeg";
     }
 
+    private MinioLocation parseMinioLocation(URI uri) {
+        AiProperties.FileStorageProperties storage = properties == null ? null : properties.fileStorage();
+        String configuredBucket = storage == null ? null : storage.bucket();
+        String rawAuthority = uri.getRawAuthority();
+        String rawPath = uri.getRawPath();
+        boolean trusted = StringUtils.hasText(configuredBucket)
+                && configuredBucket.equals(rawAuthority)
+                && uri.getUserInfo() == null
+                && uri.getPort() < 0
+                && uri.getRawQuery() == null
+                && uri.getRawFragment() == null
+                && StringUtils.hasText(rawPath)
+                && rawPath.startsWith("/")
+                && rawPath.length() > 1;
+        if (!trusted) {
+            throw new IllegalArgumentException("untrusted minio locator: " + uri);
+        }
+        String objectKey = rawPath.substring(1);
+        if (objectKey.startsWith("/") || objectKey.contains("\\") || containsParentSegment(objectKey)) {
+            throw new IllegalArgumentException("untrusted minio locator: " + uri);
+        }
+        return new MinioLocation(configuredBucket, objectKey);
+    }
+
+    private static URI parseUri(String value) {
+        try {
+            return URI.create(value);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("invalid image source: " + value, ex);
+        }
+    }
+
+    private static String redactedSource(URI uri) {
+        if (uri == null || !StringUtils.hasText(uri.getScheme()) || !StringUtils.hasText(uri.getHost())) {
+            return "[redacted-image-source]";
+        }
+        try {
+            return new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(),
+                    uri.getPath(), null, null).toString();
+        } catch (URISyntaxException ex) {
+            return "[redacted-image-source]";
+        }
+    }
+
+    private static void validateImageCount(List<String> sources) {
+        if (sources != null && sources.size() > MAX_IMAGES) {
+            throw new IllegalArgumentException("at most 8 images are allowed");
+        }
+    }
+
+    private static boolean containsParentSegment(String objectKey) {
+        for (String segment : objectKey.split("/", -1)) {
+            if ("..".equals(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static MinioClient configuredMinioClient(AiProperties properties) {
+        AiProperties.FileStorageProperties storage = properties == null ? null : properties.fileStorage();
+        if (storage == null || !StringUtils.hasText(storage.endpoint())
+                || !StringUtils.hasText(storage.accessKey()) || !StringUtils.hasText(storage.secretKey())) {
+            return null;
+        }
+        String region = StringUtils.hasText(storage.region()) ? storage.region().trim() : "us-east-1";
+        return MinioClient.builder()
+                .endpoint(storage.endpoint().trim())
+                .region(region)
+                .credentials(storage.accessKey(), storage.secretKey())
+                .build();
+    }
+
     private record Origin(String scheme, String host, int port) {
         private static Origin from(URI uri) {
             if (uri == null || !StringUtils.hasText(uri.getScheme()) || !StringUtils.hasText(uri.getHost())) {
@@ -166,6 +329,9 @@ public class MedicalImageFetcher {
             }
             return new Origin(scheme, uri.getHost().toLowerCase(Locale.ROOT), port);
         }
+    }
+
+    private record MinioLocation(String bucket, String objectKey) {
     }
 
     public record MedicalImagePayload(String sourceUrl, String contentType, int byteSize, String dataUrl) {
