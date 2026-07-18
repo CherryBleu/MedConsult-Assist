@@ -446,6 +446,45 @@ class FileUploadServiceTest {
     }
 
     @Test
+    void contentTypeShouldInferMedicalImageTypesWhenMetadataIsMissing() {
+        assertEquals("image/png", invokeContentType("image/png", "ignored.dcm"));
+        assertEquals("application/dicom", invokeContentType(null, "scan.dcm"));
+        assertEquals("application/dicom", invokeContentType(null, "scan.DICOM"));
+        assertEquals("image/png", invokeContentType(null, "scan.png"));
+        assertEquals("image/webp", invokeContentType(null, "scan.webp"));
+        assertEquals("image/jpeg", invokeContentType(null, "scan.jpg"));
+        assertEquals("image/jpeg", invokeContentType(null, null));
+    }
+
+    @Test
+    void uploadShouldRejectMissingMalformedAndInvalidOwnersBeforeMinioAccess() {
+        RequestContextHolder.resetRequestAttributes();
+        BusinessException unauthenticated = assertThrows(BusinessException.class,
+                () -> service.upload(file("scan.png", "image/png", "data"), "1", null));
+
+        bind(new JwtPayload(JwtPayload.SubjectType.SERVICE, null, " ", "blank-service",
+                List.of(), null, null, null, null, null, List.of("*"), "jti-blank", Long.MAX_VALUE));
+        BusinessException incompleteService = assertThrows(BusinessException.class,
+                () -> service.upload(file("scan.png", "image/png", "data"), "1", null));
+
+        bind(new JwtPayload(JwtPayload.SubjectType.USER, null, null, "missing-user-id",
+                List.of("DOCTOR"), "DOCTOR", null, null, null, "U-missing",
+                List.of("*"), "jti-missing", Long.MAX_VALUE));
+        BusinessException incompleteUser = assertThrows(BusinessException.class,
+                () -> service.upload(file("scan.png", "image/png", "data"), "1", null));
+
+        bind(user(100L, "DOCTOR", null));
+        BusinessException invalidPatientId = assertThrows(BusinessException.class,
+                () -> service.upload(file("scan.png", "image/png", "data"), "patient-x", null));
+
+        assertEquals(ErrorCode.UNAUTHORIZED, unauthenticated.getErrorCode());
+        assertEquals(ErrorCode.UNAUTHORIZED, incompleteService.getErrorCode());
+        assertEquals(ErrorCode.UNAUTHORIZED, incompleteUser.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, invalidPatientId.getErrorCode());
+        verifyNoInteractions(minioClient, mapper, presignClient);
+    }
+
+    @Test
     void patientUploadShouldBindOwnerFromJwtWhenRequestOwnerIsMissing() throws Exception {
         bind(user(501L, "PATIENT", 42L));
         ArgumentCaptor<AiFileUploadEntity> captor = ArgumentCaptor.forClass(AiFileUploadEntity.class);
@@ -609,6 +648,46 @@ class FileUploadServiceTest {
     }
 
     @Test
+    void getFileShouldRejectMissingCallerAndUnsupportedRoleBeforeMetadataLookup() {
+        RequestContextHolder.resetRequestAttributes();
+        BusinessException unauthenticated = assertThrows(BusinessException.class,
+                () -> service.getFile("FILE-1"));
+
+        bind(user(701L, "PHARMACY_ADMIN", null));
+        BusinessException forbidden = assertThrows(BusinessException.class,
+                () -> service.getFile("FILE-1"));
+
+        assertEquals(ErrorCode.UNAUTHORIZED, unauthenticated.getErrorCode());
+        assertEquals(ErrorCode.FORBIDDEN, forbidden.getErrorCode());
+        verifyNoInteractions(mapper, presignClient);
+    }
+
+    @Test
+    void getFileShouldAllowDoctorLinkedToFilePatientOwner() {
+        bind(user(602L, List.of("DOCTOR"), "DOCTOR", 42L));
+        AiFileUploadEntity entity = completedEntity();
+        entity.setUploadedByUserId(601L);
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        FileUploadResponse response = service.getFile("FILE-1");
+
+        assertEquals("FILE-1", response.fileId());
+    }
+
+    @Test
+    void getFileShouldWrapPresignedUrlFailure() throws Exception {
+        AiFileUploadEntity entity = completedEntity();
+        when(mapper.selectOne(any())).thenReturn(entity);
+        when(presignClient.getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class)))
+                .thenThrow(new IOException("sign failed"));
+
+        BusinessException error = assertThrows(BusinessException.class, () -> service.getFile("FILE-1"));
+
+        assertEquals(ErrorCode.INTERNAL_ERROR, error.getErrorCode());
+        assertEquals("MINIO presigned URL generation failed: sign failed", error.getMessage());
+    }
+
+    @Test
     void resolveDetectionFileLocatorsShouldAuthorizeUserAndReturnCanonicalMinioLocators() {
         bind(user(502L, "PATIENT", 42L));
         AiFileUploadEntity first = completedEntity();
@@ -648,6 +727,37 @@ class FileUploadServiceTest {
                 "minio://medical-images/imaging/second.dcm"), resolution.locators());
         assertEquals(42L, resolution.patientId());
         assertEquals(81L, resolution.recordId());
+    }
+
+    @Test
+    void resolveDetectionFilesShouldKeepExplicitMatchingTaskContext() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity entity = completedEntity();
+        entity.setRecordId(81L);
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        FileUploadService.DetectionFileResolution resolution = service.resolveDetectionFiles(
+                List.of("FILE-1"), 42L, 81L);
+
+        assertEquals(42L, resolution.patientId());
+        assertEquals(81L, resolution.recordId());
+    }
+
+    @Test
+    void resolveDetectionFilesShouldRejectMixedPatientContext() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity first = completedEntity();
+        first.setPatientId(42L);
+        AiFileUploadEntity second = completedEntity();
+        second.setFileNo("FILE-2");
+        second.setPatientId(43L);
+        when(mapper.selectOne(any())).thenReturn(first, second);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFiles(List.of("FILE-1", "FILE-2"), null, null));
+
+        assertEquals(ErrorCode.PARAM_ERROR, error.getErrorCode());
+        assertEquals("selected files have inconsistent patientId", error.getMessage());
     }
 
     @Test
@@ -717,15 +827,69 @@ class FileUploadServiceTest {
         verifyNoInteractions(presignClient);
     }
 
+    @ParameterizedTest(name = "objectKey={0}")
+    @MethodSource("unsafeObjectKeys")
+    void resolveDetectionFileLocatorsShouldRejectUnsafeObjectKeys(String objectKey) {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity entity = completedEntity();
+        entity.setObjectKey(objectKey);
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1")));
+
+        assertEquals(ErrorCode.FORBIDDEN, error.getErrorCode());
+        verifyNoInteractions(presignClient);
+    }
+
+    @Test
+    void resolveDetectionFileLocatorsShouldRejectMissingObjectKey() {
+        bind(user(100L, "HOSPITAL_ADMIN", null));
+        AiFileUploadEntity entity = completedEntity();
+        entity.setObjectKey(" ");
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1")));
+
+        assertEquals(ErrorCode.NOT_FOUND, error.getErrorCode());
+        assertEquals("file object is unavailable", error.getMessage());
+        verifyNoInteractions(presignClient);
+    }
+
+    @Test
+    void resolveDetectionFileLocatorsShouldRejectUnsupportedUserRole() {
+        bind(user(701L, "PHARMACY_ADMIN", null));
+        AiFileUploadEntity entity = completedEntity();
+        when(mapper.selectOne(any())).thenReturn(entity);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of("FILE-1")));
+
+        assertEquals(ErrorCode.FORBIDDEN, error.getErrorCode());
+        verifyNoInteractions(presignClient);
+    }
+
     @Test
     void resolveDetectionFileLocatorsShouldRejectBlankAndDuplicateIds() {
+        BusinessException missing = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(null));
+        BusinessException empty = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of()));
         BusinessException blank = assertThrows(BusinessException.class,
                 () -> service.resolveDetectionFileLocators(List.of(" ")));
         BusinessException duplicate = assertThrows(BusinessException.class,
                 () -> service.resolveDetectionFileLocators(List.of("FILE-1", "FILE-1")));
+        BusinessException tooMany = assertThrows(BusinessException.class,
+                () -> service.resolveDetectionFileLocators(List.of(
+                        "FILE-1", "FILE-2", "FILE-3", "FILE-4", "FILE-5",
+                        "FILE-6", "FILE-7", "FILE-8", "FILE-9")));
 
+        assertEquals(ErrorCode.PARAM_ERROR, missing.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, empty.getErrorCode());
         assertEquals(ErrorCode.PARAM_ERROR, blank.getErrorCode());
         assertEquals(ErrorCode.PARAM_ERROR, duplicate.getErrorCode());
+        assertEquals(ErrorCode.PARAM_ERROR, tooMany.getErrorCode());
         verifyNoInteractions(mapper, presignClient);
     }
 
@@ -876,12 +1040,19 @@ class FileUploadServiceTest {
         AiProperties.FileStorageProperties storage = new AiProperties.FileStorageProperties(
                 "http://minio:9000", "https://files.example.test", "access-key", "secret-key", "us-east-1",
                 "medical-images", "imaging", "chunks", true, 0);
+        AiProperties.FileStorageProperties excessive = new AiProperties.FileStorageProperties(
+                "http://minio:9000", "https://files.example.test", "access-key", "secret-key", "us-east-1",
+                "medical-images", "imaging", "chunks", true, 604801);
 
         BusinessException error = assertThrows(BusinessException.class,
                 () -> new FileUploadService(properties(storage), mapper));
+        BusinessException tooLong = assertThrows(BusinessException.class,
+                () -> new FileUploadService(properties(excessive), mapper));
 
         assertEquals(ErrorCode.INTERNAL_ERROR, error.getErrorCode());
+        assertEquals(ErrorCode.INTERNAL_ERROR, tooLong.getErrorCode());
         assertEquals("MINIO presigned URL expiry must be between 1 and 604800 seconds", error.getMessage());
+        assertEquals("MINIO presigned URL expiry must be between 1 and 604800 seconds", tooLong.getMessage());
     }
 
     @Test
@@ -950,6 +1121,27 @@ class FileUploadServiceTest {
                 Arguments.of(0, 0),
                 Arguments.of(2, 2)
         );
+    }
+
+    private static Stream<Arguments> unsafeObjectKeys() {
+        return Stream.of(
+                Arguments.of("/imaging/scan.png"),
+                Arguments.of("imaging/scan.png?download=1"),
+                Arguments.of("imaging/scan.png#fragment"),
+                Arguments.of("imaging\\scan.png"),
+                Arguments.of("imaging/../scan.png")
+        );
+    }
+
+    private static String invokeContentType(String contentType, String filename) {
+        try {
+            java.lang.reflect.Method method =
+                    FileUploadService.class.getDeclaredMethod("contentType", String.class, String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, contentType, filename);
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(ex);
+        }
     }
 
     private static String uploadIdForUser(long userId, Long patientId, char randomHex) {
