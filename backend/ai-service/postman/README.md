@@ -81,8 +81,8 @@ X-Trace-Id: {{traceId}}
 1. `POST /api/v1/ai/medical-record-summary/text`
 2. `POST /api/v1/ai/medication-analysis`
 3. `POST /api/v1/ai/report-analysis`
-4. `POST /api/v1/ai/image-detection`
-5. `GET /api/v1/ai/image-detection/{detectionId}`
+4. `POST /api/v1/ai/imaging-detection`
+5. `GET /api/v1/ai/imaging-detection/{detectionId}`
 6. `POST /api/v1/ai/feedback`
 7. `GET /api/v1/ai/call-logs`
 
@@ -104,15 +104,15 @@ X-Trace-Id: {{traceId}}
 | 接口 | 表 | 行为 |
 | --- | --- | --- |
 | `POST /api/v1/ai/report-analysis` | `ai_report_text_analysis` | 报告文本分析，同步返回 `COMPLETED` |
-| `POST /api/v1/ai/image-detection` | `ai_image_detection` | 图像检测任务提交，返回 `PENDING` |
-| `GET /api/v1/ai/image-detection/{detectionId}` | `ai_image_detection` | 查询图像检测结果 |
+| `POST /api/v1/ai/imaging-detection` | `ai_image_detection` | 图像检测任务提交，返回 `PENDING` |
+| `GET /api/v1/ai/imaging-detection/{detectionId}` | `ai_image_detection` | 查询图像检测结果 |
 
 图像检测不要直接使用示例 URL。推荐流程：
 
 1. `POST /api/v1/files/upload`，Body 选择 `form-data`，字段 `file` 类型为 File，可选 `patientId`、`recordId`。
-2. 从返回结果复制 `data.fileUrl`。
-3. 调用 `POST /api/v1/ai/image-detection`，把 `fileUrl` 放入 `imageUrls`。
-4. 调用 `GET /api/v1/ai/image-detection/{detectionId}` 轮询结果。
+2. 从返回结果复制 `data.fileId`。
+3. 调用 `POST /api/v1/ai/imaging-detection`，把 `fileId` 放入 `fileIds`。
+4. 调用 `GET /api/v1/ai/imaging-detection/{detectionId}` 轮询结果。
 
 分片上传用于较大的 DICOM：
 
@@ -172,7 +172,7 @@ POST /api/v1/ai/symptom-chat
 | `summaryId` | `POST /api/v1/ai/medical-record-summary` |
 | `analysisId` | `POST /api/v1/ai/medication-analysis` |
 | `reportAnalysisId` | `POST /api/v1/ai/report-analysis` |
-| `imageDetectionId` | `POST /api/v1/ai/image-detection` |
+| `imageDetectionId` | `POST /api/v1/ai/imaging-detection` |
 | `feedbackId` | `POST /api/v1/ai/feedback` |
 | `aiResultType`、`aiResultId` | 会产生 AI 结果的接口 |
 
@@ -187,8 +187,8 @@ POST /internal/ai/triage/stream
 POST /internal/ai/medical-record-summary
 POST /internal/ai/medical-record-summary/stream
 POST /internal/ai/report-analysis
-POST /internal/ai/image-detection
-GET /internal/ai/image-detection/{detectionId}
+POST /internal/ai/imaging-detection
+GET /internal/ai/imaging-detection/{detectionId}
 POST /internal/ai/medication-analysis/stream
 ```
 

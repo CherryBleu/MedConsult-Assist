@@ -35,6 +35,11 @@
       "key": "internalServiceToken",
       "value": "dev-ai-service-token",
       "type": "string"
+    },
+    {
+      "key": "imageFileId",
+      "value": "F202607180001",
+      "type": "string"
     }
   ],
   "event": [
@@ -365,7 +370,7 @@
       "name": "06 影像图像检测",
       "item": [
         {
-          "name": "影像图像检测提交 POST /api/v1/ai/image-detection",
+          "name": "影像图像检测提交 POST /api/v1/ai/imaging-detection",
           "request": {
             "method": "POST",
             "header": [
@@ -376,10 +381,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"imageUrls\": [\"https://oss.example.com/imaging/ct-001.dcm\"],\n  \"storageType\": \"OSS\",\n  \"externalModel\": {\n    \"provider\": \"external-ai-provider\",\n    \"model\": \"chest-ct-abnormal-detector\"\n  }\n}"
+              "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"fileIds\": [\"{{imageFileId}}\"],\n  \"externalModel\": {\n    \"provider\": \"external-ai-provider\",\n    \"model\": \"chest-ct-abnormal-detector\"\n  }\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/v1/ai/image-detection",
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-detection",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -387,7 +392,7 @@
                 "api",
                 "v1",
                 "ai",
-                "image-detection"
+                "imaging-detection"
               ]
             }
           },
@@ -409,12 +414,12 @@
           ]
         },
         {
-          "name": "查询影像图像检测 GET /api/v1/ai/image-detection/{detectionId}",
+          "name": "查询影像图像检测 GET /api/v1/ai/imaging-detection/{detectionId}",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/ai/image-detection/{{imageDetectionId}}",
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-detection/{{imageDetectionId}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -422,16 +427,16 @@
                 "api",
                 "v1",
                 "ai",
-                "image-detection",
+                "imaging-detection",
                 "{{imageDetectionId}}"
               ]
             }
           }
         },
         {
-          "name": "影像图像检测复核 POST /api/v1/ai/image-detection/{detectionId}/review",
+          "name": "影像图像检测复核 PUT /api/v1/ai/imaging-detection/{detectionId}/review",
           "request": {
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
@@ -443,7 +448,7 @@
               "raw": "{\n  \"reviewedBy\": \"D20001\",\n  \"reviewResult\": \"CONFIRMED\",\n  \"reviewComment\": \"图像检测任务已记录，待外部视觉模型完成后复核。\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/v1/ai/image-detection/{{imageDetectionId}}/review",
+              "raw": "{{baseUrl}}/api/v1/ai/imaging-detection/{{imageDetectionId}}/review",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -451,7 +456,7 @@
                 "api",
                 "v1",
                 "ai",
-                "image-detection",
+                "imaging-detection",
                 "{{imageDetectionId}}",
                 "review"
               ]
@@ -694,7 +699,7 @@
           }
         },
         {
-          "name": "内部影像图像检测 POST /internal/ai/image-detection",
+          "name": "内部影像图像检测 POST /internal/ai/imaging-detection",
           "request": {
             "method": "POST",
             "header": [
@@ -720,20 +725,20 @@
               "raw": "{\n  \"patientId\": \"{{patientId}}\",\n  \"recordId\": \"{{recordId}}\",\n  \"imageType\": \"CHEST_CT\",\n  \"imageUrls\": [\"https://oss.example.com/imaging/ct-001.dcm\"],\n  \"storageType\": \"OSS\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/internal/ai/image-detection",
+              "raw": "{{baseUrl}}/internal/ai/imaging-detection",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "internal",
                 "ai",
-                "image-detection"
+                "imaging-detection"
               ]
             }
           }
         },
         {
-          "name": "内部查询影像图像检测 GET /internal/ai/image-detection/{detectionId}",
+          "name": "内部查询影像图像检测 GET /internal/ai/imaging-detection/{detectionId}",
           "request": {
             "method": "GET",
             "header": [
@@ -751,14 +756,14 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/internal/ai/image-detection/{{imageDetectionId}}",
+              "raw": "{{baseUrl}}/internal/ai/imaging-detection/{{imageDetectionId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "internal",
                 "ai",
-                "image-detection",
+                "imaging-detection",
                 "{{imageDetectionId}}"
               ]
             }
