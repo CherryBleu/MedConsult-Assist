@@ -26,7 +26,14 @@
               <el-tag :type="getStatusType(APPOINTMENT_STATUS, item.appointmentStatus)" size="small">
                 {{ getStatusLabel(APPOINTMENT_STATUS, item.appointmentStatus) }}
               </el-tag>
-              <el-tag v-if="item.paymentStatus !== 'PAID' && item.appointmentStatus !== 'CANCELLED'" type="warning" size="small">
+              <el-tag
+                v-if="item.paymentStatus && item.paymentStatus !== 'UNPAID' && item.appointmentStatus !== 'CANCELLED'"
+                :type="getStatusType(PAYMENT_STATUS, item.paymentStatus)"
+                size="small"
+              >
+                {{ getStatusLabel(PAYMENT_STATUS, item.paymentStatus) }}
+              </el-tag>
+              <el-tag v-else-if="item.paymentStatus === 'UNPAID' && item.appointmentStatus !== 'CANCELLED'" type="warning" size="small">
                 待支付
               </el-tag>
             </div>
@@ -76,6 +83,15 @@
                 @click="cancelAppointment(item)"
               >
                 取消预约
+              </el-button>
+              <el-button
+                v-if="item.paymentStatus === 'PAID'"
+                size="small"
+                type="warning"
+                plain
+                @click="refundAppointment(item)"
+              >
+                申请退款
               </el-button>
             </div>
           </div>
@@ -128,10 +144,10 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Calendar } from '@element-plus/icons-vue'
-import { APPOINTMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
+import { APPOINTMENT_STATUS, PAYMENT_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import {
   getAppointmentListApi, cancelAppointmentApi, payAppointmentApi,
-  checkInAppointmentApi, getAppointmentDetailApi
+  checkInAppointmentApi, getAppointmentDetailApi, refundAppointmentApi
 } from '@/api/appointment'
 
 const activeTab = ref('all')
@@ -202,13 +218,30 @@ const checkIn = (item) => {
 }
 
 const cancelAppointment = (item) => {
-  ElMessageBox.confirm('确定要取消该预约吗？' + (item.paymentStatus === 'PAID' ? '已支付费用将原路退回。' : ''), '提示', {
+  // 取消只释放号源、不自动退款（退款是独立动作，走"申请退款"按钮）。
+  // PAID 单需提示用户：取消后如需退费请单独发起退款申请，避免误以为自动退款。
+  const paidTip = item.paymentStatus === 'PAID'
+    ? '（已支付费用不会自动退款，如需退费请在取消后点「申请退款」）'
+    : ''
+  ElMessageBox.confirm('确定要取消该预约吗？' + paidTip, '提示', {
     confirmButtonText: '确定取消',
     cancelButtonText: '再想想',
     type: 'warning'
   }).then(async () => {
     await cancelAppointmentApi(item.id)
     ElMessage.success('预约已取消')
+    fetchList()
+  }).catch(() => {})
+}
+
+const refundAppointment = (item) => {
+  ElMessageBox.confirm(
+    `确定对预约 ${item.appointmentNo} 申请退款吗？退款金额 ¥${item.paidAmount ?? item.fee ?? '--'}，退款将原路返回。`,
+    '退款确认',
+    { confirmButtonText: '确认退款', cancelButtonText: '取消', type: 'warning' }
+  ).then(async () => {
+    const res = await refundAppointmentApi(item.id, { operatorType: 'PATIENT' })
+    ElMessage.success(`退款成功，退款单号 ${res?.data?.refundNo ?? ''}`)
     fetchList()
   }).catch(() => {})
 }

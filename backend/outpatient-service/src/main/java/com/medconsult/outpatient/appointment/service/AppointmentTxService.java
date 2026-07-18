@@ -6,7 +6,9 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.entity.Appointment;
+import com.medconsult.outpatient.appointment.entity.RefundOrder;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
+import com.medconsult.outpatient.appointment.mapper.RefundOrderMapper;
 import com.medconsult.outpatient.schedule.entity.DoctorSchedule;
 import com.medconsult.outpatient.schedule.mapper.DoctorScheduleMapper;
 import com.medconsult.outpatient.schedule.service.ScheduleService;
@@ -38,6 +40,7 @@ public class AppointmentTxService {
     private final AppointmentMapper appointmentMapper;
     private final DoctorScheduleMapper scheduleMapper;
     private final ScheduleService scheduleService;
+    private final RefundOrderMapper refundOrderMapper;
 
     // ===== 创建预约事务体（锁内）=====
 
@@ -160,6 +163,61 @@ public class AppointmentTxService {
         log.info("预约取消成功: appointmentNo={} scheduleNo={} releasedQuota=1",
                 a.getAppointmentNo(), s.getScheduleNo());
         return new AppointmentDTO.CancelResponse(a.getAppointmentNo(), a.getAppointmentStatus(), 1);
+    }
+
+    // ===== 退款事务体（锁内，《修改建议》§6.2）=====
+
+    /**
+     * 退款事务体（锁内执行）。
+     *
+     * <p>同步全退：①锁内校验 paymentStatus=PAID（幂等：已 REFUNDING/REFUNDED 抛 CONFLICT）；
+     * ②插 refund_order（金额取 paid_amount 兜底 fee）；③appointment.paymentStatus=REFUNDED。
+     * <p><b>不动号源、不动 appointment_status</b>——退款与取消/就诊状态正交。
+     * <p>金额来源：paid_amount（实付，语义最准）→ fee（冗余挂号费）兜底；都没有抛 PARAM_ERROR。
+     */
+    @Transactional
+    public AppointmentDTO.RefundResponse refundInTx(String appointmentNo, AppointmentDTO.RefundRequest req) {
+        Appointment a = requireByNo(appointmentNo);
+        // 锁内二次校验（防并发退款）：仅 PAID 可退
+        if (!"PAID".equals(a.getPaymentStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "当前支付状态不可退款: " + a.getPaymentStatus() + "（仅 PAID 可退）");
+        }
+        // 退款金额：paid_amount 优先，兜底 fee
+        java.math.BigDecimal refundAmount = a.getPaidAmount();
+        if (refundAmount == null || refundAmount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            refundAmount = a.getFee();
+        }
+        if (refundAmount == null || refundAmount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "预约无可退金额（paid_amount/fee 均缺失）");
+        }
+
+        // 写退款单
+        RefundOrder r = new RefundOrder();
+        r.setRefundNo(generateRefundNo());
+        r.setAppointmentId(a.getId());
+        r.setAppointmentNo(a.getAppointmentNo());
+        r.setPaymentNo(a.getPaymentNo());
+        r.setRefundAmount(refundAmount);
+        r.setRefundType("FULL");
+        r.setStatus("SUCCESS");
+        r.setReason(req != null ? req.getReason() : null);
+        r.setOperatorType(req != null && req.getOperatorType() != null ? req.getOperatorType() : "PATIENT");
+        refundOrderMapper.insert(r);
+
+        // 置支付状态 REFUNDED
+        a.setPaymentStatus("REFUNDED");
+        appointmentMapper.updateById(a);
+
+        log.info("预约退款成功: appointmentNo={} refundNo={} amount={}",
+                a.getAppointmentNo(), r.getRefundNo(), refundAmount);
+        return new AppointmentDTO.RefundResponse(r.getRefundNo(), a.getAppointmentNo(), refundAmount, "REFUNDED");
+    }
+
+    /** 生成退款单号：R + 雪花序列 base36（与 generateAppointmentNo 同范式） */
+    private static String generateRefundNo() {
+        long id = IdWorker.getId();
+        return "R" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
     }
 
     // ===== 私有助手 =====

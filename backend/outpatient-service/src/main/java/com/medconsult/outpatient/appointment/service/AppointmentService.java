@@ -28,4 +28,10 @@ public interface AppointmentService {
 
     /** §2.5.6 更新就诊状态（状态机校验） */
     AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req);
+
+    /**
+     * §6.2 退款（仅 PAID 单可退，Redis 锁防重复退款）。
+     * <p>同步全退：插 refund_order + appointment.paymentStatus=REFUNDED。不动号源、不动就诊状态。
+     */
+    AppointmentDTO.RefundResponse refund(String appointmentNo, AppointmentDTO.RefundRequest req);
 }

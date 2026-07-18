@@ -220,3 +220,10 @@ export const toggleScheduleStatusApi = (id, status) => {
   if (USE_MOCK) return Promise.resolve(mockToggleScheduleStatus(id, status))
   return request({ url: `/schedules/${id}/status`, method: 'patch', data: { status } })
 }
+
+// 申请退款（对齐后端 POST /appointments/{id}/refund，仅 PAID 单可退，Redis 锁防重复退款）
+// payload: { reason?, operatorType? }；返回 { refundNo, refundAmount, paymentStatus: 'REFUNDED' }
+export const refundAppointmentApi = (id, data) => {
+  if (USE_MOCK) return Promise.resolve({ code: 0, message: 'success', data: { refundNo: 'R_MOCK', appointmentId: id, refundAmount: 50, paymentStatus: 'REFUNDED' } })
+  return request({ url: `/appointments/${id}/refund`, method: 'post', data })
+}

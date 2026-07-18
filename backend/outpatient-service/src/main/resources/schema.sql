@@ -98,6 +98,29 @@ CREATE TABLE IF NOT EXISTS appointment (
     KEY idx_appointment_patient_schedule (patient_no, schedule_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='预约挂号表';
 
+-- refund_order 退款单表（《修改建议》§6.2，P2 退费流程）
+-- 记录每笔退款：金额来源 appointment.paid_amount（兜底 fee）；当前阶段仅全退（FULL）。
+CREATE TABLE IF NOT EXISTS refund_order (
+    id                   BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    refund_no            VARCHAR(32)   NOT NULL                 COMMENT '退款单号（业务可读，如 R202607060001）',
+    appointment_id       BIGINT        NOT NULL                 COMMENT '关联预约 ID',
+    appointment_no       VARCHAR(32)   NOT NULL                 COMMENT '关联预约编号（冗余，便于检索）',
+    payment_no           VARCHAR(64)                           COMMENT '原支付单号（追溯）',
+    refund_amount        DECIMAL(10,2) NOT NULL                 COMMENT '退款金额',
+    refund_type          VARCHAR(20)   NOT NULL DEFAULT 'FULL'  COMMENT '退款类型：FULL/PARTIAL（当前仅 FULL）',
+    status               VARCHAR(20)   NOT NULL DEFAULT 'SUCCESS' COMMENT '退款状态：SUCCESS/PROCESSING/FAILED（当前同步全退即 SUCCESS）',
+    reason               VARCHAR(255)                          COMMENT '退款原因',
+    operator_type        VARCHAR(20)                           COMMENT '操作人类型：PATIENT/DOCTOR/ADMIN',
+    operator_id          BIGINT                                COMMENT '操作人 ID',
+    created_at           DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at           DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted              TINYINT       NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_refund_no (refund_no),
+    KEY idx_refund_appointment (appointment_id),
+    KEY idx_refund_payment (payment_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='退款单表';
+
 -- ============================================================
 -- 种子数据（冒烟/演示用；固定主键保证跨服务引用一致）
 -- 科室 department_no 严格对齐 ai-service TriageService.departmentIdOf 的硬编码常量，

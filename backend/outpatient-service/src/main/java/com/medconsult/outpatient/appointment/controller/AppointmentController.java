@@ -58,6 +58,14 @@ public class AppointmentController {
         return Result.ok(appointmentService.cancel(appointmentId, req));
     }
 
+    /** §6.2 退款（仅 PAID 单可退，Redis 锁防重复退款） */
+    @PostMapping("/{appointmentId}/refund")
+    @Operation(summary = "预约退款")
+    public Result<AppointmentDTO.RefundResponse> refund(@Parameter(description = "预约编号", required = true) @PathVariable String appointmentId,
+                                                         @RequestBody(required = false) AppointmentDTO.RefundRequest req) {
+        return Result.ok(appointmentService.refund(appointmentId, req));
+    }
+
     /** §2.5.5 更新支付状态 */
     @PatchMapping("/{appointmentId}/payment")
     @Operation(summary = "更新支付状态")

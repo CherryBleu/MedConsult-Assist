@@ -231,6 +231,25 @@ public class AppointmentServiceImpl implements AppointmentService {
         }
     }
 
+    // ===== §6.2 退款（《修改建议》§6.2，P2 退费流程）=====
+
+    @Override
+    public AppointmentDTO.RefundResponse refund(String appointmentNo, AppointmentDTO.RefundRequest req) {
+        Appointment a = requireByNo(appointmentNo);
+        // 越权防护（IDOR）：PATIENT 只能退本人预约
+        enforceAppointmentOwnership(a);
+
+        // Redis 锁防重复退款：用 PAYMENT_LOCK + paymentNo（无 paymentNo 退回 appointmentNo）
+        String lockKey = com.medconsult.common.redis.RedisKey.PAYMENT_LOCK
+                + (a.getPaymentNo() != null ? a.getPaymentNo() : appointmentNo);
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.refundInTx(appointmentNo, req));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "退款操作繁忙，请稍后重试: " + appointmentNo);
+        }
+    }
+
     // ===== §2.5.5 更新支付状态 =====
 
     @Override

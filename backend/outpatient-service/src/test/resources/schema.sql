@@ -83,3 +83,23 @@ CREATE TABLE IF NOT EXISTS appointment (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_appointment_no ON appointment(appointment_no);
 CREATE INDEX IF NOT EXISTS idx_appointment_patient_schedule ON appointment(patient_no, schedule_id);
+
+-- refund_order 退款单（H2 兼容版，对齐 src/main/resources/schema.sql）
+CREATE TABLE IF NOT EXISTS refund_order (
+    id                   BIGINT        NOT NULL,
+    refund_no            VARCHAR(32)   NOT NULL,
+    appointment_id       BIGINT        NOT NULL,
+    appointment_no       VARCHAR(32)   NOT NULL,
+    payment_no           VARCHAR(64),
+    refund_amount        DECIMAL(10,2) NOT NULL,
+    refund_type          VARCHAR(20)   DEFAULT 'FULL',
+    status               VARCHAR(20)   DEFAULT 'SUCCESS',
+    reason               VARCHAR(255),
+    operator_type        VARCHAR(20),
+    operator_id          BIGINT,
+    created_at           TIMESTAMP,
+    updated_at           TIMESTAMP,
+    deleted              INT           DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_refund_no ON refund_order(refund_no);

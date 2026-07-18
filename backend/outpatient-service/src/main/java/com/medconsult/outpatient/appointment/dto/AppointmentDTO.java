@@ -3,6 +3,7 @@ package com.medconsult.outpatient.appointment.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -139,5 +140,28 @@ public class AppointmentDTO {
     public record StatusResponse(
             @Schema(description = "预约编号") String appointmentId,     // appointment_no
             @Schema(description = "当前状态") String appointmentStatus
+    ) {}
+
+    // ===== §6.2 退款（POST /appointments/{id}/refund）=====
+
+    /** 退款请求 */
+    @Data
+    @Schema(description = "退款请求")
+    public static class RefundRequest {
+        @Size(max = 255, message = "退款原因不能超过 255 字")
+        @Schema(description = "退款原因")
+        private String reason;
+
+        @Schema(description = "操作人类型：PATIENT/DOCTOR/ADMIN（默认 PATIENT）")
+        private String operatorType;
+    }
+
+    /** 退款响应 */
+    @Schema(description = "退款响应")
+    public record RefundResponse(
+            @Schema(description = "退款单号") String refundNo,
+            @Schema(description = "预约编号") String appointmentId,     // appointment_no
+            @Schema(description = "退款金额") java.math.BigDecimal refundAmount,
+            @Schema(description = "支付状态") String paymentStatus      // REFUNDED
     ) {}
 }
