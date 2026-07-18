@@ -33,6 +33,7 @@ import com.medconsult.ai.service.FeedbackService;
 import com.medconsult.ai.service.FileUploadService;
 import com.medconsult.ai.service.ImagingDetectionService;
 import com.medconsult.ai.service.MedicationAnalysisService;
+import com.medconsult.ai.service.RagProbeService;
 import com.medconsult.ai.service.RagReadinessService;
 import com.medconsult.ai.service.SummaryService;
 import com.medconsult.ai.service.SymptomChatService;
@@ -69,6 +70,7 @@ class AiControllerDelegationTest {
     private AiSseService aiSseService;
     private FileUploadService fileUploadService;
     private RagReadinessService ragReadinessService;
+    private RagProbeService ragProbeService;
     private AiController controller;
 
     @BeforeEach
@@ -83,6 +85,7 @@ class AiControllerDelegationTest {
         aiSseService = mock(AiSseService.class);
         fileUploadService = mock(FileUploadService.class);
         ragReadinessService = mock(RagReadinessService.class);
+        ragProbeService = mock(RagProbeService.class);
         controller = new AiController(
                 symptomChatService,
                 triageService,
@@ -93,7 +96,8 @@ class AiControllerDelegationTest {
                 callLogService,
                 aiSseService,
                 fileUploadService,
-                ragReadinessService);
+                ragReadinessService,
+                ragProbeService);
     }
 
     @AfterEach
@@ -117,6 +121,8 @@ class AiControllerDelegationTest {
         RagReadinessService.RagReadiness refreshed = readiness(true);
         when(ragReadinessService.current()).thenReturn(current);
         when(ragReadinessService.refresh()).thenReturn(refreshed);
+        RagProbeService.ProbeRun probeRun = new RagProbeService.ProbeRun(true, LocalDateTime.now(), List.of());
+        when(ragProbeService.runProbes()).thenReturn(probeRun);
 
         TriageRequest triageRequest = triageRequest();
         TriageResponse triageResponse = new TriageResponse(false, List.of());
@@ -183,6 +189,7 @@ class AiControllerDelegationTest {
         assertSame(history, controller.sessionHistory("S1").data());
         assertSame(current, controller.ragReadiness(false).data());
         assertSame(refreshed, controller.ragReadiness(true).data());
+        assertSame(probeRun, controller.ragProbes().data());
         assertSame(triageResponse, controller.triage(triageRequest).data());
         assertSame(triageEmitter, controller.triageStream(triageRequest));
         assertSame(summaryResponse, controller.summaryByRecord("MR1").data());

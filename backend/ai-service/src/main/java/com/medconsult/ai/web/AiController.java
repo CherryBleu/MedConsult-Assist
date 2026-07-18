@@ -32,6 +32,7 @@ import com.medconsult.ai.service.FeedbackService;
 import com.medconsult.ai.service.FileUploadService;
 import com.medconsult.ai.service.ImagingDetectionService;
 import com.medconsult.ai.service.MedicationAnalysisService;
+import com.medconsult.ai.service.RagProbeService;
 import com.medconsult.ai.service.SummaryService;
 import com.medconsult.ai.service.RagReadinessService;
 import com.medconsult.ai.service.SymptomChatService;
@@ -87,6 +88,7 @@ public class AiController {
     private final AiSseService aiSseService;
     private final FileUploadService fileUploadService;
     private final RagReadinessService ragReadinessService;
+    private final RagProbeService ragProbeService;
 
     // ===== 症状对话 =====
 
@@ -125,6 +127,13 @@ public class AiController {
     public Result<RagReadinessService.RagReadiness> ragReadiness(
             @RequestParam(name = "refresh", defaultValue = "false") boolean refresh) {
         return Result.ok(refresh ? ragReadinessService.refresh() : ragReadinessService.current());
+    }
+
+    @Operation(summary = "RAG 固定症状探针")
+    @Permission(roles = {"DOCTOR", "HOSPITAL_ADMIN"})
+    @GetMapping("/api/v1/ai/rag/probes")
+    public Result<RagProbeService.ProbeRun> ragProbes() {
+        return Result.ok(ragProbeService.runProbes());
     }
 
     // ===== 智能分诊 =====

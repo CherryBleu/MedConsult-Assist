@@ -8,6 +8,7 @@ import com.medconsult.ai.service.FeedbackService;
 import com.medconsult.ai.service.FileUploadService;
 import com.medconsult.ai.service.ImagingDetectionService;
 import com.medconsult.ai.service.MedicationAnalysisService;
+import com.medconsult.ai.service.RagProbeService;
 import com.medconsult.ai.service.RagReadinessService;
 import com.medconsult.ai.service.SummaryService;
 import com.medconsult.ai.service.SymptomChatService;
@@ -53,6 +54,7 @@ class AiControllerSummaryPermissionTest {
     private AiSseService aiSseService;
     private FileUploadService fileUploadService;
     private RagReadinessService ragReadinessService;
+    private RagProbeService ragProbeService;
     private AiController controller;
 
     @BeforeEach
@@ -67,6 +69,7 @@ class AiControllerSummaryPermissionTest {
         aiSseService = mock(AiSseService.class);
         fileUploadService = mock(FileUploadService.class);
         ragReadinessService = mock(RagReadinessService.class);
+        ragProbeService = mock(RagProbeService.class);
         controller = new AiController(
                 symptomChatService,
                 triageService,
@@ -77,7 +80,8 @@ class AiControllerSummaryPermissionTest {
                 callLogService,
                 aiSseService,
                 fileUploadService,
-                ragReadinessService);
+                ragReadinessService,
+                ragProbeService);
     }
 
     @AfterEach
