@@ -57,6 +57,12 @@ const adminRoutes = [
         component: () => import('@/views/admin/drug/StockWarning.vue'),
         meta: { title: '库存预警' }
       },
+      {
+        path: 'stock-flow',
+        name: 'AdminStockFlow',
+        component: () => import('@/views/admin/drug/StockFlow.vue'),
+        meta: { title: '库存流水' }
+      },
       // 排班管理
       {
         path: 'schedule',

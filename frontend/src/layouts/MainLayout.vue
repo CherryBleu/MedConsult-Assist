@@ -231,7 +231,8 @@ const allMenuList = {
       children: [
         { path: '/admin/drug', title: '药品管理' },
         { path: '/admin/stock', title: '库存管理' },
-        { path: '/admin/stock-warning', title: '库存预警' }
+        { path: '/admin/stock-warning', title: '库存预警' },
+        { path: '/admin/stock-flow', title: '库存流水' }
       ]
     },
     {
