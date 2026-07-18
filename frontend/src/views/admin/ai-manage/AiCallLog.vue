@@ -10,6 +10,9 @@
           <span>累计调用：<b>{{ total }}</b> 次</span>
           <span>本页成功：<b class="success">{{ successCount }}</b></span>
           <span>本页失败：<b class="danger">{{ failCount }}</b></span>
+          <span>缓存命中：<b>{{ cacheHitCount }}</b></span>
+          <span>Token：<b>{{ pageTotalTokens }}</b></span>
+          <span>成本：<b>{{ formatCost(pageEstimatedCost) }}</b></span>
         </div>
       </div>
 
@@ -23,10 +26,26 @@
         <ResponsiveTable aria-label="AI调用日志列表">
           <template #table>
             <el-table :data="logList" border stripe>
-              <el-table-column prop="logNo" label="日志编号" width="180" />
-              <el-table-column prop="serviceType" label="服务类型" width="120" />
-              <el-table-column prop="modelName" label="模型名称" width="180" />
+              <el-table-column prop="logNo" label="日志编号" width="170" />
+              <el-table-column prop="serviceType" label="服务类型" width="130" />
+              <el-table-column prop="callerService" label="调用方" width="150" show-overflow-tooltip />
+              <el-table-column prop="modelName" label="模型名称" min-width="170" show-overflow-tooltip />
               <el-table-column prop="userName" label="调用用户" width="120" />
+              <el-table-column label="缓存" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="isCacheHit(row) ? 'success' : 'info'" effect="plain" size="small">
+                    {{ cacheHitLabel(row) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="Token" width="150" align="center">
+                <template #default="{ row }">{{ tokenSummary(row) }}</template>
+              </el-table-column>
+              <el-table-column label="预估成本" width="120" align="right">
+                <template #default="{ row }">{{ formatCost(row.estimatedCostYuan) }}</template>
+              </el-table-column>
+              <el-table-column prop="traceId" label="Trace ID" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="requestId" label="Request ID" min-width="160" show-overflow-tooltip />
               <el-table-column label="输入长度" width="100" align="center">
                 <template #default="{ row }">{{ row.inputLength }} 字</template>
               </el-table-column>
@@ -78,6 +97,34 @@
                   <dd>{{ row.userName || '-' }}</dd>
                 </div>
                 <div>
+                  <dt>调用方</dt>
+                  <dd>{{ row.callerService || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>缓存</dt>
+                  <dd>
+                    <el-tag :type="isCacheHit(row) ? 'success' : 'info'" effect="plain" size="small">
+                      {{ cacheHitLabel(row) }}
+                    </el-tag>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Token</dt>
+                  <dd>{{ tokenSummary(row) }}</dd>
+                </div>
+                <div>
+                  <dt>成本</dt>
+                  <dd>{{ formatCost(row.estimatedCostYuan) }}</dd>
+                </div>
+                <div>
+                  <dt>Trace</dt>
+                  <dd class="ai-log-card__mono">{{ row.traceId || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>Request</dt>
+                  <dd class="ai-log-card__mono">{{ row.requestId || '-' }}</dd>
+                </div>
+                <div>
                   <dt>输入/输出</dt>
                   <dd>{{ row.inputLength ?? 0 }} / {{ row.outputLength ?? 0 }} 字</dd>
                 </div>
@@ -95,6 +142,7 @@
         <el-pagination
           v-model:current-page="pageNum"
           v-model:page-size="pageSize"
+          aria-label="AI调用日志分页"
           :page-sizes="[10, 20, 50]"
           :total="total"
           layout="total, sizes, prev, pager, next, jumper"
@@ -121,6 +169,24 @@ const total = ref(0)
 
 const successCount = computed(() => logList.value.filter(i => i.status === 'SUCCESS').length)
 const failCount = computed(() => logList.value.filter(i => i.status === 'FAILED').length)
+const cacheHitCount = computed(() => logList.value.filter(isCacheHit).length)
+const pageTotalTokens = computed(() => logList.value.reduce((sum, row) => sum + numberOrZero(row.totalTokens ?? row.costTokens), 0))
+const pageEstimatedCost = computed(() => logList.value.reduce((sum, row) => sum + numberOrZero(row.estimatedCostYuan), 0))
+
+const numberOrZero = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+const isCacheHit = (row) => row?.cacheHit === true || row?.cacheHit === 1
+const cacheHitLabel = (row) => isCacheHit(row) ? '缓存命中' : '未命中'
+const tokenSummary = (row) => {
+  const totalTokens = numberOrZero(row?.totalTokens ?? row?.costTokens)
+  const promptTokens = numberOrZero(row?.promptTokens)
+  const completionTokens = numberOrZero(row?.completionTokens)
+  return `${totalTokens}（P${promptTokens} / C${completionTokens}）`
+}
+const formatCost = (value) => `￥${numberOrZero(value).toFixed(6)}`
 
 const getLogList = async () => {
   loading.value = true
@@ -212,6 +278,37 @@ onMounted(() => {
   margin-top: 16px;
   overflow-x: auto;
   padding-bottom: 4px;
+  max-width: 100%;
+}
+
+.pagination-box :deep(.el-pagination) {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pagination-box :deep(.btn-prev),
+.pagination-box :deep(.btn-next),
+.pagination-box :deep(.el-pager li.number) {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
+.pagination-box :deep(.el-pagination__sizes),
+.pagination-box :deep(.el-pagination__jump) {
+  min-height: var(--touch-target);
+}
+
+.pagination-box :deep(.el-pagination__sizes .el-select),
+.pagination-box :deep(.el-pagination__jump .el-input) {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
+.pagination-box :deep(.el-pagination__sizes .el-select__wrapper),
+.pagination-box :deep(.el-pagination__sizes .el-input__wrapper),
+.pagination-box :deep(.el-pagination__jump .el-input__wrapper),
+.pagination-box :deep(.el-pagination__jump .el-input__inner) {
+  min-height: var(--touch-target);
 }
 
 .ai-log-card {
@@ -279,6 +376,11 @@ onMounted(() => {
   overflow-wrap: anywhere;
   color: var(--text-primary);
   text-align: right;
+}
+
+.ai-log-card__mono {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-sm);
 }
 
 @media (max-width: 640px) {

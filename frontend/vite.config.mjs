@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
   plugins: [vue()],
+  cacheDir: './.vite-cache',
   define: {
     // 消除 Vue esm-bundler 运行时关于特性标志的控制台警告
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false

@@ -12,6 +12,20 @@ async function expectNoHorizontalOverflow(page) {
   expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
 }
 
+async function expectTouchTargetsAtLeast(page, selector: string, minSize = 44) {
+  const boxes = await page.locator(selector).evaluateAll(elements =>
+    elements.map(element => {
+      const rect = element.getBoundingClientRect()
+      return { width: rect.width, height: rect.height }
+    })
+  )
+  expect(boxes.length).toBeGreaterThan(0)
+  for (const box of boxes) {
+    expect(box.width).toBeGreaterThanOrEqual(minSize)
+    expect(box.height).toBeGreaterThanOrEqual(minSize)
+  }
+}
+
 test.describe('responsive table', () => {
   test('admin user list switches to cards on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -112,8 +126,18 @@ test.describe('responsive table', () => {
 
     await page.goto('/admin/ai-call-log')
 
-    await expect(page.locator('[data-testid="responsive-ai-call-log-card"]').first()).toBeVisible()
+    const firstCard = page.locator('[data-testid="responsive-ai-call-log-card"]').first()
+    await expect(firstCard).toBeVisible()
+    await expect(firstCard).toContainText('缓存命中')
+    await expect(firstCard).toContainText('trace-cache-001')
+    await expect(firstCard).toContainText('REQ-cache-001')
+    await expect(firstCard).toContainText('Token')
+    await expect(firstCard).toContainText('￥0.000000')
     await expect(page.locator('.responsive-table__desktop')).toBeHidden()
+    await expectTouchTargetsAtLeast(
+      page,
+      '.pagination-box .btn-prev, .pagination-box .btn-next, .pagination-box .number, .pagination-box .el-pagination__sizes .el-select, .pagination-box .el-pagination__jump .el-input'
+    )
     await expectNoHorizontalOverflow(page)
   })
 

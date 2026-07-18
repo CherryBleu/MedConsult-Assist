@@ -85,6 +85,7 @@ public class SummaryService {
      * 下次请求因缓存命中返回旧摘要——这是可接受的（病历更新频率低，30 分钟 TTL 足够）。
      */
     public MedicalRecordSummaryResponse summarizeByRecordNo(String recordNo) {
+        long started = System.currentTimeMillis();
         // 缓存命中检查
         String cacheKey = SUMMARY_CACHE_PREFIX + recordNo;
         try {
@@ -92,6 +93,7 @@ public class SummaryService {
             if (cached != null && !cached.isBlank()) {
                 log.info("[AI-CACHE] summary hit cache: recordNo={}", recordNo);
                 CachedSummary cachedSummary = JsonUtils.MAPPER.readValue(cached, CachedSummary.class);
+                logCacheHit(recordNo, cachedSummary, started);
                 return new MedicalRecordSummaryResponse(
                         cachedSummary.summaryNo(), recordNo, cachedSummary.summary(), cachedSummary.status());
             }
@@ -116,8 +118,9 @@ public class SummaryService {
         );
         // 写入缓存（异步友好：写失败不影响主流程）
         try {
+            String patientId = record.patientId() == null ? null : String.valueOf(record.patientId());
             redisTemplate.opsForValue().set(cacheKey,
-                    JsonUtils.toJson(new CachedSummary(response.summaryId(), response.summary(), response.status())),
+                    JsonUtils.toJson(new CachedSummary(response.summaryId(), response.summary(), response.status(), patientId)),
                     SUMMARY_CACHE_TTL);
         } catch (Exception e) {
             log.warn("[AI-CACHE] summary cache write failed: {}", e.getMessage());
@@ -126,7 +129,17 @@ public class SummaryService {
     }
 
     /** 摘要缓存结构（序列化存 Redis） */
-    private record CachedSummary(String summaryNo, Map<String, Object> summary, String status) {}
+    private record CachedSummary(String summaryNo, Map<String, Object> summary, String status, String patientId) {}
+
+    private void logCacheHit(String recordNo, CachedSummary cachedSummary, long started) {
+        try {
+            callLogService.success("MEDICAL_RECORD_SUMMARY", cachedSummary.patientId(), cachedSummary.summaryNo(),
+                    properties.llm().model(), recordNo, JsonUtils.toJson(cachedSummary.summary()), null,
+                    System.currentTimeMillis() - started, AiCallLogService.AiCallLogMetrics.cacheHitMetrics());
+        } catch (RuntimeException ex) {
+            log.warn("[AI-CACHE] summary cache-hit log failed: {}", ex.getMessage());
+        }
+    }
 
     public MedicalRecordSummaryResponse summarizeRecordStream(MedicalRecordSummaryRequest request, Consumer<String> tokenConsumer) {
         MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));

@@ -316,7 +316,15 @@ public final class AiModels {
             Integer outputLength,
             Integer costTime,
             String status,
-            java.time.LocalDateTime createdAt
+            java.time.LocalDateTime createdAt,
+            String callerService,
+            String traceId,
+            String requestId,
+            boolean cacheHit,
+            Integer promptTokens,
+            Integer completionTokens,
+            Integer totalTokens,
+            BigDecimal estimatedCostYuan
     ) {
     }
 

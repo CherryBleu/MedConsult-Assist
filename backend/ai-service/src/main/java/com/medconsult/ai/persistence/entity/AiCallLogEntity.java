@@ -3,6 +3,7 @@ package com.medconsult.ai.persistence.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @TableName("ai_call_log")
@@ -18,6 +19,11 @@ public class AiCallLogEntity {
     private String traceId;
     private Integer costTokens;
     private String requestId;
+    private Integer cacheHit;
+    private Integer promptTokens;
+    private Integer completionTokens;
+    private Integer totalTokens;
+    private BigDecimal estimatedCostYuan;
     private String modelName;
     private String modelVersion;
     private String knowledgeSource;
@@ -107,6 +113,46 @@ public class AiCallLogEntity {
 
     public void setRequestId(String requestId) {
         this.requestId = requestId;
+    }
+
+    public Integer getCacheHit() {
+        return cacheHit;
+    }
+
+    public void setCacheHit(Integer cacheHit) {
+        this.cacheHit = cacheHit;
+    }
+
+    public Integer getPromptTokens() {
+        return promptTokens;
+    }
+
+    public void setPromptTokens(Integer promptTokens) {
+        this.promptTokens = promptTokens;
+    }
+
+    public Integer getCompletionTokens() {
+        return completionTokens;
+    }
+
+    public void setCompletionTokens(Integer completionTokens) {
+        this.completionTokens = completionTokens;
+    }
+
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
+    public void setTotalTokens(Integer totalTokens) {
+        this.totalTokens = totalTokens;
+    }
+
+    public BigDecimal getEstimatedCostYuan() {
+        return estimatedCostYuan;
+    }
+
+    public void setEstimatedCostYuan(BigDecimal estimatedCostYuan) {
+        this.estimatedCostYuan = estimatedCostYuan;
     }
 
     public String getModelName() {

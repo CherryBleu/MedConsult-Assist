@@ -79,6 +79,7 @@ public class MedicationAnalysisService {
     }
 
     private MedicationAnalysisResponse analyze(MedicationAnalysisRequest request, Consumer<String> tokenConsumer) {
+        long started = System.currentTimeMillis();
         // 缓存命中检查（仅非流式场景缓存；流式需逐 token 返回，不缓存）。
         // key 已纳入 patientId/patientContext，避免同处方跨患者复用风险结论。
         String cacheKey = null;
@@ -88,14 +89,16 @@ public class MedicationAnalysisService {
                 String cached = redisTemplate.opsForValue().get(cacheKey);
                 if (cached != null && !cached.isBlank()) {
                     log.info("[AI-CACHE] medication hit cache: key={}", cacheKey);
-                    return JsonUtils.MAPPER.readValue(cached, MedicationAnalysisResponse.class);
+                    MedicationAnalysisResponse cachedResponse =
+                            JsonUtils.MAPPER.readValue(cached, MedicationAnalysisResponse.class);
+                    logCacheHit(request, cachedResponse, started);
+                    return cachedResponse;
                 }
             } catch (Exception e) {
                 log.warn("[AI-CACHE] medication cache read failed, fallback to LLM: {}", e.getMessage());
             }
         }
 
-        long started = System.currentTimeMillis();
         MedicationFunctionService.FunctionResult functionResult = functionService.execute(request);
         Map<String, Object> fallback = resultMap(functionResult);
         Map<String, Object> llmPayload = new LinkedHashMap<>();
@@ -155,6 +158,17 @@ public class MedicationAnalysisService {
         cacheIdentity.put("patientContext", request.patientContext());
         cacheIdentity.put("prescriptions", request.prescriptions());
         return MED_CACHE_PREFIX + stableHash(JsonUtils.toJson(cacheIdentity));
+    }
+
+    private void logCacheHit(MedicationAnalysisRequest request, MedicationAnalysisResponse cachedResponse, long started) {
+        try {
+            callLogService.success("MEDICATION_ANALYSIS", request.patientId(), cachedResponse.analysisId(),
+                    properties.llm().model(), JsonUtils.toJson(request.prescriptions()),
+                    JsonUtils.toJson(cachedResponse), cachedResponse.overallRiskLevel(),
+                    System.currentTimeMillis() - started, AiCallLogService.AiCallLogMetrics.cacheHitMetrics());
+        } catch (RuntimeException ex) {
+            log.warn("[AI-CACHE] medication cache-hit log failed: {}", ex.getMessage());
+        }
     }
 
     /**

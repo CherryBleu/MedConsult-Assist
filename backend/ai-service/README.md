@@ -43,7 +43,7 @@ X-Trigger-User-Id: 123
 | 影像图像检测 | 已实现 | 独立表 `ai_image_detection`，提交后返回 `PENDING` |
 | 影像文件上传 | 已实现 | 上传到 MinIO，记录 `ai_file_upload`，返回可用于图像检测的 `fileUrl` |
 | AI 反馈 | 已实现 | 支持结果反馈与查询 |
-| AI 调用日志 | 已实现 | 支持 trace、调用方、用户、token、requestId 等字段 |
+| AI 调用日志 | 已实现 | 支持 trace、调用方、用户、requestId、缓存命中、Token 拆分和预估成本字段 |
 | 内部接口 | 已实现 | `/internal/ai/*`，优先通过 Bearer 服务 Token 保护，兼容 `X-Service-Api-Key` |
 | RabbitMQ | 已接入 | 用于图像检测任务和 AI 调用日志异步处理 |
 | Redis 限流 | 已接入 | 对 `/api/v1/ai/*` 使用滑动窗口限流，可按接口覆盖阈值 |
@@ -125,6 +125,7 @@ mysql -uroot -p123456 medconsult < src\main\resources\db\schema-ai.sql
 
 ```powershell
 mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-architecture-20260710.sql
+mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-call-log-observability-20260718.sql
 ```
 
 核心新增和调整包括：
@@ -144,6 +145,11 @@ mysql -uroot -p123456 medconsult < src\main\resources\db\upgrade-ai-architecture
 - `ai_call_log.trace_id`
 - `ai_call_log.cost_tokens`
 - `ai_call_log.request_id`
+- `ai_call_log.cache_hit`
+- `ai_call_log.prompt_tokens`
+- `ai_call_log.completion_tokens`
+- `ai_call_log.total_tokens`
+- `ai_call_log.estimated_cost_yuan`
 
 ## 7. 本地启动
 
