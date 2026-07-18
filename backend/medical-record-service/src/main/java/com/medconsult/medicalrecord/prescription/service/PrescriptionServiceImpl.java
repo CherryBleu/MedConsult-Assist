@@ -14,6 +14,8 @@ import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
 import com.medconsult.medicalrecord.prescription.entity.PrescriptionItem;
@@ -186,11 +188,8 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     @Override
     public PrescriptionDTO.DetailResponse detail(String prescriptionNo) {
         Prescription p = requireByNo(prescriptionNo);
-        // 越权防护（IDOR）：PATIENT 只能查自己的处方（架构 §4.3 SELF）。
-        // prescription.patient_id 落库已是真实主键（create 时 Feign 反查），与 JWT patientId 同类型比较。
-        // 注意：本方法暂不强制 enforcePatientOwnership——处方详情是药师/医生工作台高频接口，
-        // 且 PATIENT 查自己处方的越权面已在病历域（MedicalRecordServiceImpl）落地同款 SELF 校验演示。
-        // 全量接入需配套给处方测试注入身份头（30+ 处 MockMvc 调用），留待 RBAC 五表阶段统一。
+        enforcePatientOwnership(p.getPatientId());
+        // PATIENT can only read their own prescription; doctor/pharmacy/admin roles keep workstation access.
         // 查明细
         List<PrescriptionItem> items = itemMapper.selectList(
                 new QueryWrapper<PrescriptionItem>().eq("prescription_id", p.getId()));
@@ -269,6 +268,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     @Override
     public PrescriptionDTO.PayResponse pay(String prescriptionNo, PrescriptionDTO.PayRequest req) {
         Prescription p = requireByNo(prescriptionNo);
+        enforcePatientOwnership(p.getPatientId());
         // 锁前快速校验，避免无谓抢锁
         if (!"APPROVED".equals(p.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
@@ -408,6 +408,29 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + departmentNo);
         }
         return resp.data().id();
+    }
+
+    private void enforcePatientOwnership(Long resourcePatientId) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null || !selfPatientId.equals(resourcePatientId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该患者的处方");
+            }
+        }
+    }
+
+    private static boolean isPatient(JwtPayload payload) {
+        if (payload == null) {
+            return false;
+        }
+        if ("PATIENT".equals(payload.primaryRole())) {
+            return true;
+        }
+        return payload.roles() != null && payload.roles().contains("PATIENT");
     }
 
     /** 生成处方编号：RX + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_prescription_no 兜底 */

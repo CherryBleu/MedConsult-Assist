@@ -48,9 +48,9 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.list(page, pageSize, status));
     }
 
-    /** 处方详情（含明细）—— 医生/药师/管理员可查（§2.3；PATIENT 查自己处方的 SELF 校验见 service） */
+    /** 处方详情（含明细）—— 患者只能查本人处方，医生/药师/管理员可查（§2.3；SELF 校验见 service） */
     @GetMapping("/{prescriptionId}")
-    @Permission(roles = {"DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
+    @Permission(roles = {"PATIENT", "DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
     @Operation(summary = "查询处方详情")
     public Result<PrescriptionDTO.DetailResponse> detail(@Parameter(description = "处方编号", required = true) @PathVariable String prescriptionId) {
         return Result.ok(prescriptionService.detail(prescriptionId));

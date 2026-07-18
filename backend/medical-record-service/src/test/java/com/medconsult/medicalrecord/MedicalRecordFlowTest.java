@@ -364,6 +364,22 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void prescriptionDetail_selfPatientAllowed() throws Exception {
+        String rxNo = createPrescription(); // 归属 patientId=1001
+        mvc.perform(selfPatientAuth(get("/api/v1/prescriptions/" + rxNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.prescriptionId").value(rxNo));
+    }
+
+    @Test
+    void prescriptionDetail_otherPatientForbidden() throws Exception {
+        String rxNo = createPrescription(); // 归属 patientId=1001
+        mvc.perform(otherPatientAuth(get("/api/v1/prescriptions/" + rxNo)))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
     void review_notFound() throws Exception {
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/RX_NOT_EXIST/review")
                         .contentType("application/json")
@@ -439,6 +455,15 @@ class MedicalRecordFlowTest {
                         .contentType("application/json")
                         .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void pay_otherPatientForbidden() throws Exception {
+        String rxNo = createApprovedPrescription(); // 归属 patientId=1001
+        mvc.perform(otherPatientAuth(post("/api/v1/prescriptions/" + rxNo + "/pay")
+                        .contentType("application/json")
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY002\"}")))
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
