@@ -104,6 +104,21 @@ public class AuthController {
         return Result.ok(authService.listUsers(page, pageSize, keyword, role));
     }
 
+    /** 管理员创建账号（含管理类角色 PHARMACY_ADMIN/HOSPITAL_ADMIN，区别于自助 /register） */
+    @PostMapping("/users")
+    @Operation(summary = "管理员创建账号")
+    public Result<AuthDTO.UserInfo> createUser(@Valid @RequestBody AuthDTO.RegisterRequest req) {
+        return Result.ok(authService.createUserByAdmin(req));
+    }
+
+    /** 管理员删除用户（软删，不能删自己） */
+    @DeleteMapping("/users/{userId}")
+    @Operation(summary = "管理员删除用户")
+    public Result<Void> deleteUser(@Parameter(description = "用户 ID", required = true) @PathVariable Long userId) {
+        authService.deleteUser(userId);
+        return Result.ok();
+    }
+
     private static String clientIp(HttpServletRequest req) {
         String ip = req.getHeader("X-Forwarded-For");
         if (ip != null && !ip.isBlank()) {

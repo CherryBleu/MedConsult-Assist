@@ -296,6 +296,18 @@ public class ScheduleServiceImpl implements ScheduleService {
         return s;
     }
 
+    @Override
+    public void delete(String scheduleNo) {
+        DoctorSchedule s = requireByNo(scheduleNo);
+        // 约束：有未完成预约时拒绝删除（避免预约变孤儿）
+        int active = countActiveAppointments(s.getId());
+        if (active > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "排班下有 " + active + " 个未完成预约，无法删除（请先取消预约或改为停诊）");
+        }
+        scheduleMapper.deleteById(s.getId());  // 软删（BaseEntity @TableLogic）
+    }
+
     // ===== 私有助手 =====
 
     /** 统计某排班下"未完成"预约数（非 CANCELLED/COMPLETED/NO_SHOW） */

@@ -2,6 +2,8 @@ package com.medconsult.outpatient.schedule.controller;
 
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.outpatient.schedule.dto.ScheduleDTO;
 import com.medconsult.outpatient.schedule.service.ScheduleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -64,5 +66,17 @@ public class ScheduleController {
     public Result<ScheduleDTO.StatusResponse> updateStatus(@Parameter(description = "排班编号", required = true) @PathVariable String scheduleId,
                                                             @Valid @RequestBody ScheduleDTO.StatusUpdateRequest req) {
         return Result.ok(scheduleService.updateStatus(scheduleId, req));
+    }
+
+    /** 管理员删除排班（软删，有未完成预约时拒绝） */
+    @DeleteMapping("/{scheduleId}")
+    @Operation(summary = "删除排班")
+    public Result<Void> delete(@Parameter(description = "排班编号", required = true) @PathVariable String scheduleId) {
+        JwtPayload p = SecurityContext.requireUser();
+        if (!p.hasRole("HOSPITAL_ADMIN")) {
+            throw new com.medconsult.common.core.BusinessException(com.medconsult.common.core.ErrorCode.FORBIDDEN, "仅医院管理员可删除排班");
+        }
+        scheduleService.delete(scheduleId);
+        return Result.ok();
     }
 }

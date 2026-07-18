@@ -422,6 +422,73 @@ public class AuthServiceImpl implements AuthService {
         return PageResult.of(safePage, safeSize, total, pageItems);
     }
 
+    // ===== 管理员用户管理（2026-07-17 补齐） =====
+
+    /** 管理员可创建的全部角色（含管理类，区别于自助注册的 SELF_REGISTER_ROLES） */
+    private static final java.util.Set<String> ADMIN_CREATABLE_ROLES =
+            java.util.Set.of("PATIENT", "DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN");
+
+    @Override
+    public AuthDTO.UserInfo createUserByAdmin(AuthDTO.RegisterRequest req) {
+        requireHospitalAdmin();
+        String role = (req.getRole() == null || req.getRole().isBlank()) ? "PATIENT" : req.getRole();
+        if (!ADMIN_CREATABLE_ROLES.contains(role)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非法角色: " + req.getRole());
+        }
+        // 唯一性校验（与 register 一致）
+        if (userMapper.selectCount(new QueryWrapper<SysUser>().eq("account", req.getAccount())) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "账号已存在: " + req.getAccount());
+        }
+        if (req.getPhone() != null && userMapper.selectCount(
+                new QueryWrapper<SysUser>().eq("phone", req.getPhone())) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "手机号已注册");
+        }
+        final String finalRole = role;
+        SysUser u = transactionTemplate.execute(status -> {
+            SysUser user = new SysUser();
+            user.setUserNo(generateUserNo());
+            user.setAccount(req.getAccount());
+            user.setPhone(req.getPhone());
+            user.setPasswordHash(passwordEncoder.encode(req.getPassword()));
+            user.setName(req.getName());
+            user.setPatientId(parseLong(req.getPatientId()));
+            user.setDoctorId(parseLong(req.getDoctorId()));
+            user.setStatus("ACTIVE");
+            userMapper.insert(user);
+            assignRole(user.getId(), finalRole, true);
+            return user;
+        });
+        log.info("[createUserByAdmin] 管理员创建账号成功: account={} role={}", u.getAccount(), finalRole);
+        return new AuthDTO.UserInfo(
+                u.getUserNo(), u.getName(), role,
+                req.getPatientId(), req.getDoctorId(), u.getStatus());
+    }
+
+    @Override
+    public void deleteUser(Long userId) {
+        requireHospitalAdmin();
+        // 不能删自己（防自锁）
+        JwtPayload p = SecurityContext.getPayload();
+        if (p != null && p.userId() != null && p.userId().equals(userId)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "不能删除当前登录的管理员账号");
+        }
+        SysUser u = userMapper.selectById(userId);
+        if (u == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+        // 软删（BaseEntity @TableLogic 自动 deleted=1）。sys_user_role 关联保留（审计需要）。
+        userMapper.deleteById(userId);
+        log.info("[deleteUser] 管理员软删账号: userId={} account={}", userId, u.getAccount());
+    }
+
+    /** 管理员权限校验（与 listUsers 一致：手动从 SecurityContext 判 HOSPITAL_ADMIN） */
+    private void requireHospitalAdmin() {
+        JwtPayload payload = SecurityContext.requireUser();
+        if (!payload.hasRole("HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅医院管理员可执行此操作");
+        }
+    }
+
     /**
      * 查用户主角色（listUsers 内存过滤用）：从 sys_user_role 聚合，无记录兜底 PATIENT。
      * <p>原从 Redis 读（medconsult:auth:role:{userId}），RBAC 落地后 sys_user_role 为权威源。

@@ -28,6 +28,9 @@ public interface ScheduleService {
     /** §2.4.4 更新排班状态，SUSPENDED 时返回 notifiedAppointments */
     ScheduleDTO.StatusResponse updateStatus(String scheduleNo, ScheduleDTO.StatusUpdateRequest req);
 
+    /** 管理员删除排班（软删）。约束：有未完成预约时拒绝 */
+    void delete(String scheduleNo);
+
     /**
      * 按排班编号查询，未找到抛 NOT_FOUND。
      * <p>供 AppointmentService 创建预约时校验排班。

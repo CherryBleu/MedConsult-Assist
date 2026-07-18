@@ -16,6 +16,15 @@ public interface DepartmentService {
     /** §2.3.1 分页查询科室，可按 enabled 过滤 */
     PageResult<DepartmentDTO.ListItem> list(int page, int pageSize, Boolean enabled);
 
+    /** 管理员创建科室（department_no 自动生成） */
+    DepartmentDTO.SaveResponse create(DepartmentDTO.CreateRequest req);
+
+    /** 管理员更新科室（按 department_no），仅更新非 null 字段 */
+    DepartmentDTO.SaveResponse update(String departmentNo, DepartmentDTO.UpdateRequest req);
+
+    /** 管理员删除科室（软删）。约束：科室下有启用医生时拒绝 */
+    void delete(String departmentNo);
+
     /**
      * 按科室编号查询，未找到抛 NOT_FOUND。
      * <p>供 ScheduleService 创建排班时校验科室存在与启用（需求 §4.3.1 规则 1）。

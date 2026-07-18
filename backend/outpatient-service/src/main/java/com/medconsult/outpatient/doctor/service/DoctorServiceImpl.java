@@ -2,6 +2,7 @@ package com.medconsult.outpatient.doctor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -144,6 +145,55 @@ public class DoctorServiceImpl implements DoctorService {
         return nos;
     }
 
+    // ===== 管理员维护接口（2026-07-17 补齐） =====
+
+    @Override
+    public DoctorDTO.SaveResponse create(DoctorDTO.CreateRequest req) {
+        Department dept = departmentMapper.selectOne(
+                new QueryWrapper<Department>().eq("department_no", req.getDepartmentNo()));
+        if (dept == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + req.getDepartmentNo());
+        }
+        Doctor d = new Doctor();
+        d.setDoctorNo(generateDoctorNo());
+        d.setName(req.getDoctorName());
+        d.setDepartmentId(dept.getId());
+        d.setTitle(req.getTitle());
+        d.setSpecialties(toJsonArray(req.getSpecialties()));
+        d.setIntroduction(req.getIntroduction());
+        d.setEnabled(req.getEnabled() == null ? 1 : req.getEnabled());
+        doctorMapper.insert(d);
+        return new DoctorDTO.SaveResponse(d.getDoctorNo());
+    }
+
+    @Override
+    public DoctorDTO.SaveResponse update(String doctorNo, DoctorDTO.UpdateRequest req) {
+        Doctor d = requireByNo(doctorNo);
+        if (req.getDoctorName() != null) d.setName(req.getDoctorName());
+        if (req.getDepartmentNo() != null) {
+            Department dept = departmentMapper.selectOne(
+                    new QueryWrapper<Department>().eq("department_no", req.getDepartmentNo()));
+            if (dept == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + req.getDepartmentNo());
+            }
+            d.setDepartmentId(dept.getId());
+        }
+        if (req.getTitle() != null) d.setTitle(req.getTitle());
+        if (req.getSpecialties() != null) d.setSpecialties(toJsonArray(req.getSpecialties()));
+        if (req.getIntroduction() != null) d.setIntroduction(req.getIntroduction());
+        if (req.getEnabled() != null) d.setEnabled(req.getEnabled());
+        doctorMapper.updateById(d);
+        return new DoctorDTO.SaveResponse(d.getDoctorNo());
+    }
+
+    @Override
+    public void delete(String doctorNo) {
+        // 软删。简化决策：不强制校验排班/预约（管理员职责，关联排班可后续清理；
+        // 且 schedule 通过 requireByNo 校验医生存在，软删后查不到会自然报错暴露问题）。
+        Doctor d = requireByNo(doctorNo);
+        doctorMapper.deleteById(d.getId());  // 软删（BaseEntity @TableLogic）
+    }
+
     // ===== 私有助手 =====
 
     /** 批量按 id 查询科室（一次 selectBatchIds），返回 id → Department 映射 */
@@ -159,6 +209,24 @@ public class DoctorServiceImpl implements DoctorService {
         return map;
     }
 
+    /** 逗号分隔串 → JSON 数组串（存 specialties）。null/空返回 null */
+    private String toJsonArray(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return null;
+        }
+        List<String> items = new ArrayList<>();
+        for (String s : csv.split("[,，]")) {
+            String t = s.trim();
+            if (!t.isEmpty()) items.add(t);
+        }
+        try {
+            return objectMapper.writeValueAsString(items);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化 specialties 失败，原样存: {}", csv, e);
+            return csv;
+        }
+    }
+
     /** JSON 数组串 → List<String>。null/空/解析失败返回空列表 */
     private List<String> fromJsonArray(String json) {
         if (json == null || json.isBlank()) {
@@ -170,5 +238,11 @@ public class DoctorServiceImpl implements DoctorService {
             log.warn("反序列化 specialties 失败，原样返回单元素: {}", json, e);
             return List.of(json);
         }
+    }
+
+    /** 生成医生编号：D + 雪花序列 base36（与 generateScheduleNo 同范式） */
+    private static String generateDoctorNo() {
+        long id = IdWorker.getId();
+        return "D" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
     }
 }

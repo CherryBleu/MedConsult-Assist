@@ -51,4 +51,21 @@ public interface AuthService {
      * @return 分页用户列表（不含密码摘要）
      */
     PageResult<AuthDTO.UserListItem> listUsers(int page, int pageSize, String keyword, String role);
+
+    /**
+     * 管理员创建账号（用户管理页/药房管理员管理页）。
+     *
+     * <p>与 register 区别：允许 HOSPITAL_ADMIN / PHARMACY_ADMIN 管理类角色
+     * （register 仅允许 PATIENT / DOCTOR 自助注册）；不建档（非患者）。
+     * 权限：仅 HOSPITAL_ADMIN。
+     */
+    AuthDTO.UserInfo createUserByAdmin(AuthDTO.RegisterRequest req);
+
+    /**
+     * 管理员删除用户（软删）。
+     *
+     * <p>约束：不能删自己（防自锁）；患者软删后档案留存。
+     * 权限：仅 HOSPITAL_ADMIN。
+     */
+    void deleteUser(Long userId);
 }

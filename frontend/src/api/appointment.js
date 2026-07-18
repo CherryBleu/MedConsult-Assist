@@ -209,11 +209,10 @@ export const updateScheduleApi = (data) => {
   return request({ url: `/schedules/${data.id}/status`, method: 'patch', data })
 }
 
-// 管理员：删除排班（后端无删除端点，占位）
+// 管理员：删除排班（对齐 DELETE /schedules/{scheduleId}，软删，有未完成预约时拒绝）
 export const deleteScheduleApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockDeleteSchedule(id))
-  // 后端暂无排班删除接口；返回成功占位
-  return Promise.resolve({ code: 0, message: 'success', data: null })
+  return request({ url: `/schedules/${id}`, method: 'delete' })
 }
 
 // 管理员：切换排班状态（对齐后端 PATCH /schedules/{scheduleId}/status）

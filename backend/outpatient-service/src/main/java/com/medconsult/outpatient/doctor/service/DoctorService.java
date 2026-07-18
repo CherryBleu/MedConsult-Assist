@@ -21,6 +21,15 @@ public interface DoctorService {
      */
     PageResult<DoctorDTO.ListItem> list(int page, int pageSize, String departmentId, Boolean enabled);
 
+    /** 管理员创建医生档案（doctor_no 自动生成，departmentNo 反查主键） */
+    DoctorDTO.SaveResponse create(DoctorDTO.CreateRequest req);
+
+    /** 管理员更新医生档案（按 doctor_no），仅更新非 null 字段 */
+    DoctorDTO.SaveResponse update(String doctorNo, DoctorDTO.UpdateRequest req);
+
+    /** 管理员删除医生（软删）。约束：有未完成排班时拒绝 */
+    void delete(String doctorNo);
+
     /**
      * 按医生编号查询，未找到抛 NOT_FOUND。
      * <p>供 ScheduleService 创建排班时校验医生存在与启用（需求 §4.3.1 规则 2）。
