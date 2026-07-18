@@ -285,9 +285,15 @@ ai-service 从 JVM 环境变量读配置（不是从 docker-compose 读，因为
 
 ### 方式 A：PowerShell 手动设
 ```powershell
-$env:DEEPSEEK_API_KEY     = "sk-你的key"
-$env:EMBEDDING_API_KEY    = "sk-你的embedding-key"   # 不要 RAG 可跳过
+$env:ALIYUNBAILIAN_APIKEY = "sk-你的key"              # 使用 DeepSeek/OpenAI 时也保持变量名不变，只替换值和 base-url
+$env:ALIYUNBAILIAN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:ALIYUNBAILIAN_MODEL  = "qwen3.7-plus"
+$env:EMBEDDING_BASE_URL   = "http://localhost:7997/v1"
+$env:EMBEDDING_API_KEY    = "not-needed"
+$env:EMBEDDING_MODEL      = "BAAI/bge-small-zh-v1.5"
 $env:MILVUS_URI           = "http://localhost:19530"
+$env:MILVUS_DATABASE      = "medical"
+$env:MILVUS_COLLECTION    = "data"
 $env:MILVUS_METRIC_TYPE   = "COSINE"                 # 必须与导入器建索引 metric 一致
 $env:MILVUS_SEARCH_TIMEOUT_SECONDS = "15"
 $env:MINIO_ENDPOINT       = "http://localhost:9000"
@@ -299,7 +305,7 @@ $env:MONGODB_URI          = "mongodb://localhost:27017"
 ### 方式 B：读 .env 自动设（推荐）
 ```powershell
 # 一行加载 .env 到当前会话
-Get-Content "D:\project\spring cloud alibaba\MedConsult-Assist\infra\.env" |
+Get-Content "<你的 worktree>\infra\.env" |
   Where-Object { $_ -match '^\s*[^#].*=' } |
   ForEach-Object {
     $kv = $_ -split '=', 2
@@ -308,11 +314,19 @@ Get-Content "D:\project\spring cloud alibaba\MedConsult-Assist\infra\.env" |
 ```
 
 ### 然后启动
+
+方式 C：VS Code / Spring Boot Dashboard。选择 `.vscode/launch.json` 中的 `Spring Boot-AiServiceApplication<ai-service>`。该启动项的 `cwd` 必须是 `${workspaceFolder}/backend/ai-service`；`medconsult-common` 和 `data` 不应出现在 Dashboard 的生产服务启动配置里。
+
+方式 D：命令行启动（推荐用可执行 jar，避免 `spring-boot:run -am` 在多模块 reactor 中误运行 library 模块）。
 ```powershell
-cd "D:\project\spring cloud alibaba\MedConsult-Assist\backend"
-.\mvnw.cmd -pl ai-service spring-boot:run
-# 或用之前会话用的后台脚本方式
+cd "<你的 worktree>\backend"
+.\mvnw.cmd -pl :ai-service -am -DskipTests package
+
+cd ai-service
+java -jar target\ai-service-0.1.0-SNAPSHOT.jar
 ```
+
+2026-07-19 本地冒烟：在 `backend/ai-service` 工作目录下启动可执行 jar，日志出现 `Tomcat started on port 8086`、`REGISTER-SERVICE ... 127.0.0.1:8086` 和 `Started AiServiceApplication`。
 
 ---
 
@@ -323,7 +337,7 @@ cd "D:\project\spring cloud alibaba\MedConsult-Assist\backend"
 | MongoDB 连通 | `Test-NetConnection localhost -Port 27017` | True |
 | Milvus 健康 | `Invoke-RestMethod http://localhost:9091/healthz` | OK |
 | MinIO 健康 | `(Invoke-WebRequest http://localhost:9000/minio/health/live).StatusCode` | 200 |
-| DeepSeek 连通 | §5.3 的 chat 请求 | 一句中文回复 |
+| LLM 连通 | §5.3 的 chat 请求 | 一句中文回复 |
 | ai-service 启动日志 | grep `Started AiServiceApplication` | 无异常 |
 | ai-service 注册 Nacos | Nacos 控制台 http://localhost:8848/nacos | 服务列表有 `ai-service` |
 | symptom-chat 接口 | `POST /api/v1/ai/symptom-chat`（带用户 JWT） | 返回 LLM 回答（RAG 数据未导入时为纯对话） |
