@@ -1,12 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const skipWebServer = process.env.PW_SKIP_WEBSERVER === 'true'
+
 /**
  * Playwright 端到端测试配置。
  *
  * 设计要点（区别于此前 .playwright-mcp/ 一次性日志，本配置产出可复现、进 git、能回归的 e2e）：
  * 1. webServer 自动起 vite dev，并通过环境变量强制走前端内置 mock（VITE_USE_MOCK=true），
  *    彻底解耦后端 7 个微服务 + Nacos/MySQL/Redis/RabbitMQ/Milvus——e2e 不再因后端环境抖动而 flaky。
- * 2. baseURL 固定 http://localhost:3000，与 vite.config.mjs 的 server.port 对齐。
+ * 2. baseURL 固定 http://127.0.0.1:3100，避免复用日常开发的 3000 端口服务。
  * 3. 只跑 Chromium 以保证本地与 CI 速度；如需多浏览器在 use.projects 扩展。
  * 4. retries: CI 上重试 2 次，本地 0 次（快速看到真实失败）。
  * 5. trace 在首条失败时保留，便于事后定位 selector 漂移。
@@ -36,10 +38,10 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: process.env.PW_BROWSER_CHANNEL || 'chrome' },
     },
   ],
-  webServer: {
+  webServer: skipWebServer ? undefined : {
     // 强制走 mock：前端 api/*.js 的 USE_MOCK 分支据此生效，不依赖任何后端服务。
     // 端口固定到 3100，避免误复用日常开发的 3000 服务（其 .env.development 默认 VITE_USE_MOCK=false）。
-    command: 'npm run dev -- --host 127.0.0.1 --port 3100 --strictPort',
+    command: 'node ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port 3100 --strictPort',
     url: 'http://127.0.0.1:3100',
     timeout: 60_000,
     // 3100 是 e2e 专用端口；本地允许复用上一次 e2e 遗留的同端口 Vite，避免异常退出后端口占用导致整套测试无法启动。
