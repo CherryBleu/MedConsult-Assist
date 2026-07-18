@@ -205,14 +205,19 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
         }
 
+        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）。
+        // 从 Redis 读回注册时写入的角色；读失败或缺失兜底为 PATIENT。
+        String primaryRole = resolveRole(u.getId());
+
         // 入口↔身份一致性校验（防止患者从工作人员入口登录等越权，根因 A 修复）。
-        // 身份判定基于 sys_user 的关联 ID 列（稳定），不依赖 Redis（避免抖动兜底 PATIENT 误判医生）。
+        // 医院管理员无 doctor/pharmacist 关联档案，需结合角色判断其工作人员入口资格。
         String clientType = req.getClientType();
         if (clientType != null && !clientType.isBlank()) {
             String ct = clientType.trim().toUpperCase();
-            boolean isPatient = u.getPatientId() != null
+            boolean isPatient = "PATIENT".equals(primaryRole) && u.getPatientId() != null
                     && u.getDoctorId() == null && u.getPharmacistId() == null;
-            boolean isStaff = u.getDoctorId() != null || u.getPharmacistId() != null;
+            boolean isStaff = u.getDoctorId() != null || u.getPharmacistId() != null
+                    || "HOSPITAL_ADMIN".equals(primaryRole) || "PHARMACY_ADMIN".equals(primaryRole);
             if ("PATIENT".equals(ct) && !isPatient) {
                 writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
                 throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是患者账号，请从工作人员入口登录");
@@ -228,15 +233,6 @@ public class AuthServiceImpl implements AuthService {
         u.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(u);
 
-        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）。
-        // 从 Redis 读回注册时写入的角色；读失败或缺失兜底为 PATIENT。
-        String storedRole = null;
-        try {
-            storedRole = redis.opsForValue().get(roleKey(u.getId()));
-        } catch (Exception e) {
-            // Redis 不可用时兜底，不阻断登录
-        }
-        String primaryRole = (storedRole != null && !storedRole.isBlank()) ? storedRole : "PATIENT";
         List<String> roles = List.of(primaryRole);
         List<String> scope = List.of("*"); // 冒烟期全权限；RBAC 阶段改为查 sys_role_permission
 

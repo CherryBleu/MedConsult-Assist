@@ -180,6 +180,16 @@ class AuthFlowTest {
     }
 
     @Test
+    void login_hospitalAdminFromStaffEntry_allowed() throws Exception {
+        String staffLogin = """
+                {"account":"admin","password":"123456","clientType":"STAFF"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(staffLogin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.user.role").value("HOSPITAL_ADMIN"));
+    }
+
+    @Test
     void login_clientType_caseInsensitive() throws Exception {
         when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
                 .thenReturn(Result.ok(EntityIdDTO.of(9003L)));
