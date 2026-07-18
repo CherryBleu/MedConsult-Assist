@@ -82,6 +82,25 @@ CREATE TABLE IF NOT EXISTS drug_stock_flow (
     KEY idx_flow_drug_item (drug_id, prescription_item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='药品库存流水表（只追加）';
 
+-- local_message 本地消息表（审计生产端 outbox）
+-- drug-service 药品创建、库存入库、出库和回滚补偿通过 common-mq @AuditLog 写入本表；
+-- MessageDispatcher 扫描 PENDING 消息并投递到 medconsult.audit.log 队列。
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    message_no      VARCHAR(64)   NOT NULL                 COMMENT '业务唯一键（消费者幂等去重用）',
+    exchange        VARCHAR(100)                           COMMENT '目标交换机',
+    routing_key     VARCHAR(100)                           COMMENT '路由键',
+    payload_json    TEXT                                   COMMENT '消息载荷（JSON 字符串）',
+    status          VARCHAR(20)   NOT NULL                 COMMENT '状态：PENDING/SENT/CONFIRMED/FAILED',
+    retry_count     INT           NOT NULL DEFAULT 0       COMMENT '已重试次数',
+    next_retry_at   DATETIME(3)                            COMMENT '下次重试时间（退避调度用）',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_local_message_no (message_no),
+    KEY idx_local_message_status_retry (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='本地消息表（可靠投递，MessageDispatcher 扫描）';
+
 -- ============================================================
 -- 种子数据（冒烟/演示用；固定主键 5001-5003，供库存流水页面演示）
 -- ============================================================

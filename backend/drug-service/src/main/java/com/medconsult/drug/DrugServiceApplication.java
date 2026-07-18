@@ -10,8 +10,8 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  *
  * <p>{@link EnableDiscoveryClient} 注册到 Nacos（架构文档 §1.3）。
  * <p>{@link MapperScan} 扫描 drug 包下的 Mapper。
- * <p>{@code scanBasePackages = {"com.medconsult.drug", "com.medconsult.common.web"}} 让 common-web 的
- * GlobalExceptionHandler / TraceIdFilter / ResultBodyAdvice 等 @Component 被扫描
+ * <p>{@code scanBasePackages} 让 common-web 的 GlobalExceptionHandler / TraceIdFilter / ResultBodyAdvice，
+ * 以及 common-mq 的审计 outbox 组件被扫描
  * （@SpringBootApplication 默认只扫本类所在包 com.medconsult.drug，common-* 模块的
  * @Component 不会自动发现；AutoConfig 走 SPI 会装配，但 @RestControllerAdvice 需要 scan）。
  *
@@ -24,9 +24,13 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  *   <li>对内提供用药风险信息 / FEFO 选批 / 当前库存（架构文档 §2.3）</li>
  * </ul>
  */
-@SpringBootApplication(scanBasePackages = {"com.medconsult.drug", "com.medconsult.common.web"})
+@SpringBootApplication(scanBasePackages = {
+        "com.medconsult.drug",
+        "com.medconsult.common.web",
+        "com.medconsult.common.mq"
+})
 @EnableDiscoveryClient
-@MapperScan("com.medconsult.drug.**.mapper")
+@MapperScan({"com.medconsult.drug.**.mapper", "com.medconsult.common.mq"})
 public class DrugServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(DrugServiceApplication.class, args);

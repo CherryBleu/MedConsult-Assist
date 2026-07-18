@@ -12,6 +12,7 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.DrugRiskBatchResponse;
 import com.medconsult.common.feign.dto.DrugRiskInfoDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.drug.dto.DrugDTO;
@@ -78,6 +79,11 @@ public class DrugServiceImpl implements DrugService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DRUG",
+            action = "CREATE",
+            resourceId = "#result.drugId()",
+            detail = "'status=' + #result.status()")
     public DrugDTO.DrugSummary createDrug(DrugDTO.CreateDrugRequest req) {
         Drug d = new Drug();
         d.setDrugNo(generateDrugNo());

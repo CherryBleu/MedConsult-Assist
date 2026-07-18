@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.drug.dto.DrugDTO;
 import com.medconsult.drug.entity.Drug;
 import com.medconsult.drug.entity.DrugStockBatch;
@@ -66,6 +67,11 @@ public class DrugStockTxService {
      * @return 入库响应（含 flow_no / currentStock）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "DRUG_STOCK",
+            action = "INBOUND",
+            resourceId = "#result.stockFlowId()",
+            detail = "'drugNo=' + #p1 + ',currentStock=' + #result.currentStock()")
     public DrugDTO.InboundResponse inboundInTx(Long drugId, String drugNo, DrugDTO.InboundRequest req) {
         Drug drug = drugMapper.selectById(drugId);
         if (drug == null) {
@@ -148,6 +154,11 @@ public class DrugStockTxService {
      * @return 出库响应（首条 flow_no / currentStock）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "DRUG_STOCK",
+            action = "OUTBOUND",
+            resourceId = "#result.stockFlowId()",
+            detail = "'drugNo=' + #p1 + ',currentStock=' + #result.currentStock()")
     public DrugDTO.OutboundResponse outboundInTx(Long drugId, String drugNo, DrugDTO.OutboundRequest req) {
         Drug drug = drugMapper.selectById(drugId);
         if (drug == null) {
@@ -265,6 +276,11 @@ public class DrugStockTxService {
      * @return 本次实际回滚的 flow 条数（0 = 无可回滚，或全部已回滚过）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "DRUG_STOCK",
+            action = "ROLLBACK_OUTBOUND",
+            resourceId = "#p1 + ':item:' + #p2",
+            detail = "'restoredFlows=' + #result")
     public int rollbackOutboundByItem(Long drugId, String drugNo, Long prescriptionItemId) {
         if (prescriptionItemId == null) {
             return 0;

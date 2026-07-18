@@ -1,18 +1,24 @@
 package com.medconsult.drug;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -299,6 +305,80 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data.items[1].genericName").value("批量布洛芬"))
                 .andExpect(jsonPath("$.data.missingDrugIds.size()").value(1))
                 .andExpect(jsonPath("$.data.missingDrugIds[0]").value(missingId));
+    }
+
+    @Test
+    void drugMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
+        String traceId = "trace-drug-audit-" + suffix;
+        String createBody = """
+                {"genericName":"audit-drug-%s","unit":"box","minStockThreshold":10,
+                 "contraindications":["audit-contra"],"interactions":["audit-interaction"]}""".formatted(suffix);
+        MvcResult createResult = mvc.perform(withPharmacyAdmin(post("/api/v1/drugs"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content(createBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        String drugNo = om.readTree(createResult.getResponse().getContentAsString())
+                .at("/data/drugId").asText();
+
+        String inboundBody = """
+                {"batchNo":"BATCH_AUDIT_%s","quantity":20,"unitPrice":10.00,
+                 "expireDate":"%s","supplier":"audit-supplier"}""".formatted(
+                suffix, LocalDate.now().plusYears(2));
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content(inboundBody))
+                .andExpect(status().isOk());
+
+        long prescriptionId = 800100L;
+        long itemId = 900100L;
+        String outBody = """
+                {"quantity":5,"purpose":"DISPENSE","batchStrategy":"FEFO",
+                 "prescriptionId":%d,"prescriptionItemId":%d}""".formatted(prescriptionId, itemId);
+        mvc.perform(post("/internal/drugs/" + drugNo + "/outbound")
+                        .header("X-Caller-Service", "medical-record-service")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content(outBody))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/internal/drugs/" + drugNo + "/rollback-outbound")
+                        .header("X-Caller-Service", "medical-record-service")
+                        .header("X-Trace-Id", traceId)
+                        .param("prescriptionItemId", String.valueOf(itemId)))
+                .andExpect(status().isOk());
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                ORDER BY id
+                """);
+
+        List<String> events = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            if (!traceId.equals(payload.get("traceId").asText())) {
+                continue;
+            }
+            assertEquals("medconsult.log", row.get("exchange"));
+            assertEquals("audit.log", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+            assertTrue(String.valueOf(row.get("message_no")).startsWith("audit:"));
+            assertEquals("SUCCESS", payload.get("result").asText());
+            assertFalse(payload.get("resourceId").asText().isBlank());
+            events.add(payload.get("resourceType").asText() + ":" + payload.get("action").asText());
+        }
+        assertEquals(List.of(
+                "DRUG:CREATE",
+                "DRUG_STOCK:INBOUND",
+                "DRUG_STOCK:OUTBOUND",
+                "DRUG_STOCK:ROLLBACK_OUTBOUND"), events);
     }
 
     // ===== 测试助手 =====
