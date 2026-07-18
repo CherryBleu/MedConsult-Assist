@@ -220,6 +220,11 @@ const allMenuList = {
       icon: 'Calendar'
     },
     {
+      path: '/admin/schedule-template',
+      title: '排班模板',
+      icon: 'Calendar'
+    },
+    {
       path: '/admin/drug',
       title: '药品库存',
       icon: 'FirstAidKit',

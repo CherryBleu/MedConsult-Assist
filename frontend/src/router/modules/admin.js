@@ -64,6 +64,13 @@ const adminRoutes = [
         component: () => import('@/views/admin/schedule/ScheduleManage.vue'),
         meta: { title: '排班管理' }
       },
+      // 排班模板（默认排班，后端修改.md #16）
+      {
+        path: 'schedule-template',
+        name: 'ScheduleTemplate',
+        component: () => import('@/views/admin/schedule/ScheduleTemplate.vue'),
+        meta: { title: '排班模板' }
+      },
       // AI管理
       {
         path: 'ai-call-log',

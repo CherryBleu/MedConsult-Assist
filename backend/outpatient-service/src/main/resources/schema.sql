@@ -61,6 +61,31 @@ CREATE TABLE IF NOT EXISTS doctor_schedule (
     KEY idx_schedule_date (schedule_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='医生排班表';
 
+-- doctor_schedule_template 排班模板表（后端修改.md #16 默认排班）
+-- 表达"每周固定出诊规律"：医生A 每周一/三/五上午。一键 apply 时按模板周几规则
+-- 批量生成 doctor_schedule。与 doctor_schedule（具体某天）语义正交，独立成表。
+CREATE TABLE IF NOT EXISTS doctor_schedule_template (
+    id                BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',
+    template_no       VARCHAR(32)   NOT NULL                 COMMENT '模板编号（业务可读，如 T202607080001）',
+    doctor_id         BIGINT        NOT NULL                 COMMENT '医生 ID',
+    department_id     BIGINT        NOT NULL                 COMMENT '科室 ID',
+    day_of_week       TINYINT       NOT NULL                 COMMENT '周几：1=周一 ... 7=周日',
+    period            VARCHAR(20)   NOT NULL                 COMMENT '时段：MORNING/AFTERNOON/EVENING/FULL_DAY',
+    start_time        TIME                                   COMMENT '开始时间',
+    end_time          TIME                                   COMMENT '结束时间',
+    total_quota       INT           NOT NULL                 COMMENT '总号源',
+    registration_fee  DECIMAL(10,2)                          COMMENT '挂号费',
+    enabled           TINYINT       NOT NULL DEFAULT 1       COMMENT '是否启用：0 否 1 是',
+    created_at        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at        DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted           TINYINT       NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_template_no (template_no),
+    -- 同医生同周几同时段不允许重复模板
+    UNIQUE KEY uk_template_doc_dow_period (doctor_id, day_of_week, period),
+    KEY idx_template_doctor (doctor_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='排班模板表（周几出诊规律）';
+
 -- appointment 预约挂号表（《数据库设计文档》§2.6 / 《需求文档》§4.1.3 / 《修改建议》§5.1 补字段）
 CREATE TABLE IF NOT EXISTS appointment (
     id                   BIGINT        NOT NULL                 COMMENT '主键（雪花 ID）',

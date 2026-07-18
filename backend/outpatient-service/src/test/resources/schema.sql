@@ -55,6 +55,27 @@ CREATE TABLE IF NOT EXISTS doctor_schedule (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_schedule_doc_date_period ON doctor_schedule(doctor_id, schedule_date, period);
 
+-- doctor_schedule_template 排班模板（H2 兼容版，对齐 src/main/resources/schema.sql）
+CREATE TABLE IF NOT EXISTS doctor_schedule_template (
+    id                BIGINT        NOT NULL,
+    template_no       VARCHAR(32)   NOT NULL,
+    doctor_id         BIGINT        NOT NULL,
+    department_id     BIGINT        NOT NULL,
+    day_of_week       INT           NOT NULL,
+    period            VARCHAR(20)   NOT NULL,
+    start_time        TIME,
+    end_time          TIME,
+    total_quota       INT           NOT NULL,
+    registration_fee  DECIMAL(10,2),
+    enabled           INT           DEFAULT 1,
+    created_at        TIMESTAMP,
+    updated_at        TIMESTAMP,
+    deleted           INT           DEFAULT 0,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_template_no ON doctor_schedule_template(template_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_template_doc_dow_period ON doctor_schedule_template(doctor_id, day_of_week, period);
+
 CREATE TABLE IF NOT EXISTS appointment (
     id                   BIGINT        NOT NULL,
     appointment_no       VARCHAR(32)   NOT NULL,
