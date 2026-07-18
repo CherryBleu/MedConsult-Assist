@@ -73,6 +73,11 @@ public class MedConsultMqAutoConfiguration {
         return ExchangeBuilder.topicExchange(MqConstants.EXCHANGE_DRUG_EVENT).durable(true).build();
     }
 
+    @Bean
+    public TopicExchange aiDeadLetterExchange() {
+        return ExchangeBuilder.topicExchange(MqConstants.EXCHANGE_AI_DEAD_LETTER).durable(true).build();
+    }
+
     // ===== Queue（durable） =====
     @Bean
     public Queue aiImageDetectQueue() { return new Queue(MqConstants.QUEUE_AI_IMAGE_DETECT, true); }
@@ -84,6 +89,8 @@ public class MedConsultMqAutoConfiguration {
     public Queue aiCallLogQueue() { return new Queue(MqConstants.QUEUE_AI_CALL_LOG, true); }
     @Bean
     public Queue drugStockAlertQueue() { return new Queue(MqConstants.QUEUE_DRUG_STOCK_ALERT, true); }
+    @Bean
+    public Queue aiDeadLetterQueue() { return new Queue(MqConstants.QUEUE_AI_DEAD_LETTER, true); }
 
     // ===== Binding =====
     @Bean
@@ -105,6 +112,10 @@ public class MedConsultMqAutoConfiguration {
     @Bean
     public Binding bindDrugStockAlert(Queue drugStockAlertQueue, TopicExchange drugEventExchange) {
         return BindingBuilder.bind(drugStockAlertQueue).to(drugEventExchange).with(MqConstants.RK_DRUG_STOCK_ALERT);
+    }
+    @Bean
+    public Binding bindAiDeadLetter(Queue aiDeadLetterQueue, TopicExchange aiDeadLetterExchange) {
+        return BindingBuilder.bind(aiDeadLetterQueue).to(aiDeadLetterExchange).with(MqConstants.RK_AI_DEAD_LETTER);
     }
 
     // ===== 幂等 + 调度 =====

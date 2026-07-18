@@ -34,6 +34,8 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:medconsult}
     password: ${RABBITMQ_PASSWORD:medconsult123}
+    publisher-confirm-type: correlated
+    publisher-returns: true
   sql:
     init:
       mode: always
@@ -124,6 +126,14 @@ medconsult:
         "POST /api/v1/ai/medication-analysis": ${AI_RATE_LIMIT_MEDICATION:20}
         "POST /api/v1/ai/report-analysis": ${AI_RATE_LIMIT_REPORT:20}
         "POST /api/v1/ai/imaging-detection": ${AI_RATE_LIMIT_IMAGE:20}
+    mq:
+      retry:
+        max-attempts: ${AI_MQ_RETRY_MAX_ATTEMPTS:3}
+        initial-interval: ${AI_MQ_RETRY_INITIAL_INTERVAL:500ms}
+        multiplier: ${AI_MQ_RETRY_MULTIPLIER:2.0}
+        max-interval: ${AI_MQ_RETRY_MAX_INTERVAL:2s}
+      dead-letter:
+        confirm-timeout: ${AI_MQ_DEAD_LETTER_CONFIRM_TIMEOUT:5s}
 
 mybatis-plus:
   global-config:

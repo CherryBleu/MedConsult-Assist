@@ -6,7 +6,7 @@
  *   <li>{@link com.medconsult.common.mq.LocalMessage} - 本地消息表实体（流水表，不继承 BaseEntity）</li>
  *   <li>{@link com.medconsult.common.mq.LocalMessageMapper} - Mapper</li>
  *   <li>{@link com.medconsult.common.mq.MqConstants} - Exchange/Queue/RoutingKey 常量（§4.2）</li>
- *   <li>{@link com.medconsult.common.mq.IdempotentConsumer} - 消费者幂等（Redis SETNX，§6.1）</li>
+ *   <li>{@link com.medconsult.common.mq.IdempotentConsumer} - 消费者幂等（Redis PROCESSING/DONE 状态机，§6.1）</li>
  *   <li>{@link com.medconsult.common.mq.MessageDispatcher} - 扫描 PENDING 投递（§6.3 不选主）</li>
  *   <li>{@link com.medconsult.common.mq.MedConsultMqAutoConfiguration} - 自动装配</li>
  * </ul>
