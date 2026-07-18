@@ -51,6 +51,38 @@ class DiseaseCacheServiceTest {
     }
 
     @Test
+    void diseaseCacheKeyShouldHandleNullInputsAndMissingInfrastructureProperties() {
+        AiProperties emptyProperties = new AiProperties(
+                null, null, null, null, null, null, null, null, null, null, null);
+
+        String nullPropertiesKey = DiseaseCacheService.diseaseCacheKeyFor(null, null, null, null);
+        String emptyPropertiesKey = DiseaseCacheService.diseaseCacheKeyFor(
+                emptyProperties, " fever   cough ",
+                new DiseaseCandidate(null, List.of(), ""),
+                null);
+
+        assertTrue(nullPropertiesKey.startsWith("disease:v2::"));
+        assertTrue(emptyPropertiesKey.startsWith("disease:v2::"));
+        assertNotEquals(nullPropertiesKey, emptyPropertiesKey);
+    }
+
+    @Test
+    void diseaseCacheKeyShouldIgnoreBlankFilterKeysAndNullFilterValues() {
+        Map<String, List<String>> filters = new LinkedHashMap<>();
+        filters.put(null, List.of("ignored"));
+        filters.put(" ", List.of("ignored"));
+        filters.put(" department ", null);
+        MetadataQuery metadataQuery = new MetadataQuery(null, filters);
+
+        String key = DiseaseCacheService.diseaseCacheKeyFor(
+                aiProperties(), "fever cough",
+                new DiseaseCandidate("Flu", List.of("fever"), ""),
+                metadataQuery);
+
+        assertTrue(key.startsWith("medical:disease:v2:Flu:"));
+    }
+
+    @Test
     void getShouldReadDocumentEnvelopeAndMapMetadata() {
         RedisFixture fixture = redisFixture();
         String cached = """
@@ -121,6 +153,29 @@ class DiseaseCacheServiceTest {
     }
 
     @Test
+    void getShouldReadSparseLegacyCacheWithDefaults() {
+        RedisFixture fixture = redisFixture();
+        Map<String, Object> legacy = new LinkedHashMap<>();
+        legacy.put("diseaseName", null);
+        legacy.put("symptoms", "fever");
+        legacy.put("score", "not-a-number");
+        legacy.put("source", "MONGODB_NAME_EXACT");
+        when(fixture.valueOperations.get(anyString())).thenReturn(JsonUtils.toJson(legacy));
+        DiseaseCacheService service = new DiseaseCacheService(fixture.redisTemplate, aiProperties());
+
+        DiseaseKnowledge knowledge = service.get("fever",
+                        new DiseaseCandidate("Flu", List.of("fever"), ""),
+                        new MetadataQuery(List.of(), Map.of()))
+                .orElseThrow();
+
+        assertEquals("", knowledge.diseaseName());
+        assertEquals(List.of(), knowledge.symptoms());
+        assertEquals(Map.of(), knowledge.metadata());
+        assertEquals(0.0, knowledge.score());
+        assertEquals(MatchSource.MONGODB_NAME_EXACT, knowledge.source());
+    }
+
+    @Test
     void getShouldReturnEmptyForBlankCandidateMissingValueAndRedisFailure() {
         RedisFixture fixture = redisFixture();
         DiseaseCacheService service = new DiseaseCacheService(fixture.redisTemplate, aiProperties());
@@ -140,6 +195,22 @@ class DiseaseCacheServiceTest {
         DiseaseCacheService failingService = new DiseaseCacheService(failing.redisTemplate, aiProperties());
         assertTrue(failingService.get("text", new DiseaseCandidate("Flu", List.of(), ""),
                 new MetadataQuery(List.of(), Map.of())).isEmpty());
+    }
+
+    @Test
+    void putShouldUseConfiguredTtlWhenAboveMinimum() {
+        RedisFixture fixture = redisFixture();
+        DiseaseCacheService service = new DiseaseCacheService(fixture.redisTemplate,
+                aiProperties("BAAI/bge-small-zh-v1.5", "medical", "data", 120));
+
+        service.put("fever cough",
+                new DiseaseCandidate("Flu", List.of("fever"), ""),
+                new MetadataQuery(List.of(), Map.of()),
+                knowledge("d-1", "Flu", MatchSource.MONGODB_NAME_EXACT));
+
+        ArgumentCaptor<Duration> ttlCaptor = ArgumentCaptor.forClass(Duration.class);
+        verify(fixture.valueOperations).set(anyString(), anyString(), ttlCaptor.capture());
+        assertEquals(Duration.ofSeconds(120), ttlCaptor.getValue());
     }
 
     @Test
