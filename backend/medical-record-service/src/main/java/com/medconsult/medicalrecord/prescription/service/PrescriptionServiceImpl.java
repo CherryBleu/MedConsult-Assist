@@ -2,7 +2,6 @@ package com.medconsult.medicalrecord.prescription.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
@@ -12,6 +11,7 @@ import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.common.security.JwtPayload;
@@ -27,7 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -67,11 +66,6 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     /** patient_no / doctor_no / department_no → 真实主键 Feign 反查（替代正哈希） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
-    /**
-     * 编程式事务。Feign 反查须在事务之外完成（跨 HTTP 调用不应占用 DB 事务/连接），
-     * 故 create() 不用 @Transactional，而用本模板把纯 DB 写入包起来。
-     */
-    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     /** 审方/缴费/完成/退方锁租约：5s（只改主表状态，单次 DB 操作） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
@@ -85,7 +79,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
      * 开方。
      * <p><b>Feign 反查在事务外</b>：recordId(同服务)/patientId/doctorId/departmentId 反查真实主键
      * 在事务开启前完成（HTTP 调用不占用 DB 事务/连接）。反查通过后，DB 写入用
-     * {@link #transactionTemplate} 包事务。
+     * {@link PrescriptionTxService#createInTx} 事务方法。
      */
     @Override
     public PrescriptionDTO.CreateResponse create(PrescriptionDTO.CreateRequest req) {
@@ -99,64 +93,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
                 ? resolveDepartmentId(req.getDepartmentId()) : null;
 
         // ② 事务内：纯 DB 写入（无远程调用，事务持有时间短）
-        return transactionTemplate.execute(status -> doCreate(req, recordId, patientId, doctorId, departmentId));
-    }
-
-    /**
-     * 事务内的纯 DB 写入（由 {@link #create} 经 {@link #transactionTemplate} 调用，
-     * 故本方法不加 @Transactional——自调用下 @Transactional 不生效，事务边界由 TransactionTemplate 划定）。
-     */
-    protected PrescriptionDTO.CreateResponse doCreate(PrescriptionDTO.CreateRequest req,
-                                                      Long recordId, Long patientId, Long doctorId, Long departmentId) {
-        Prescription p = new Prescription();
-        p.setPrescriptionNo(generatePrescriptionNo());
-        p.setRecordId(recordId);
-        p.setPatientId(patientId);
-        p.setDoctorId(doctorId);
-        if (departmentId != null) {
-            p.setDepartmentId(departmentId);
-        }
-        p.setStatus("DRAFT");
-        p.setPaymentStatus("UNPAID");
-        p.setSource(req.getSource() == null || req.getSource().isBlank() ? "OUTPATIENT" : req.getSource());
-
-        // 插入主表先拿到 id
-        prescriptionMapper.insert(p);
-
-        // 遍历明细：累加 totalFee + 组装明细对象（批量落库，避免 N+1 写）
-        // 处方常有十几味药，逐条 insert 会产生 N+1 写；此处先组装列表再 saveBatch 一次性入库。
-        BigDecimal totalFee = BigDecimal.ZERO;
-        List<PrescriptionItem> items = new ArrayList<>(req.getItems().size());
-        for (PrescriptionDTO.ItemRequest item : req.getItems()) {
-            PrescriptionItem pi = new PrescriptionItem();
-            pi.setPrescriptionId(p.getId());
-            // drug_id 保持 null（预留）；drugNo 非空时存 drug_no，dispense 时用它调 drug-service
-            pi.setDrugNo(item.getDrugNo());
-            pi.setDrugNameSnapshot(item.getDrugName());
-            pi.setSpecificationSnapshot(item.getSpecification());
-            pi.setDosage(item.getDosage());
-            pi.setFrequency(item.getFrequency());
-            pi.setRoute(item.getRoute());
-            pi.setDays(item.getDays());
-            pi.setQuantity(item.getQuantity());
-            pi.setUnit(item.getUnit());
-            BigDecimal unitPrice = item.getUnitPrice() == null ? BigDecimal.ZERO : item.getUnitPrice();
-            pi.setUnitPrice(unitPrice);
-            BigDecimal qty = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
-            BigDecimal subtotal = unitPrice.multiply(qty);
-            pi.setSubtotal(subtotal);
-            items.add(pi);
-            totalFee = totalFee.add(subtotal);
-        }
-        // 批量插入明细（一次 SQL 批次，替代循环内逐条 insert）
-        com.baomidou.mybatisplus.extension.toolkit.Db.saveBatch(items);
-        // 回填 totalFee
-        p.setTotalFee(totalFee);
-        prescriptionMapper.updateById(p);
-
-        log.info("处方创建: prescriptionNo={} items={} totalFee={}",
-                p.getPrescriptionNo(), req.getItems().size(), totalFee);
-        return new PrescriptionDTO.CreateResponse(p.getPrescriptionNo(), p.getStatus(), totalFee);
+        return txService.createInTx(req, recordId, patientId, doctorId, departmentId);
     }
 
     // ===== 列表 =====
@@ -225,6 +162,11 @@ public class PrescriptionServiceImpl implements PrescriptionService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "SUBMIT",
+            resourceId = "#result.prescriptionId()",
+            detail = "'status=' + #result.status()")
     public PrescriptionDTO.SubmitResponse submit(String prescriptionNo) {
         Prescription p = requireByNo(prescriptionNo);
         if (!"DRAFT".equals(p.getStatus())) {
@@ -433,9 +375,4 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         return payload.roles() != null && payload.roles().contains("PATIENT");
     }
 
-    /** 生成处方编号：RX + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_prescription_no 兜底 */
-    private static String generatePrescriptionNo() {
-        long id = IdWorker.getId();
-        return "RX" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
-    }
 }

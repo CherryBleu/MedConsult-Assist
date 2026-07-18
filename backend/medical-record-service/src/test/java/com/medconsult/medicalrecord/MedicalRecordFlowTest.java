@@ -1,5 +1,6 @@
 package com.medconsult.medicalrecord;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
@@ -16,10 +17,16 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -565,6 +572,111 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
+    @Test
+    void clinicalDocumentMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        String traceId = "trace-medical-record-audit";
+        String recordBody = """
+                {"patientId":"%s","doctorId":"%s","chiefComplaint":"audit complaint",
+                 "initialDiagnosis":["audit diagnosis"],"doctorAdvice":"initial advice"}"""
+                .formatted(PATIENT_NO, DOCTOR_NO);
+        MvcResult recordResult = mvc.perform(doctorAuth(post("/api/v1/medical-records")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content(recordBody)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String recordNo = om.readTree(recordResult.getResponse().getContentAsString())
+                .at("/data/recordId").asText();
+
+        mvc.perform(doctorAuth(put("/api/v1/medical-records/" + recordNo)
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"doctorAdvice\":\"audit updated advice\"}")))
+                .andExpect(status().isOk());
+
+        mvc.perform(doctorAuth(post("/api/v1/attachments")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"bizType":"MEDICAL_RECORD","bizId":"%s","fileName":"audit.pdf",
+                                 "fileType":"PDF","fileUrl":"/files/audit.pdf","fileSize":1024}"""
+                                .formatted(recordNo))))
+                .andExpect(status().isOk());
+
+        String completedRxNo = createPrescriptionForRecord(recordNo, traceId);
+        submitPrescription(completedRxNo, traceId);
+        approvePrescription(completedRxNo, traceId);
+        mvc.perform(selfPatientAuth(post("/api/v1/prescriptions/" + completedRxNo + "/pay")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY-AUDIT\"}")))
+                .andExpect(status().isOk());
+        when(drugFeignClient.outbound(any(), any())).thenReturn(
+                Result.ok(new DispenseDTO.OutboundResponse("SF_AUDIT", "D001", 50)));
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + completedRxNo + "/dispense")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
+                .andExpect(status().isOk());
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + completedRxNo + "/complete")
+                        .header("X-Trace-Id", traceId)))
+                .andExpect(status().isOk());
+
+        String cancelledRxNo = createPrescriptionForRecord(recordNo, traceId);
+        submitPrescription(cancelledRxNo, traceId);
+        approvePrescription(cancelledRxNo, traceId);
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + cancelledRxNo + "/cancel")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"cancelReason\":\"audit cancel\",\"operatorId\":\"D10001\"}")))
+                .andExpect(status().isOk());
+
+        mvc.perform(doctorAuth(post("/api/v1/medical-records/" + recordNo + "/archive")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"confirmBy\":\"D10001\",\"confirmNote\":\"audit archive\"}")))
+                .andExpect(status().isOk());
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                ORDER BY id
+                """);
+        assertEquals(14, rows.size());
+
+        List<String> events = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            assertEquals("medconsult.log", row.get("exchange"));
+            assertEquals("audit.log", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+            assertTrue(String.valueOf(row.get("message_no")).startsWith("audit:"));
+
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            assertEquals(traceId, payload.get("traceId").asText());
+            assertEquals("SUCCESS", payload.get("result").asText());
+            assertFalse(payload.get("resourceId").asText().isBlank());
+            events.add(payload.get("resourceType").asText() + ":" + payload.get("action").asText());
+        }
+        assertEquals(List.of(
+                "MEDICAL_RECORD:CREATE",
+                "MEDICAL_RECORD:UPDATE",
+                "ATTACHMENT:CREATE",
+                "PRESCRIPTION:CREATE",
+                "PRESCRIPTION:SUBMIT",
+                "PRESCRIPTION:REVIEW",
+                "PRESCRIPTION:PAYMENT",
+                "PRESCRIPTION:DISPENSE",
+                "PRESCRIPTION:COMPLETE",
+                "PRESCRIPTION:CREATE",
+                "PRESCRIPTION:SUBMIT",
+                "PRESCRIPTION:REVIEW",
+                "PRESCRIPTION:CANCEL",
+                "MEDICAL_RECORD:ARCHIVE"), events);
+    }
+
     // ===== 测试助手 =====
 
     /** 创建病历（医生身份），返回 record_no */
@@ -606,12 +718,42 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk());
     }
 
+    private void submitPrescription(String rxNo, String traceId) throws Exception {
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")
+                        .header("X-Trace-Id", traceId)))
+                .andExpect(status().isOk());
+    }
+
     /** 审方通过（PENDING_REVIEW → APPROVED） */
     private void approvePrescription(String rxNo) throws Exception {
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
                         .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}")))
                 .andExpect(status().isOk());
+    }
+
+    private void approvePrescription(String rxNo, String traceId) throws Exception {
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"audit review\"}")))
+                .andExpect(status().isOk());
+    }
+
+    private String createPrescriptionForRecord(String recordNo, String traceId) throws Exception {
+        String body = """
+                {"recordId":"%s","patientId":"%s","doctorId":"%s","source":"OUTPATIENT",
+                 "items":[{"drugNo":"D001","drugName":"audit drug","specification":"30mg*7",
+                           "dosage":"30mg","frequency":"daily","days":7,"quantity":7,
+                           "unit":"tablet","unitPrice":30.00}]}"""
+                .formatted(recordNo, PATIENT_NO, DOCTOR_NO);
+        MvcResult r = mvc.perform(doctorAuth(post("/api/v1/prescriptions")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content(body)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return om.readTree(r.getResponse().getContentAsString()).at("/data/prescriptionId").asText();
     }
 
     /** 创建已审通过的处方（DRAFT→submit→review APPROVE），返回 prescription_no */

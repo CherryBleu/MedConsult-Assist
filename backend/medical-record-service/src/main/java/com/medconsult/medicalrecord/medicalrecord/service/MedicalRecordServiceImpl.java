@@ -2,7 +2,6 @@ package com.medconsult.medicalrecord.medicalrecord.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -17,6 +16,7 @@ import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
 import com.medconsult.medicalrecord.medicalrecord.entity.MedicalRecord;
 import com.medconsult.medicalrecord.medicalrecord.mapper.MedicalRecordMapper;
@@ -57,18 +57,14 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     /** Feign 反查 patient_no / doctor_no → 真实 BIGINT 主键（替代正哈希占位，根治串号） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
-    /**
-     * 编程式事务。Feign 反查须在事务之外完成（跨 HTTP 调用不应占用 DB 事务/连接），
-     * 故 create() 不用 @Transactional，而用本模板把纯 DB 写入包起来。
-     */
-    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+    private final MedicalRecordTxService txService;
 
     // ===== §2.6.1 创建 =====
 
     /**
      * 创建病历。
      * <p><b>Feign 反查在事务外</b>：patient_no/doctor_no 经 Feign 反查真实主键，HTTP 调用不占用
-     * DB 事务/连接（避免长事务跨网络往返）。反查通过后，DB 写入用 {@link #transactionTemplate} 包事务。
+     * DB 事务/连接（避免长事务跨网络往返）。反查通过后，DB 写入交给 {@link MedicalRecordTxService} 事务方法。
      */
     @Override
     public MedicalRecordDTO.CreateResponse create(MedicalRecordDTO.CreateRequest req) {
@@ -83,7 +79,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
                 ? positiveHash(req.getAppointmentId()) : null;
 
         // ③ 事务内：纯 DB 写入（无远程调用，事务持有时间短）
-        return transactionTemplate.execute(status -> doCreate(req, patientId, doctorId, appointmentId));
+        return txService.createInTx(req, patientId, doctorId, appointmentId);
     }
 
     /**
@@ -110,33 +106,6 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
             req.setDoctorId(String.valueOf(selfDoctorId));
         }
         // HOSPITAL_ADMIN/PHARMACY_ADMIN 保留请求体值（代建场景）
-    }
-
-    /**
-     * 事务内的纯 DB 写入（由 {@link #create} 经 {@link #transactionTemplate} 调用，
-     * 故本方法不加 @Transactional——自调用下 @Transactional 不生效，事务边界由 TransactionTemplate 划定）。
-     */
-    protected MedicalRecordDTO.CreateResponse doCreate(MedicalRecordDTO.CreateRequest req,
-                                                        Long patientId, Long doctorId, Long appointmentId) {
-        MedicalRecord r = new MedicalRecord();
-        r.setRecordNo(generateRecordNo());
-        r.setPatientId(patientId);
-        r.setDoctorId(doctorId);
-        if (appointmentId != null) {
-            r.setAppointmentId(appointmentId);
-        }
-        r.setChiefComplaint(req.getChiefComplaint());
-        r.setPresentIllness(req.getPresentIllness());
-        r.setPastHistory(req.getPastHistory());
-        r.setPhysicalExam(req.getPhysicalExam());
-        r.setInitialDiagnosis(toJsonArray(req.getInitialDiagnosis()));
-        r.setDoctorAdvice(req.getDoctorAdvice());
-        // prescriptionsSnapshot 留 null（修订项 §2.1：处方独立成表）
-        r.setStatus("DRAFT");
-        medicalRecordMapper.insert(r);
-        log.info("病历创建: recordNo={} patientId={} doctorId={}",
-                r.getRecordNo(), req.getPatientId(), req.getDoctorId());
-        return new MedicalRecordDTO.CreateResponse(r.getRecordNo(), r.getStatus());
     }
 
     // ===== §2.6.2 详情 =====
@@ -195,6 +164,11 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "MEDICAL_RECORD",
+            action = "UPDATE",
+            resourceId = "#result.recordId()",
+            detail = "'draft updated'")
     public MedicalRecordDTO.UpdateResponse updateDraft(String recordNo, MedicalRecordDTO.UpdateDraftRequest req) {
         MedicalRecord r = requireByNo(recordNo);
         // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿
@@ -231,6 +205,11 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "MEDICAL_RECORD",
+            action = "ARCHIVE",
+            resourceId = "#result.recordId()",
+            detail = "'status=' + #result.status()")
     public MedicalRecordDTO.ArchiveResponse archive(String recordNo, MedicalRecordDTO.ArchiveRequest req) {
         MedicalRecord r = requireByNo(recordNo);
         // 越权防护（IDOR）：PATIENT 不能归档他人病历（归档由接诊医生触发，此处防越权）
@@ -416,9 +395,4 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         return resp.data().id();
     }
 
-    /** 生成病历编号：MR + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_record_no 兜底 */
-    private static String generateRecordNo() {
-        long id = IdWorker.getId();
-        return "MR" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
-    }
 }

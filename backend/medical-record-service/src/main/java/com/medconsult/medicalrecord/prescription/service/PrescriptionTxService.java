@@ -1,11 +1,13 @@
 package com.medconsult.medicalrecord.prescription.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.dto.DispenseDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
 import com.medconsult.medicalrecord.prescription.entity.PrescriptionItem;
@@ -43,6 +45,63 @@ public class PrescriptionTxService {
     private final PrescriptionItemMapper itemMapper;
     private final DrugFeignClient drugFeignClient;
 
+    @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "CREATE",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p2",
+            detail = "'status=' + #result.status() + ',totalFee=' + #result.totalFee()")
+    public PrescriptionDTO.CreateResponse createInTx(PrescriptionDTO.CreateRequest req,
+                                                     Long recordId,
+                                                     Long patientId,
+                                                     Long doctorId,
+                                                     Long departmentId) {
+        Prescription p = new Prescription();
+        p.setPrescriptionNo(generatePrescriptionNo());
+        p.setRecordId(recordId);
+        p.setPatientId(patientId);
+        p.setDoctorId(doctorId);
+        if (departmentId != null) {
+            p.setDepartmentId(departmentId);
+        }
+        p.setStatus("DRAFT");
+        p.setPaymentStatus("UNPAID");
+        p.setSource(req.getSource() == null || req.getSource().isBlank() ? "OUTPATIENT" : req.getSource());
+
+        prescriptionMapper.insert(p);
+
+        BigDecimal totalFee = BigDecimal.ZERO;
+        List<PrescriptionItem> items = new ArrayList<>(req.getItems().size());
+        for (PrescriptionDTO.ItemRequest item : req.getItems()) {
+            PrescriptionItem pi = new PrescriptionItem();
+            pi.setPrescriptionId(p.getId());
+            pi.setDrugNo(item.getDrugNo());
+            pi.setDrugNameSnapshot(item.getDrugName());
+            pi.setSpecificationSnapshot(item.getSpecification());
+            pi.setDosage(item.getDosage());
+            pi.setFrequency(item.getFrequency());
+            pi.setRoute(item.getRoute());
+            pi.setDays(item.getDays());
+            pi.setQuantity(item.getQuantity());
+            pi.setUnit(item.getUnit());
+            BigDecimal unitPrice = item.getUnitPrice() == null ? BigDecimal.ZERO : item.getUnitPrice();
+            pi.setUnitPrice(unitPrice);
+            BigDecimal qty = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
+            BigDecimal subtotal = unitPrice.multiply(qty);
+            pi.setSubtotal(subtotal);
+            items.add(pi);
+            totalFee = totalFee.add(subtotal);
+        }
+        com.baomidou.mybatisplus.extension.toolkit.Db.saveBatch(items);
+        p.setTotalFee(totalFee);
+        prescriptionMapper.updateById(p);
+
+        log.info("处方创建: prescriptionNo={} items={} totalFee={}",
+                p.getPrescriptionNo(), req.getItems().size(), totalFee);
+        return new PrescriptionDTO.CreateResponse(p.getPrescriptionNo(), p.getStatus(), totalFee);
+    }
+
     /**
      * 审方事务体（锁内执行）。
      *
@@ -53,6 +112,12 @@ public class PrescriptionTxService {
      * @param rejectReason  驳回原因（REJECT 时校验非空）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "REVIEW",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'status=' + #result.status()")
     public PrescriptionDTO.ReviewResponse reviewInTx(Prescription p, String action,
                                                       String pharmacistId,
                                                       String reviewComment,
@@ -119,6 +184,12 @@ public class PrescriptionTxService {
      * @param req 调剂请求（含 pharmacistId + 可选 itemDrugNoMap）
      */
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "DISPENSE",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'status=' + #result.status()")
     public PrescriptionDTO.DispenseResponse dispenseInTx(Prescription p, PrescriptionDTO.DispenseRequest req) {
         // 锁内重查最新状态
         Prescription fresh = prescriptionMapper.selectById(p.getId());
@@ -228,6 +299,12 @@ public class PrescriptionTxService {
      * <p>锁内重查状态防并发：dispense 可能已把 APPROVED 转走，或 cancel 已取消。
      */
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "PAYMENT",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'paymentStatus=' + #result.paymentStatus()")
     public PrescriptionDTO.PayResponse payInTx(Prescription p, PrescriptionDTO.PayRequest req) {
         Prescription fresh = prescriptionMapper.selectById(p.getId());
         if (fresh == null) {
@@ -252,6 +329,12 @@ public class PrescriptionTxService {
      * 完成事务体（锁内）：DISPENSED → COMPLETED。
      */
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "COMPLETE",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'status=' + #result.status()")
     public PrescriptionDTO.CompleteResponse completeInTx(Prescription p) {
         Prescription fresh = prescriptionMapper.selectById(p.getId());
         if (fresh == null) {
@@ -272,6 +355,12 @@ public class PrescriptionTxService {
      * <p>锁内重查防与 dispense 竞态：dispense 可能正在扣库存，cancel 须等锁释放后重查。
      */
     @Transactional
+    @AuditLog(
+            resourceType = "PRESCRIPTION",
+            action = "CANCEL",
+            resourceId = "#result.prescriptionId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'reason=' + #result.cancelReason()")
     public PrescriptionDTO.CancelResponse cancelInTx(Prescription p, PrescriptionDTO.CancelRequest req) {
         Prescription fresh = prescriptionMapper.selectById(p.getId());
         if (fresh == null) {
@@ -325,6 +414,12 @@ public class PrescriptionTxService {
                         prescriptionNo, r.drugNo(), r.prescriptionItemId(), ex);
             }
         }
+    }
+
+    /** 生成处方编号：RX + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_prescription_no 兜底 */
+    private static String generatePrescriptionNo() {
+        long id = IdWorker.getId();
+        return "RX" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
     }
 
     /** 业务编号 → 正哈希 Long（与病历域同款策略） */

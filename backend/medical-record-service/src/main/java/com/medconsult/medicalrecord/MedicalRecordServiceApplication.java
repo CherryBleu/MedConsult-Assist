@@ -12,8 +12,8 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * <p>{@link EnableDiscoveryClient} 注册到 Nacos（架构文档 §1.3）。
  * <p>{@link MapperScan} 扫描 medicalrecord 包下所有领域子包的 Mapper
  *     （medicalrecord / prescription 两个领域的 **.mapper）。
- * <p>{@code scanBasePackages = {"com.medconsult.medicalrecord", "com.medconsult.common.web"}} 让 common-web 的
- * GlobalExceptionHandler / TraceIdFilter / ResultBodyAdvice 等 @Component 被扫描。
+ * <p>{@code scanBasePackages} 让 common-web 的 GlobalExceptionHandler / TraceIdFilter / ResultBodyAdvice，
+ * 以及 common-mq 的审计 outbox 自动装配组件被扫描。
  *
  * <p>本服务第 1 批核心职责（架构文档 §2.3 / 《需求文档》§4.1.3-4.1.4 / 《接口文档》§2.6 / 《修改建议》§2.1）：
  * <ul>
@@ -22,13 +22,16 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  *   <li>内部接口 /internal/medical-records/{id}/full 供 ai-service 做病历摘要（架构文档 §2.3）</li>
  * </ul>
  *
- * <p>第 1 批 <b>不</b>包含：处方缴费/调剂发药/完成/退方（依赖 drug-service Feign + MQ，留第 2 批）。
- * 因此本批 <b>不</b>依赖 common-feign / common-mq。
+ * <p>审计生产端使用 common-mq 的 @AuditLog + local_message outbox，把病历、附件和处方写操作投递到 audit.log。
  */
-@SpringBootApplication(scanBasePackages = {"com.medconsult.medicalrecord", "com.medconsult.common.web"})
+@SpringBootApplication(scanBasePackages = {
+        "com.medconsult.medicalrecord",
+        "com.medconsult.common.web",
+        "com.medconsult.common.mq"
+})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
-@MapperScan("com.medconsult.medicalrecord.**.mapper")
+@MapperScan({"com.medconsult.medicalrecord.**.mapper", "com.medconsult.common.mq"})
 public class MedicalRecordServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(MedicalRecordServiceApplication.class, args);

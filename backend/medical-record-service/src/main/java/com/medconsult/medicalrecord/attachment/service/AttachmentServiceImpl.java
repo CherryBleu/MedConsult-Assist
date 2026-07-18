@@ -2,6 +2,7 @@ package com.medconsult.medicalrecord.attachment.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.medicalrecord.attachment.dto.AttachmentDTO;
 import com.medconsult.medicalrecord.attachment.dto.AttachmentDTO.ListItem;
@@ -31,6 +32,11 @@ public class AttachmentServiceImpl implements AttachmentService {
     /** §2.8.4 创建附件记录 */
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "ATTACHMENT",
+            action = "CREATE",
+            resourceId = "#result.attachmentId()",
+            detail = "'bizType=' + #result.bizType() + ',bizId=' + #result.bizId()")
     public AttachmentDTO.CreateResponse create(AttachmentDTO.CreateRequest req) {
         Attachment a = new Attachment();
         a.setAttachmentNo(generateAttachmentNo());

@@ -54,11 +54,11 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
-        <!--
-            注：本服务不依赖 common-mq。
-            - dispense 已选同步 Feign（见上），无需本地消息表
-            - notification/audit 的异步通知在 notification-service 侧消费，medical-record 只需写库
-        -->
+        <!-- common-mq：病历/附件/处方写操作通过 @AuditLog 写 local_message，再可靠投递 audit.log。 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mq</artifactId>
+        </dependency>
 
         <!-- SCA: Nacos 注册 + 配置（红线 1 的运行时冒烟对象） -->
         <dependency>
