@@ -87,7 +87,50 @@ powershell -Command "Invoke-RestMethod http://localhost:9091/healthz"
 # 期望输出：OK
 ```
 
-### 3.3 REST v2 接口验证
+### 3.3 建库、导入与 flush
+
+Milvus REST 创建 collection 前必须先存在 database；如本地只有 `default`，先用 `pymilvus` 创建 `medical`：
+
+```powershell
+@'
+from pymilvus import MilvusClient
+client = MilvusClient(uri='http://localhost:19530', token='root:Milvus')
+if 'medical' not in client.list_databases():
+    client.create_database('medical')
+print(client.list_databases())
+'@ | python -
+```
+
+导入器必须与 ai-service 使用同一 embedding 模型、维度、库、集合和 metric：
+
+```powershell
+$env:MEDICAL_DATA_INPUT = "backend/data/medical.data.unified.json"
+$env:EMBEDDING_BASE_URL = "http://localhost:7997/v1"
+$env:EMBEDDING_API_KEY = "not-needed"
+$env:EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
+$env:EMBEDDING_DIMENSION = "512"
+$env:MILVUS_URI = "http://localhost:19530"
+$env:MILVUS_TOKEN = "root:Milvus"
+$env:MILVUS_DATABASE = "medical"
+$env:MILVUS_COLLECTION = "data"
+$env:MILVUS_METRIC_TYPE = "COSINE"
+mvn -f backend/pom.xml -pl :medical-data-milvus-importer exec:java
+```
+
+本地 Milvus 2.4.13 REST v2 不支持 `/v2/vectordb/collections/flush`。导入后如果 `get_stats` 仍为 0，执行一次 gRPC flush：
+
+```powershell
+@'
+from pymilvus import MilvusClient
+client = MilvusClient(uri='http://localhost:19530', token='root:Milvus', db_name='medical')
+client.flush(collection_name='data')
+print(client.query(collection_name='data', filter='', output_fields=['count(*)']))
+'@ | python -
+```
+
+2026-07-19 本地证据：导入器读取 8807 条、写入 8807 条；`count(*)=8807`，源 JSON 8807 个唯一 `_id` 与 Milvus 可查询 `id` 完全一致。重复 upsert 后 REST `get_stats.rowCount` 可能大于 8807（当前 8817），不能单独当作业务主键数量。
+
+### 3.4 REST v2 接口验证
 
 ```powershell
 # 列出 collection（导入完成后应包含 data）
@@ -100,7 +143,7 @@ Invoke-RestMethod -Uri http://localhost:19530/v2/vectordb/collections/list `
 $statsBody = '{"dbName":"medical","collectionName":"data"}'
 Invoke-RestMethod -Uri http://localhost:19530/v2/vectordb/collections/get_stats `
     -Method Post -ContentType "application/json" -Body $statsBody
-# 期望：rowCount/num_entities 约 8807（低于该值需重新导入向量）
+# 期望：rowCount > 0；精确业务数量以 pymilvus count(*) 和主键对账为准
 ```
 
 > 注意：ai-service 运行时调 `/v2/vectordb/entities/search`，并在启动/人工刷新时通过
@@ -346,9 +389,9 @@ java -jar target\ai-service-0.1.0-SNAPSHOT.jar
 
 ## 10. 已知遗留项（不在本次范围）
 
-1. **疾病 JSON 编码乱码**：`backend/data/medical.data.unified.json` 中文为 GBK 被当 UTF-8 读取的乱码，需重新获取正确编码的源数据。
+1. ~~**疾病 JSON 编码乱码**~~：2026-07-19 已复核当前 `backend/data/medical.data.unified.json` 可按 UTF-8 读取，Mongo/Milvus 样本中文字段正常。
 2. ~~**data 模块孤儿问题**~~：**已修复**——`backend/data/pom.xml` 的 parent 已改为 `medconsult-parent`，并已挂进 `backend/pom.xml` 的 `<modules>`（`<module>data</module>`），可正常构建。
-3. **Milvus 数据导入**：依赖第 1 项修复 + embedding 接口 + 8807 条数据约 8807 次 embedding 调用，建议单独安排。
-4. **MongoDB 数据导入**：同源 JSON，同样需要正确编码版本，用 `mongoimport` 导入。
+3. ~~**Milvus 数据导入**~~：2026-07-19 已导入 `medical.data`，可查询 8807 个源 JSON 主键；后续仍需固定症状探针和召回质量门禁。
+4. ~~**MongoDB 数据导入**~~：2026-07-19 已验收 `medconsult.diseases=8807`。
 
 这三项的修复方案见主整合文档 `docs/三分支整合说明.md` §7 后续计划。

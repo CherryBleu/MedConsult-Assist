@@ -51,14 +51,7 @@ public class MedicalDataMilvusImporter {
                 + ", collection=" + config.milvusCollection());
         System.out.println("embedding model=" + config.embeddingModel() + ", dimension=" + config.embeddingDimension());
 
-        OpenAiEmbeddingClient embeddingClient = new OpenAiEmbeddingClient(config);
-        MilvusRestClient milvusClient = new MilvusRestClient(config);
-        if (!config.dryRun()) {
-            milvusClient.ensureDatabase();
-            milvusClient.ensureCollection();
-        }
-
-        ImportStats stats = importData(config, embeddingClient, milvusClient);
+        ImportStats stats = run(config);
         System.out.printf(Locale.ROOT, "完成：读取 %d 条，跳过 %d 条，写入 %d 条。%n",
                 stats.read(), stats.skipped(), stats.upserted());
     }
@@ -80,6 +73,21 @@ public class MedicalDataMilvusImporter {
     private static void configureConsole(Charset charset) {
         System.setOut(new PrintStream(System.out, true, charset));
         System.setErr(new PrintStream(System.err, true, charset));
+    }
+
+    static ImportStats run(Config config) throws Exception {
+        OpenAiEmbeddingClient embeddingClient = new OpenAiEmbeddingClient(config);
+        MilvusRestClient milvusClient = new MilvusRestClient(config);
+        if (!config.dryRun()) {
+            milvusClient.ensureDatabase();
+            milvusClient.ensureCollection();
+        }
+
+        ImportStats stats = importData(config, embeddingClient, milvusClient);
+        if (!config.dryRun() && stats.upserted() > 0) {
+            milvusClient.flushCollection();
+        }
+        return stats;
     }
 
     private static ImportStats importData(Config config, OpenAiEmbeddingClient embeddingClient, MilvusRestClient milvusClient)
@@ -458,6 +466,25 @@ public class MedicalDataMilvusImporter {
             assertMilvusSuccess(postMilvus("/v2/vectordb/entities/upsert", payload, false), "写入 Milvus");
         }
 
+        void flushCollection() throws Exception {
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("dbName", config.milvusDatabase());
+            payload.put("collectionName", config.milvusCollection());
+            try {
+                assertMilvusSuccess(postMilvus("/v2/vectordb/collections/flush", payload, false),
+                        "刷新 Milvus collection");
+            } catch (IllegalStateException ex) {
+                if (ex.getMessage().contains("HTTP 404")) {
+                    System.out.println("注意：当前 Milvus REST 不支持 collection flush；"
+                            + "如 get_stats 仍为 0，请使用 pymilvus 对 '"
+                            + config.milvusDatabase() + "." + config.milvusCollection()
+                            + "' 执行 flush。");
+                    return;
+                }
+                throw ex;
+            }
+        }
+
         private void loadCollection() throws Exception {
             ObjectNode payload = MAPPER.createObjectNode();
             payload.put("dbName", config.milvusDatabase());
@@ -608,7 +635,7 @@ public class MedicalDataMilvusImporter {
         }
     }
 
-    private static final class ImportStats {
+    static final class ImportStats {
         private int read;
         private int skipped;
         private int upserted;
