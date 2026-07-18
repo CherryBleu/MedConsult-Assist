@@ -30,6 +30,57 @@ import static org.mockito.Mockito.when;
 class DiseaseSearchServiceTest {
 
     @Test
+    void extractIntentShouldUseLocalRulesWithoutCallingGenerativeLlm() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+
+        DiseaseIntent intent = service.extractIntent("cough for three days");
+
+        assertEquals(1, intent.candidates().size());
+        assertTrue(intent.candidates().getFirst().isPlaceholderDiseaseName());
+        assertEquals(List.of("cough for three days"), intent.candidates().getFirst().symptoms());
+        assertTrue(intent.metadataQuery().requestedFields().isEmpty());
+        verify(llmClient, times(0)).chatJson(anyString(), anyString());
+        verify(llmClient, times(0)).embedOne(anyString());
+    }
+
+    @Test
+    void extractIntentShouldMapFieldKeywordsSymptomsAndExplicitDiseaseNames() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+
+        DiseaseIntent intent = service.extractIntent(
+                "我想咨询肺炎。孩子咳嗽像鸡叫，挂号，医保，怎么治疗，费用，化验，用药，饮食"
+        );
+
+        assertEquals("肺炎", intent.candidates().getFirst().diseaseName());
+        assertTrue(intent.candidates().getLast().isPlaceholderDiseaseName());
+        assertTrue(intent.candidates().getLast().symptoms().contains("咳嗽"));
+        assertTrue(intent.metadataQuery().requestedFields().containsAll(List.of(
+                "cure_department",
+                "yibao_status",
+                "cure_way",
+                "cure_lasttime",
+                "cost_money",
+                "check",
+                "common_drug",
+                "recommand_drug",
+                "do_eat",
+                "not_eat",
+                "recommand_eat"
+        )));
+        assertEquals(List.of("儿科"), intent.metadataQuery().filters().get("cure_department"));
+    }
+
+    @Test
     void namedCandidateSearchShouldReturnFiveResultsWhenTopKIsFive() {
         OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
         MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
@@ -71,6 +122,106 @@ class DiseaseSearchServiceTest {
         assertEquals("Disease-1", results.getFirst().diseaseName());
         assertEquals("Disease-10", results.getLast().diseaseName());
         verify(mongoDiseaseRepository, times(10)).findByNameExact(anyString());
+    }
+
+    @Test
+    void namedCandidateSearchShouldUseCachedKnowledgeWithoutRepositoryLookup() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("Disease-1", List.of("cough"), "cached candidate")),
+                new MetadataQuery(List.of("check"), Map.of())
+        );
+        DiseaseKnowledge cached = knowledge("redis-1", "Disease-1", 0.99, MatchSource.REDIS_CACHE);
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.of(cached));
+
+        List<DiseaseKnowledge> results = service.search("cough", intent, 1);
+
+        assertEquals(List.of("Disease-1"), results.stream().map(DiseaseKnowledge::diseaseName).toList());
+        assertEquals(MatchSource.REDIS_CACHE, results.getFirst().source());
+        verify(mongoDiseaseRepository, times(0)).findByNameExact(anyString());
+        verify(llmClient, times(0)).embedOne(anyString());
+        verify(milvusRestClient, times(0)).search(anyList(), eq(1));
+    }
+
+    @Test
+    void namedCandidateSearchShouldUseMilvusWhenCacheAndMongoMiss() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("Disease-1", List.of("cough"), "semantic candidate")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        DiseaseKnowledge semantic = knowledge("milvus-1", "Disease-1", 0.91, MatchSource.MILVUS_SEMANTIC);
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(mongoDiseaseRepository.findByNameExact("Disease-1")).thenReturn(Optional.empty());
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f)));
+        when(milvusRestClient.search(anyList(), eq(1))).thenReturn(List.of(semantic));
+
+        List<DiseaseKnowledge> results = service.search("cough", intent, 1);
+
+        assertEquals(List.of("Disease-1"), results.stream().map(DiseaseKnowledge::diseaseName).toList());
+        assertEquals(MatchSource.MILVUS_SEMANTIC, results.getFirst().source());
+        verify(cacheService).put(anyString(), any(), any(), eq(semantic));
+    }
+
+    @Test
+    void namedCandidateSearchShouldSkipFailedCandidateAndReturnSuccessfulCandidates() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(
+                        new DiseaseCandidate("Disease-1", List.of("cough"), "broken downstream"),
+                        new DiseaseCandidate("Disease-2", List.of("cough"), "healthy downstream")
+                ),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(mongoDiseaseRepository.findByNameExact("Disease-1"))
+                .thenThrow(new IllegalStateException("mongo unavailable"));
+        when(mongoDiseaseRepository.findByNameExact("Disease-2"))
+                .thenReturn(Optional.of(knowledge("mongo-2", "Disease-2", 1.0, MatchSource.MONGODB_NAME_EXACT)));
+
+        List<DiseaseKnowledge> results = service.search("cough", intent, 2);
+
+        assertEquals(List.of("Disease-2"), results.stream().map(DiseaseKnowledge::diseaseName).toList());
+    }
+
+    @Test
+    void symptomSearchShouldReturnMongoMatchesWithoutSemanticWhenEnough() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("unknown", List.of("cough", "fever"), "symptom-only input")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(mongoDiseaseRepository.findBySymptom(List.of("cough", "fever"), 2)).thenReturn(List.of(
+                knowledge("mongo-1", "Disease-1", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-2", "Disease-2", 1.0, MatchSource.MONGODB_NAME_EXACT)
+        ));
+
+        List<DiseaseKnowledge> results = service.search("cough fever", intent, 2);
+
+        assertEquals(List.of("Disease-1", "Disease-2"),
+                results.stream().map(DiseaseKnowledge::diseaseName).toList());
+        verify(llmClient, times(0)).embedOne(anyString());
+        verify(milvusRestClient, times(0)).search(anyList(), eq(2));
     }
 
     @Test
