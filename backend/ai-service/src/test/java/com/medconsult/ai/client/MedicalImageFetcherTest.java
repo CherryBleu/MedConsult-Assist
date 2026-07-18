@@ -53,6 +53,106 @@ class MedicalImageFetcherTest {
     }
 
     @Test
+    void validateSourcesShouldAcceptCanonicalMinioLocatorsAndRejectUnsafeForms() {
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), mock(MinioClient.class));
+
+        fetcher.validateSources(List.of(
+                "minio://medical/studies/scan.dcm",
+                "minio://medical/nested/image.png"));
+
+        assertEquals("image sources are required", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(null)).getMessage());
+        assertEquals("image sources are required", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(List.of())).getMessage());
+        assertEquals("image source must not be blank", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(List.of("  "))).getMessage());
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(List.of("https://files.example.test/scan.dcm")))
+                .getMessage().contains("canonical minio locator"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(List.of("minio://medical//scan.dcm")))
+                .getMessage().contains("untrusted minio locator"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateSources(List.of("minio://medical/studies/../scan.dcm")))
+                .getMessage().contains("untrusted minio locator"));
+    }
+
+    @Test
+    void validateLegacyHttpSourcesShouldRequireHttpUrlFromConfiguredOrigins() {
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "https://files.example.test", 2, 1024));
+
+        fetcher.validateLegacyHttpSources(List.of(
+                "http://minio.internal:9000/medical/studies/scan.dcm",
+                "https://files.example.test/medical/studies/scan.png"));
+
+        MedicalImageFetcher defaultPortFetcher = new MedicalImageFetcher(
+                properties("http://storage.example.test", "https://cdn.example.test", 2, 1024));
+        defaultPortFetcher.validateLegacyHttpSources(List.of(
+                "http://storage.example.test/studies/scan.jpg",
+                "https://cdn.example.test/studies/scan.jpg"));
+
+        assertEquals("image sources are required", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(null)).getMessage());
+        assertEquals("image sources are required", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(List.of())).getMessage());
+        assertEquals("image source must not be blank", assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(List.of(" "))).getMessage());
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(List.of("minio://medical/studies/scan.dcm")))
+                .getMessage().contains("http(s) url"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(List.of("https://internal.metadata/latest")))
+                .getMessage().contains("blocked SSRF target host"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> fetcher.validateLegacyHttpSources(List.of("https://other.example.test/studies/scan.dcm")))
+                .getMessage().contains("file storage origin"));
+    }
+
+    @Test
+    void fetchShouldRejectMinioLocatorWhenClientIsNotConfigured() {
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), null);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fetcher.fetch(List.of("minio://medical/studies/scan.dcm")));
+
+        assertEquals("MINIO client is not configured", error.getMessage());
+    }
+
+    @Test
+    void fetchShouldRejectMaxBytesAtIntegerLimitBeforeReadingMinioStream() throws Exception {
+        byte[] image = {1, 2, 3};
+        AtomicInteger bytesSupplied = new AtomicInteger();
+        MinioClient minio = mock(MinioClient.class);
+        GetObjectResponse response = streamResponse(image, bytesSupplied);
+        when(minio.getObject(any(GetObjectArgs.class))).thenReturn(response);
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, Integer.MAX_VALUE), minio);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fetcher.fetch(List.of("minio://medical/studies/scan.dcm")));
+
+        assertEquals("image max bytes must be less than " + Integer.MAX_VALUE, error.getMessage());
+        assertEquals(0, bytesSupplied.get());
+    }
+
+    @Test
+    void fetchShouldWrapMinioClientFailure() throws Exception {
+        MinioClient minio = mock(MinioClient.class);
+        when(minio.getObject(any(GetObjectArgs.class))).thenThrow(new IOException("minio offline"));
+        MedicalImageFetcher fetcher = new MedicalImageFetcher(
+                properties("http://minio.internal:9000", "", 2, 1024), minio);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fetcher.fetch(List.of("minio://medical/studies/scan.dcm")));
+
+        assertEquals("image fetch failed: minio://medical/studies/scan.dcm", error.getMessage());
+        assertTrue(error.getCause() instanceof IOException);
+    }
+
+    @Test
     void fetchShouldRejectUntrustedMinioLocatorFormsBeforeObjectRead() throws Exception {
         MinioClient minio = mock(MinioClient.class);
         MedicalImageFetcher fetcher = new MedicalImageFetcher(
