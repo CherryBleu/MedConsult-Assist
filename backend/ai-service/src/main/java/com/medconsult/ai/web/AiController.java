@@ -238,12 +238,14 @@ public class AiController {
     // ===== 反馈 =====
 
     @Operation(summary = "提交 AI 反馈")
+    @Permission(roles = {"PATIENT", "DOCTOR"})
     @PostMapping("/api/v1/ai/feedback")
     public Result<FeedbackResponse> feedback(@Valid @RequestBody FeedbackRequest request) {
         return Result.ok(feedbackService.submit(request));
     }
 
     @Operation(summary = "AI 反馈列表")
+    @Permission(roles = {"HOSPITAL_ADMIN", "DOCTOR"})
     @GetMapping("/api/v1/ai/feedback")
     public Result<List<FeedbackItem>> feedbackList(
             @RequestParam(name = "aiResultType", required = false) String aiResultType,

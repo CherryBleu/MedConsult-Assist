@@ -9,7 +9,12 @@ import com.medconsult.ai.dto.AiModels.FeedbackResponse;
 import com.medconsult.ai.persistence.entity.AiFeedbackEntity;
 import com.medconsult.ai.persistence.mapper.AiFeedbackMapper;
 import com.medconsult.ai.util.BusinessIds;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,12 +28,16 @@ public class FeedbackService {
     }
 
     public FeedbackResponse submit(FeedbackRequest request) {
+        JwtPayload actor = SecurityContext.requireUser();
+        if (actor.userId() == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user identity is incomplete");
+        }
         String feedbackNo = BusinessIds.next("FB");
         AiFeedbackEntity entity = new AiFeedbackEntity();
         entity.setFeedbackNo(feedbackNo);
         entity.setAiResultType(request.aiResultType());
         entity.setAiResultId(request.aiResultId());
-        entity.setFeedbackBy(BusinessIds.numericId(request.feedbackBy()));
+        entity.setFeedbackBy(actor.userId());
         entity.setUseful(Boolean.TRUE.equals(request.useful()) ? 1 : 0);
         entity.setAdopted(Boolean.TRUE.equals(request.adopted()) ? 1 : 0);
         entity.setComment(request.comment());
@@ -38,6 +47,7 @@ public class FeedbackService {
     }
 
     public List<FeedbackItem> list(String aiResultType, String aiResultId) {
+        requireFeedbackManager();
         return feedbackMapper.selectList(new LambdaQueryWrapper<AiFeedbackEntity>()
                         .eq(aiResultType != null && !aiResultType.isBlank(), AiFeedbackEntity::getAiResultType, aiResultType)
                         .eq(aiResultId != null && !aiResultId.isBlank(), AiFeedbackEntity::getAiResultId, aiResultId)
@@ -58,16 +68,31 @@ public class FeedbackService {
      * 管理员回复反馈（对齐前端 POST /ai/feedback/{id}/reply）。
      */
     public FeedbackReplyResponse reply(String feedbackId, FeedbackReplyRequest request) {
+        requireFeedbackManager();
         AiFeedbackEntity entity = feedbackMapper.selectOne(new LambdaQueryWrapper<AiFeedbackEntity>()
                 .eq(AiFeedbackEntity::getFeedbackNo, feedbackId)
                 .last("limit 1"));
         if (entity == null) {
-            throw new com.medconsult.common.core.BusinessException(
-                    com.medconsult.common.core.ErrorCode.NOT_FOUND, "feedback not found");
+            throw new BusinessException(ErrorCode.NOT_FOUND, "feedback not found");
         }
         entity.setAdminReply(request.reply());
         entity.setRepliedAt(LocalDateTime.now());
         feedbackMapper.updateById(entity);
         return new FeedbackReplyResponse(feedbackId, request.reply(), "REPLIED");
+    }
+
+    private static JwtPayload requireFeedbackManager() {
+        JwtPayload actor = SecurityContext.requireUser();
+        if (hasActiveRole(actor, "DOCTOR") || hasActiveRole(actor, "HOSPITAL_ADMIN")) {
+            return actor;
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN, "feedback management role is required");
+    }
+
+    private static boolean hasActiveRole(JwtPayload actor, String role) {
+        if (StringUtils.hasText(actor.primaryRole())) {
+            return role.equals(actor.primaryRole());
+        }
+        return actor.hasRole(role);
     }
 }
