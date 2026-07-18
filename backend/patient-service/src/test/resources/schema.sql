@@ -27,3 +27,18 @@ CREATE TABLE IF NOT EXISTS patient (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_patient_no ON patient(patient_no);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_patient_id_card ON patient(id_type, id_no);
+
+CREATE TABLE IF NOT EXISTS local_message (
+    id              BIGINT       NOT NULL,
+    message_no      VARCHAR(64),
+    exchange        VARCHAR(100),
+    routing_key     VARCHAR(100),
+    payload_json    CLOB,
+    status          VARCHAR(20),
+    retry_count     INT,
+    next_retry_at   TIMESTAMP,
+    created_at      TIMESTAMP,
+    updated_at      TIMESTAMP,
+    PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_local_message_no ON local_message(message_no);

@@ -1,12 +1,10 @@
-package com.medconsult.notification.consumer;
+package com.medconsult.common.mq.audit;
 
 import lombok.Data;
 
 /**
- * 审计事件消息体（MQ payload 反序列化目标）。
- *
- * <p>生产端（未来各服务 AOP @AuditLog 拦截器）把审计事件序列化为 JSON 发到 audit.log 队列；
- * 本类是反序列化目标，字段与 {@link com.medconsult.notification.audit.dto.AuditLogDTO.WriteRequest} 对齐。
+ * Audit event payload consumed by notification-service and persisted to
+ * audit_log.
  */
 @Data
 public class AuditLogEvent {

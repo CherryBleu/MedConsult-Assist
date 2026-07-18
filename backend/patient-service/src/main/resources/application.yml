@@ -15,6 +15,19 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${MYSQL_USER:medconsult}
     password: ${MYSQL_PASSWORD:medconsult123}
+  # Redis / RabbitMQ：@AuditLog 生产端 outbox 的投递与幂等基础设施。
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:medconsult}
+    password: ${RABBITMQ_PASSWORD:medconsult123}
+    publisher-confirm-type: correlated
+    publisher-returns: true
   sql:
     init:
       mode: always

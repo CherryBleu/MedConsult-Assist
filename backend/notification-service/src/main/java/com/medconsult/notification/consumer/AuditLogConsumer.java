@@ -3,6 +3,7 @@ package com.medconsult.notification.consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.mq.IdempotentConsumer;
 import com.medconsult.common.mq.MqConstants;
+import com.medconsult.common.mq.audit.AuditLogEvent;
 import com.medconsult.notification.audit.dto.AuditLogDTO;
 import com.medconsult.notification.audit.service.AuditLogService;
 import lombok.RequiredArgsConstructor;

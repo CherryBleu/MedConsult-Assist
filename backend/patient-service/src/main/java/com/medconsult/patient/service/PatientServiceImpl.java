@@ -13,6 +13,7 @@ import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.web.MaskType;
@@ -63,6 +64,12 @@ public class PatientServiceImpl implements PatientService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "PATIENT",
+            action = "CREATE",
+            resourceId = "#result.patientId()",
+            resourceName = "#result.name()",
+            detail = "'patient archive created'")
     public PatientDTO.SummaryResponse create(PatientDTO.CreateRequest req) {
         // 规则 1：证件号和手机号至少填一项（《需求文档》§4.1.1）
         boolean hasIdNo = req.getIdNo() != null && !req.getIdNo().isBlank();
@@ -177,6 +184,11 @@ public class PatientServiceImpl implements PatientService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "PATIENT",
+            action = "UPDATE",
+            resourceId = "#result.patientId()",
+            detail = "'patient archive updated'")
     public PatientDTO.UpdateResponse update(String patientNo, PatientDTO.UpdateRequest req) {
         Patient p = requireByPatientNo(patientNo);
         // 越权防护（IDOR）：PATIENT 只能改自己的档案
@@ -225,6 +237,11 @@ public class PatientServiceImpl implements PatientService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "PATIENT",
+            action = "STATUS_CHANGE",
+            resourceId = "#result.patientId()",
+            detail = "'status=' + #result.status()")
     public PatientDTO.StatusResponse updateStatus(String patientNo, PatientDTO.StatusUpdateRequest req) {
         Patient p = requireByPatientNo(patientNo);
         // 越权防护（IDOR）：PATIENT 不能改档案状态（DISABLED/MERGED 是管理员操作），

@@ -1,6 +1,7 @@
 package com.medconsult.patient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +14,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 患者档案全流程集成测试：H2 内存库（无 Nacos，排除 discovery/config 避免连接开销）。
@@ -239,5 +241,60 @@ class PatientFlowTest {
         mvc.perform(post("/api/v1/patients").contentType("application/json").content(
                         "{\"name\":\"李四\",\"phone\":\"13700000077\"}"))
                 .andExpect(jsonPath("$.code").value(409001));
+    }
+
+    @Test
+    void patientMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        String createBody = """
+                {"name":"审计患者","gender":"FEMALE","birthDate":"1991-03-09",
+                 "idType":"ID_CARD","idNo":"110101199103090044","phone":"13800000044"}""";
+        MvcResult createResult = mvc.perform(withAdmin(post("/api/v1/patients"))
+                        .header("X-Trace-Id", "trace-patient-audit")
+                        .contentType("application/json").content(createBody))
+                .andExpect(status().isOk())
+                .andReturn();
+        String patientNo = om.readTree(createResult.getResponse().getContentAsString())
+                .at("/data/patientId").asText();
+
+        mvc.perform(withAdmin(put("/api/v1/patients/" + patientNo))
+                        .header("X-Trace-Id", "trace-patient-audit")
+                        .contentType("application/json")
+                        .content("{\"phone\":\"13800000045\",\"address\":\"审计路 1 号\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(withAdmin(patch("/api/v1/patients/" + patientNo + "/status"))
+                        .header("X-Trace-Id", "trace-patient-audit")
+                        .contentType("application/json")
+                        .content("{\"status\":\"DISABLED\",\"reason\":\"审计测试\"}"))
+                .andExpect(status().isOk());
+
+        org.springframework.jdbc.core.JdbcTemplate jdbc = new org.springframework.jdbc.core.JdbcTemplate(
+                ctx.getBean(javax.sql.DataSource.class));
+        java.util.List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                ORDER BY created_at
+                """);
+        assertEquals(3, rows.size());
+
+        java.util.List<String> actions = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : rows) {
+            assertEquals("medconsult.log", row.get("exchange"));
+            assertEquals("audit.log", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+            assertTrue(String.valueOf(row.get("message_no")).startsWith("audit:PATIENT:"));
+
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            assertEquals("trace-patient-audit", payload.get("traceId").asText());
+            assertEquals("PATIENT", payload.get("resourceType").asText());
+            assertEquals(patientNo, payload.get("resourceId").asText());
+            assertEquals("1", payload.get("operatorId").asText());
+            assertEquals("HOSPITAL_ADMIN", payload.get("operatorRole").asText());
+            assertEquals("SUCCESS", payload.get("result").asText());
+            actions.add(payload.get("action").asText());
+        }
+        assertEquals(java.util.List.of("CREATE", "UPDATE", "STATUS_CHANGE"), actions);
     }
 }

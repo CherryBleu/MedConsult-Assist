@@ -32,6 +32,11 @@
             <groupId>com.medconsult</groupId>
             <artifactId>common-redis</artifactId>
         </dependency>
+        <!-- 审计生产端需要读取 SecurityContext / traceId request attribute。 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
 
         <!-- RabbitMQ -->
         <dependency>

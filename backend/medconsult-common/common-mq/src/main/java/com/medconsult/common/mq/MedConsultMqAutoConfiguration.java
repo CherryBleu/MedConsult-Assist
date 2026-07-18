@@ -1,5 +1,8 @@
 package com.medconsult.common.mq;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.mq.audit.AuditLogAspect;
+import com.medconsult.common.mq.audit.AuditLogProducer;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.ExchangeBuilder;
@@ -129,5 +132,17 @@ public class MedConsultMqAutoConfiguration {
     @ConditionalOnMissingBean
     public MessageDispatcher messageDispatcher() {
         return new MessageDispatcher();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AuditLogProducer auditLogProducer(LocalMessageMapper localMessageMapper, ObjectMapper objectMapper) {
+        return new AuditLogProducer(localMessageMapper, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AuditLogAspect auditLogAspect(AuditLogProducer auditLogProducer) {
+        return new AuditLogAspect(auditLogProducer);
     }
 }

@@ -25,7 +25,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 @SpringBootApplication(scanBasePackages = {"com.medconsult.patient", "com.medconsult.common.web"})
 @EnableDiscoveryClient
-@MapperScan("com.medconsult.patient.**.mapper")
+@MapperScan({"com.medconsult.patient.**.mapper", "com.medconsult.common.mq"})
 public class PatientServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(PatientServiceApplication.class, args);
