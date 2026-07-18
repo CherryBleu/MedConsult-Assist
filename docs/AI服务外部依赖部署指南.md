@@ -358,7 +358,7 @@ Get-Content "<你的 worktree>\infra\.env" |
 
 ### 然后启动
 
-方式 C：VS Code / Spring Boot Dashboard。选择 `.vscode/launch.json` 中的 `Spring Boot-AiServiceApplication<ai-service>`。该启动项的 `cwd` 必须是 `${workspaceFolder}/backend/ai-service`；`medconsult-common` 和 `data` 不应出现在 Dashboard 的生产服务启动配置里。
+方式 C：VS Code / Spring Boot Dashboard。选择 `.vscode/launch.json` 中的 `Spring Boot-AiServiceApplication<ai-service>`。该启动项必须声明 `projectName=ai-service`、`cwd=${workspaceFolder}/backend/ai-service` 和 `classPaths=["$Runtime"]`；`medconsult-common` 和 `data` 不应出现在 Dashboard 的生产服务启动配置里。
 
 方式 D：命令行启动（推荐用可执行 jar，避免 `spring-boot:run -am` 在多模块 reactor 中误运行 library 模块）。
 ```powershell
@@ -369,7 +369,7 @@ cd ai-service
 java -jar target\ai-service-0.1.0-SNAPSHOT.jar
 ```
 
-2026-07-19 本地冒烟：在 `backend/ai-service` 工作目录下启动可执行 jar，日志出现 `Tomcat started on port 8086`、`REGISTER-SERVICE ... 127.0.0.1:8086` 和 `Started AiServiceApplication`。
+2026-07-19 本地冒烟：在 `backend/ai-service` 工作目录下启动可执行 jar，日志出现 `Tomcat started on port 8086`、`REGISTER-SERVICE ... 127.0.0.1:8086`、`Started AiServiceApplication` 和 `[RAG-READINESS] ready=true`。
 
 ---
 

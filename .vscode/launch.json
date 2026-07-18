@@ -8,6 +8,9 @@
       "cwd": "${workspaceFolder}/backend/ai-service",
       "mainClass": "com.medconsult.ai.AiServiceApplication",
       "projectName": "ai-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -18,6 +21,9 @@
       "cwd": "${workspaceFolder}/backend/auth-service",
       "mainClass": "com.medconsult.auth.AuthServiceApplication",
       "projectName": "auth-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -28,6 +34,9 @@
       "cwd": "${workspaceFolder}/backend/drug-service",
       "mainClass": "com.medconsult.drug.DrugServiceApplication",
       "projectName": "drug-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -38,6 +47,9 @@
       "cwd": "${workspaceFolder}/backend/gateway",
       "mainClass": "com.medconsult.gateway.GatewayApplication",
       "projectName": "gateway",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -48,6 +60,9 @@
       "cwd": "${workspaceFolder}/backend/medical-record-service",
       "mainClass": "com.medconsult.medicalrecord.MedicalRecordServiceApplication",
       "projectName": "medical-record-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -58,6 +73,9 @@
       "cwd": "${workspaceFolder}/backend/notification-service",
       "mainClass": "com.medconsult.notification.NotificationServiceApplication",
       "projectName": "notification-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -68,6 +86,9 @@
       "cwd": "${workspaceFolder}/backend/outpatient-service",
       "mainClass": "com.medconsult.outpatient.OutpatientServiceApplication",
       "projectName": "outpatient-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     },
@@ -78,6 +99,9 @@
       "cwd": "${workspaceFolder}/backend/patient-service",
       "mainClass": "com.medconsult.patient.PatientServiceApplication",
       "projectName": "patient-service",
+      "classPaths": [
+        "$Runtime"
+      ],
       "args": "",
       "shortenCommandLine": "argfile"
     }

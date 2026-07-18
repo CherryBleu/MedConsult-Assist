@@ -38,6 +38,7 @@
 ## 运行配置约定
 
 - `.vscode/launch.json` 只配置可部署的 Spring Boot 微服务，不配置 `medconsult-common`、`data` 等 library / tool 模块。
+- VS Code 启动项必须显式声明对应 Maven `projectName`、模块目录 `cwd` 和 `classPaths: ["$Runtime"]`，避免 Spring Boot Dashboard/Java 调试器把 test scope 或 common 测试锚点混入生产运行态。
 - common 模块允许在 `src/test` 中保留 `@SpringBootApplication` 测试配置锚点，但不得提供 `main()`，避免被 Spring Boot Dashboard 误识别为可运行服务。
 - VS Code 启动配置不得引用仓库中不存在的必需 `envFile`；敏感环境文件仍不得提交。
 
