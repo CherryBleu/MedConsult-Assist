@@ -36,8 +36,12 @@ class DiseaseCacheServiceTest {
         DiseaseCandidate candidate = new DiseaseCandidate("肺炎", List.of("咳嗽"), "候选疾病");
         MetadataQuery symptomFields = new MetadataQuery(List.of("symptom"), Map.of());
         MetadataQuery causeFields = new MetadataQuery(List.of("cause"), Map.of());
-        AiProperties currentKnowledge = aiProperties("BAAI/bge-small-zh-v1.5", "medical", "data");
-        AiProperties reindexedKnowledge = aiProperties("BAAI/bge-m3", "medical", "data");
+        AiProperties currentKnowledge = aiProperties("BAAI/bge-small-zh-v1.5", "medical", "data",
+                "medical-data-unified-8807-v1");
+        AiProperties reindexedKnowledge = aiProperties("BAAI/bge-m3", "medical", "data",
+                "medical-data-unified-8807-v1");
+        AiProperties refreshedKnowledge = aiProperties("BAAI/bge-small-zh-v1.5", "medical", "data",
+                "medical-data-unified-8807-v2");
 
         String symptomKey = DiseaseCacheService.diseaseCacheKeyFor(
                 currentKnowledge, "咳嗽三天", candidate, symptomFields);
@@ -45,9 +49,12 @@ class DiseaseCacheServiceTest {
                 currentKnowledge, "咳嗽三天", candidate, causeFields);
         String reindexedKey = DiseaseCacheService.diseaseCacheKeyFor(
                 reindexedKnowledge, "咳嗽三天", candidate, symptomFields);
+        String refreshedKnowledgeKey = DiseaseCacheService.diseaseCacheKeyFor(
+                refreshedKnowledge, "咳嗽三天", candidate, symptomFields);
 
         assertNotEquals(symptomKey, causeKey);
         assertNotEquals(symptomKey, reindexedKey);
+        assertNotEquals(symptomKey, refreshedKnowledgeKey);
     }
 
     @Test
@@ -306,11 +313,24 @@ class DiseaseCacheServiceTest {
     }
 
     private static AiProperties aiProperties(String embeddingModel, String milvusDatabase, String milvusCollection) {
-        return aiProperties(embeddingModel, milvusDatabase, milvusCollection, 60);
+        return aiProperties(embeddingModel, milvusDatabase, milvusCollection,
+                "medical-data-unified-8807-v1");
+    }
+
+    private static AiProperties aiProperties(String embeddingModel, String milvusDatabase,
+                                             String milvusCollection, String knowledgeVersion) {
+        return aiProperties(embeddingModel, milvusDatabase, milvusCollection, knowledgeVersion, 60);
     }
 
     private static AiProperties aiProperties(String embeddingModel, String milvusDatabase,
                                              String milvusCollection, long cacheSeconds) {
+        return aiProperties(embeddingModel, milvusDatabase, milvusCollection,
+                "medical-data-unified-8807-v1", cacheSeconds);
+    }
+
+    private static AiProperties aiProperties(String embeddingModel, String milvusDatabase,
+                                             String milvusCollection, String knowledgeVersion,
+                                             long cacheSeconds) {
         return new AiProperties(
                 new AiProperties.LlmProperties("http://llm", "key", "model", 5),
                 new AiProperties.EmbeddingProperties("http://embedding", "key", embeddingModel, 5),
@@ -324,7 +344,7 @@ class DiseaseCacheServiceTest {
                         "imaging", "chunks", true, 300),
                 new AiProperties.InternalProperties("ai-service", "key"),
                 new AiProperties.RateLimitProperties(true, 60, 60, false, Map.of()),
-                new AiProperties.RagProperties(8807, 8807, 512, true, false)
+                new AiProperties.RagProperties(8807, 8807, 512, true, false, knowledgeVersion)
         );
     }
 

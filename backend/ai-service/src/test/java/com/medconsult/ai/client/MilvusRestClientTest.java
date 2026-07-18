@@ -349,7 +349,7 @@ class MilvusRestClientTest {
                 new AiProperties.FileStorageProperties("http://minio", "http://minio", "ak", "sk", "us-east-1", "bucket", "imaging", "chunks", true, 300),
                 new AiProperties.InternalProperties("ai-service", "key"),
                 new AiProperties.RateLimitProperties(true, 60, 60, false, Map.of()),
-                new AiProperties.RagProperties(8807, 8807, 512, true, false)
+                new AiProperties.RagProperties(8807, 8807, 512, true, false, "medical-data-unified-8807-v1")
         );
     }
 

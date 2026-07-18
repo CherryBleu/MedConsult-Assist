@@ -146,7 +146,7 @@ class RagReadinessServiceTest {
                 new AiProperties.InternalProperties("ai-service", "key"),
                 new AiProperties.RateLimitProperties(true, 60, 60, false, Map.of()),
                 new AiProperties.RagProperties(expectedMongo, expectedMilvus, expectedDimension,
-                        startupCheckEnabled, failFast)
+                        startupCheckEnabled, failFast, "medical-data-unified-8807-v1")
         );
     }
 }

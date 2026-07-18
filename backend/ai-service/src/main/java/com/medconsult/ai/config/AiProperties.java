@@ -115,7 +115,11 @@ public record AiProperties(
             long expectedMilvusCount,
             int expectedEmbeddingDimension,
             boolean startupCheckEnabled,
-            boolean failFast
+            boolean failFast,
+            String knowledgeVersion
     ) {
+        public RagProperties {
+            knowledgeVersion = knowledgeVersion == null ? "" : knowledgeVersion.trim();
+        }
     }
 }

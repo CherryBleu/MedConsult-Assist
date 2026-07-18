@@ -88,6 +88,7 @@ medconsult:
       expected-embedding-dimension: ${EMBEDDING_DIMENSION:512}
       startup-check-enabled: ${RAG_STARTUP_CHECK_ENABLED:true}
       fail-fast: ${RAG_FAIL_FAST:false}
+      knowledge-version: ${RAG_KNOWLEDGE_VERSION:medical-data-unified-8807-v1}
     imaging:
       provider: ${IMAGING_PROVIDER:external-ai-provider}
       model: ${IMAGING_MODEL:chest-ct-abnormal-detector}

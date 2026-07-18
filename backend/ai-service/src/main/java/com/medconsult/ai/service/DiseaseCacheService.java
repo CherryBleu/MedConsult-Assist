@@ -136,6 +136,7 @@ public class DiseaseCacheService {
         identity.put("requestedFields", sortedList(metadataQuery == null ? List.of() : metadataQuery.requestedFields()));
         identity.put("filters", sortedFilters(metadataQuery == null ? Map.of() : metadataQuery.filters()));
         identity.put("embeddingModel", embeddingModel(properties));
+        identity.put("knowledgeVersion", knowledgeVersion(properties));
         identity.put("mongoDatabase", mongoDatabase(properties));
         identity.put("mongoCollection", mongoCollection(properties));
         identity.put("milvusDatabase", milvusDatabase(properties));
@@ -187,6 +188,10 @@ public class DiseaseCacheService {
 
     private static String embeddingModel(AiProperties properties) {
         return properties != null && properties.embedding() != null ? string(properties.embedding().model()) : "";
+    }
+
+    private static String knowledgeVersion(AiProperties properties) {
+        return properties != null && properties.rag() != null ? string(properties.rag().knowledgeVersion()) : "";
     }
 
     private static String mongoDatabase(AiProperties properties) {
