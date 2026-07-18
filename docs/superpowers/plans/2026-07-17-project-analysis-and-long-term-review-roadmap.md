@@ -1454,35 +1454,37 @@ git commit -m "fix(frontend): 建立响应式基础并修复移动端登录"
 
 ### 任务 16：改造主布局的移动导航与键盘语义
 
+> **执行状态（2026-07-18）**：已完成当前计划切片。主布局在移动端改用 Element Plus Drawer，桌面保留可折叠侧栏；导航、通知和用户菜单均已语义按钮化，并补充 skip link、动态 `aria-expanded`、路由跳转自动关闭、44px 触控目标和 reduced-motion。Playwright 新增 Pixel 7 project 与 Axe serious/critical 门禁。验证命令：`npm --prefix frontend run test:e2e`（39 passed、1 desktop-only skipped），`npm --prefix frontend run build` 通过。
+
 **文件：**
 - 修改：`frontend/src/layouts/MainLayout.vue`
 - 创建：`frontend/e2e/accessibility.spec.ts`
 - 修改：`frontend/playwright.config.ts`
 - 修改：`frontend/package.json`、`package-lock.json`
 
-- [ ] **步骤 1：安装并固定 axe**
+- [x] **步骤 1：安装并固定 axe**
 
 ```bash
 npm --prefix frontend install --save-dev @axe-core/playwright
 ```
 
-- [ ] **步骤 2：写失败测试**
+- [x] **步骤 2：写失败测试**
 
 覆盖折叠按钮、通知铃、通知项可通过 Tab 聚焦与 Enter 激活；患者登录后直接访问 `/admin/user` 被拒；关键页面 axe 无 serious/critical violation。
 
-- [ ] **步骤 3：改非语义点击元素**
+- [x] **步骤 3：改非语义点击元素**
 
 折叠、通知铃和通知操作改为 `<button type="button">` 或 Element Plus Button；增加 `aria-label`、焦点样式和 unread count 的可访问文本。
 
-- [ ] **步骤 4：移动端侧栏改 Drawer**
+- [x] **步骤 4：移动端侧栏改 Drawer**
 
 小于 768px 不保留固定 220px aside；菜单从左侧 Drawer 打开，路由跳转后自动关闭。桌面端保留 collapse 行为。
 
-- [ ] **步骤 5：配置移动项目**
+- [x] **步骤 5：配置移动项目**
 
 在 Playwright projects 增加 Pixel 7，但把纯桌面表格用例标记为 desktop-only；响应式/无障碍用例在 desktop + mobile 都跑。
 
-- [ ] **步骤 6：验证并 Commit**
+- [x] **步骤 6：验证并 Commit**
 
 ```bash
 npm --prefix frontend run test:e2e -- e2e/accessibility.spec.ts e2e/login.spec.ts

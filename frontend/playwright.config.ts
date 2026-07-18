@@ -37,6 +37,11 @@ export default defineConfig({
       // 直接使用已安装的 Chrome（如需 Edge，可运行 PW_BROWSER_CHANNEL=msedge npm run test:e2e）。
       use: { ...devices['Desktop Chrome'], channel: process.env.PW_BROWSER_CHANNEL || 'chrome' },
     },
+    {
+      name: 'mobile-chrome',
+      testMatch: /.*(?:accessibility|mobile-responsive|patient-home-responsive)\.spec\.ts/,
+      use: { ...devices['Pixel 7'], channel: process.env.PW_BROWSER_CHANNEL || 'chrome' },
+    },
   ],
   webServer: skipWebServer ? undefined : {
     // 强制走 mock：前端 api/*.js 的 USE_MOCK 分支据此生效，不依赖任何后端服务。

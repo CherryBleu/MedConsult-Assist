@@ -7,6 +7,20 @@
   --accent-green: #16a34a;
   --accent-amber: #f59e0b;
   --accent-violet: #4f46e5;
+  /* Element Plus 交互前景色必须在白字/浅色表面上满足 WCAG AA。 */
+  --el-color-primary-rgb: 3, 105, 161;
+  --el-color-primary: #0369a1;
+  --el-color-primary-dark-2: #075985;
+  --el-color-success-rgb: 21, 128, 61;
+  --el-color-success: #15803d;
+  --el-color-warning-rgb: 180, 83, 9;
+  --el-color-warning: #b45309;
+  --el-color-danger-rgb: 185, 28, 28;
+  --el-color-danger: #b91c1c;
+  --el-color-error-rgb: 185, 28, 28;
+  --el-color-error: #b91c1c;
+  --el-color-info-rgb: 71, 85, 105;
+  --el-color-info: #475569;
   --gradient-primary: linear-gradient(135deg, #0369a1 0%, #0284c7 48%, #16a34a 100%);
   --gradient-soft: radial-gradient(circle at 12% 12%, rgba(2,132,199,.13), transparent 34%), radial-gradient(circle at 88% 18%, rgba(22,163,74,.11), transparent 28%), #f0f9ff;
 
