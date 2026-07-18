@@ -481,6 +481,56 @@ public class AuthServiceImpl implements AuthService {
         log.info("[deleteUser] 管理员软删账号: userId={} account={}", userId, u.getAccount());
     }
 
+    // ===== §2.1 修改密码（防爆破） =====
+
+    /** 改密频率限制：每用户 5 分钟内最多 5 次尝试（成功也计数，防撞库） */
+    private static final Duration CHANGE_PWD_WINDOW = Duration.ofMinutes(5);
+    private static final int CHANGE_PWD_MAX_ATTEMPTS = 5;
+
+    @Override
+    @Transactional
+    public void changePassword(Long userId, AuthDTO.ChangePasswordRequest req) {
+        JwtPayload payload = SecurityContext.requireUser();
+        // 只能改自己的密码（防越权：忽略入参 userId，以当前登录身份为准）
+        Long currentUserId = payload.userId();
+        if (currentUserId == null || !currentUserId.equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能修改自己的密码");
+        }
+
+        // 频率限制：Redis 计数（INCR + 首次设 TTL）
+        String rateKey = "medconsult:auth:changepwd:" + currentUserId;
+        Long attempts;
+        try {
+            attempts = redis.opsForValue().increment(rateKey);
+            if (attempts != null && attempts == 1L) {
+                redis.expire(rateKey, CHANGE_PWD_WINDOW);
+            }
+        } catch (Exception e) {
+            // Redis 不可用时跳过频率限制（不阻断主流程）
+            attempts = 0L;
+        }
+        if (attempts != null && attempts > CHANGE_PWD_MAX_ATTEMPTS) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,
+                    "密码修改尝试过于频繁，请 " + CHANGE_PWD_WINDOW.toMinutes() + " 分钟后再试");
+        }
+
+        SysUser u = userMapper.selectById(currentUserId);
+        if (u == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+        // 校验原密码（错误与登录一致，不暴露具体原因）
+        if (!passwordEncoder.matches(req.getOldPassword(), u.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "原密码不正确");
+        }
+        // 新旧不能相同
+        if (passwordEncoder.matches(req.getNewPassword(), u.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "新密码不能与原密码相同");
+        }
+        u.setPasswordHash(passwordEncoder.encode(req.getNewPassword()));
+        userMapper.updateById(u);
+        log.info("[changePassword] 用户修改密码成功: userId={} account={}", currentUserId, u.getAccount());
+    }
+
     /** 管理员权限校验（与 listUsers 一致：手动从 SecurityContext 判 HOSPITAL_ADMIN） */
     private void requireHospitalAdmin() {
         JwtPayload payload = SecurityContext.requireUser();

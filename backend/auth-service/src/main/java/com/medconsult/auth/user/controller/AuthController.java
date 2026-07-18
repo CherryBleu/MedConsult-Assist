@@ -119,6 +119,15 @@ public class AuthController {
         return Result.ok();
     }
 
+    /** §2.1 修改当前登录用户密码（校验原密码 + 频率限制防爆破） */
+    @PostMapping("/change-password")
+    @Operation(summary = "修改密码")
+    public Result<Void> changePassword(@Valid @RequestBody AuthDTO.ChangePasswordRequest req) {
+        Long userId = com.medconsult.common.security.SecurityContext.requireUser().userId();
+        authService.changePassword(userId, req);
+        return Result.ok();
+    }
+
     private static String clientIp(HttpServletRequest req) {
         String ip = req.getHeader("X-Forwarded-For");
         if (ip != null && !ip.isBlank()) {

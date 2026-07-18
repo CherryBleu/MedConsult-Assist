@@ -207,4 +207,21 @@ public class AuthDTO {
             @Schema(description = "状态：ACTIVE / DISABLED / LOCKED") String status,
             @Schema(description = "创建时间") java.time.LocalDateTime createdAt
     ) {}
+
+    /** 修改密码请求（§2.1 change-password） */
+    @Data
+    @Schema(description = "修改密码请求")
+    public static class ChangePasswordRequest {
+        @NotBlank(message = "原密码不能为空")
+        @Schema(description = "原密码")
+        private String oldPassword;
+
+        /** 8-64 位，至少含字母和数字（防弱口令） */
+        @NotBlank(message = "新密码不能为空")
+        @Size(min = 8, max = 64, message = "新密码长度需为 8-64 位")
+        @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).{8,64}$",
+                message = "新密码需至少包含字母和数字")
+        @Schema(description = "新密码（8-64 位，至少含字母和数字）")
+        private String newPassword;
+    }
 }

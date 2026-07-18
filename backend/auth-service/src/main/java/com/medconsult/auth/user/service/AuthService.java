@@ -68,4 +68,12 @@ public interface AuthService {
      * 权限：仅 HOSPITAL_ADMIN。
      */
     void deleteUser(Long userId);
+
+    /**
+     * 修改当前登录用户的密码（§2.1 change-password）。
+     *
+     * <p>校验原密码 + 写新密码摘要（BCrypt）；带频率限制防爆破（Redis 计数）。
+     * @param userId 当前登录用户 ID（由 Controller 从 SecurityContext 传入）
+     */
+    void changePassword(Long userId, AuthDTO.ChangePasswordRequest req);
 }

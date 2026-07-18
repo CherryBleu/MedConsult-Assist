@@ -19,6 +19,7 @@ public enum ErrorCode {
     FORBIDDEN           (403001, "无访问权限",             403),
     NOT_FOUND           (404001, "资源不存在",             404),
     CONFLICT            (409001, "业务冲突",               409),
+    TOO_MANY_REQUESTS   (429001, "请求过于频繁",            429),
     INTERNAL_ERROR      (500001, "系统内部错误",           500),
     AI_EXTERNAL_FAILED  (502001, "外部 AI 服务调用失败",   502);
 
