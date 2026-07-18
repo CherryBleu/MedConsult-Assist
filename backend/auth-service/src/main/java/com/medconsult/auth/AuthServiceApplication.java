@@ -27,7 +27,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @SpringBootApplication(scanBasePackages = {"com.medconsult.auth", "com.medconsult.common.web", "com.medconsult.common.feign"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.medconsult.common.feign.client"})
-@MapperScan("com.medconsult.auth.**.mapper")
+@MapperScan({"com.medconsult.auth.**.mapper", "com.medconsult.common.mq"})
 public class AuthServiceApplication {
     public static void main(String[] args) {
         SpringApplication.run(AuthServiceApplication.class, args);

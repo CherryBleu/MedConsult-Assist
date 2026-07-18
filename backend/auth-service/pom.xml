@@ -41,6 +41,11 @@
             <groupId>com.medconsult</groupId>
             <artifactId>common-feign</artifactId>
         </dependency>
+        <!-- common-mq：登录/改密等安全敏感写操作通过 @AuditLog 写 local_message，再可靠投递 audit.log。 -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mq</artifactId>
+        </dependency>
         <!--
             spring-cloud-starter-loadbalancer：OpenFeign 4.1.0 不再传递 loadbalancer，
             @FeignClient(name="patient-service") 需 LoadBalancerClient 解析服务名。

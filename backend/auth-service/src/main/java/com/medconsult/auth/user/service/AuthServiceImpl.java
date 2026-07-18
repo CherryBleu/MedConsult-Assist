@@ -15,6 +15,7 @@ import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientRegisterRequest;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.security.JwtCodec;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
@@ -180,6 +181,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "LOGIN",
+            resourceId = "#result.user().userId()",
+            targetOwnerId = "#result.user().patientId()",
+            detail = "'clientType=' + (#p0.clientType == null ? 'DEFAULT' : #p0.clientType)")
     public AuthDTO.LoginResponse login(AuthDTO.LoginRequest req, String ip, String userAgent) {
         SysUser u = userMapper.selectOne(new QueryWrapper<SysUser>().eq("account", req.getAccount()));
         String failReason = null;
@@ -312,6 +319,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "PASSWORD_CHANGE",
+            resourceId = "#p0",
+            targetOwnerId = "#p0",
+            detail = "'password changed'")
     public void changePassword(Long userId, AuthDTO.ChangePasswordRequest req) {
         SysUser u = userMapper.selectById(userId);
         if (u == null) {
@@ -334,6 +347,12 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "BIND_PATIENT",
+            resourceId = "#p0",
+            targetOwnerId = "#result.user().patientId()",
+            detail = "'patientId=' + #result.user().patientId()")
     public AuthDTO.BindPatientResponse bindPatient(Long userId, AuthDTO.BindPatientRequest req) {
         SysUser u = userMapper.selectById(userId);
         if (u == null) {

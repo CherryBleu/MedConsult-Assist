@@ -1,5 +1,6 @@
 package com.medconsult.auth;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.auth.user.entity.SysUser;
 import com.medconsult.auth.user.mapper.SysUserMapper;
@@ -18,10 +19,12 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -78,6 +81,9 @@ class AuthFlowTest {
 
     @Autowired
     StringRedisTemplate redis;
+
+    @Autowired
+    DataSource dataSource;
 
     /** mock 掉 patient-service：测试环境不连真实 patient-service，注册即建档走 mock */
     @MockBean
@@ -293,6 +299,68 @@ class AuthFlowTest {
         String newAccessToken = om.readTree(refreshResult.getResponse().getContentAsString())
                 .at("/data/accessToken").asText();
         assertTokenScope(newAccessToken, "PATIENT", "ai:symptom-chat", "ai:triage");
+    }
+
+    @Test
+    void authSecurityMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        when(patientClient.createForRegister(any(PatientRegisterRequest.class)))
+                .thenReturn(Result.ok(EntityIdDTO.of(9020L)));
+
+        String traceId = "trace-auth-audit";
+        String regBody = """
+                {"account":"audit_user","password":"P@ssw0rd","phone":"13900000620","name":"Audit User","role":"PATIENT","idCard":"110101199003201234"}""";
+        mvc.perform(post("/api/v1/auth/register").contentType("application/json").content(regBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        MvcResult loginResult = mvc.perform(post("/api/v1/auth/login")
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"account":"audit_user","password":"P@ssw0rd","clientType":"PATIENT"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andReturn();
+        String accessToken = om.readTree(loginResult.getResponse().getContentAsString())
+                .at("/data/accessToken").asText();
+        redisKeysToDelete.add(refreshKey(jwtCodec.parse(
+                om.readTree(loginResult.getResponse().getContentAsString()).at("/data/refreshToken").asText()).jti()));
+
+        mvc.perform(post("/api/v1/auth/change-password")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"oldPassword":"P@ssw0rd","newPassword":"N3wP@ssw0rd"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                  AND message_no LIKE 'audit:USER:%'
+                ORDER BY id
+                """);
+        assertEquals(2, rows.size());
+
+        List<String> actions = new ArrayList<>();
+        for (java.util.Map<String, Object> row : rows) {
+            assertEquals("medconsult.log", row.get("exchange"));
+            assertEquals("audit.log", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+            assertTrue(String.valueOf(row.get("message_no")).startsWith("audit:USER:"));
+
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            assertEquals(traceId, payload.get("traceId").asText());
+            assertEquals("USER", payload.get("resourceType").asText());
+            assertEquals("SUCCESS", payload.get("result").asText());
+            assertFalse(payload.get("resourceId").asText().isBlank());
+            actions.add(payload.get("action").asText());
+        }
+        assertEquals(List.of("LOGIN", "PASSWORD_CHANGE"), actions);
     }
 
     @Test
