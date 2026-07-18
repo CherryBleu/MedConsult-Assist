@@ -30,3 +30,8 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: ASSIGN_ID
+
+medconsult:
+  security:
+    jwt:
+      secret: medconsult-common-mq-test-secret-32bytes
