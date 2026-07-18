@@ -214,6 +214,10 @@ public class AuthServiceImpl implements AuthService {
         String clientType = req.getClientType();
         if (clientType != null && !clientType.isBlank()) {
             String ct = clientType.trim().toUpperCase();
+            if (!"PATIENT".equals(ct) && !"STAFF".equals(ct)) {
+                writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "INVALID_CLIENT_TYPE");
+                throw new BusinessException(ErrorCode.PARAM_ERROR, "登录入口仅支持 PATIENT 或 STAFF");
+            }
             boolean isPatient = "PATIENT".equals(primaryRole) && u.getPatientId() != null
                     && u.getDoctorId() == null && u.getPharmacistId() == null;
             boolean isStaff = u.getDoctorId() != null || u.getPharmacistId() != null
@@ -226,7 +230,6 @@ public class AuthServiceImpl implements AuthService {
                 writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
                 throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是工作人员账号，请从患者入口登录");
             }
-            // 其它 clientType 值（非 PATIENT/STAFF）跳过校验，不阻断登录
         }
 
         // 登录成功：更新最后登录时间

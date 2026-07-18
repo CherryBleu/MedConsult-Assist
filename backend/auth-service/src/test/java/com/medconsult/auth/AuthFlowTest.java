@@ -204,4 +204,12 @@ class AuthFlowTest {
         mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(lowerStaff))
                 .andExpect(jsonPath("$.code").value(403001));
     }
+
+    @Test
+    void login_unknownClientType_rejected() throws Exception {
+        String unknownEntry = """
+                {"account":"admin","password":"123456","clientType":"MOBILE"}""";
+        mvc.perform(post("/api/v1/auth/login").contentType("application/json").content(unknownEntry))
+                .andExpect(jsonPath("$.code").value(400001));
+    }
 }

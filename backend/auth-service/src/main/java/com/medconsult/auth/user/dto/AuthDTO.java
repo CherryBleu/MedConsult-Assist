@@ -104,10 +104,10 @@ public class AuthDTO {
 
         /**
          * 登录入口类型，用于校验账号身份是否匹配入口（防止患者从工作人员入口登录等越权）。
-         * 可选：PATIENT（患者入口）/ STAFF（工作人员入口）。
+         * 可选：PATIENT（患者入口）/ STAFF（工作人员入口）；传入其它值返回参数错误。
          * 不传或为空时跳过入口校验（向后兼容老调用方/服务间调用/现有单测）。
          */
-        @Schema(description = "登录入口：PATIENT/STAFF（可选，不传则跳过入口校验）")
+        @Schema(description = "登录入口：PATIENT/STAFF（可选，不传则跳过入口校验；其它值返回参数错误）")
         private String clientType;
     }
 
