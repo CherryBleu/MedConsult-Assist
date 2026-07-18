@@ -140,8 +140,8 @@ public final class AiModels {
     }
 
     public record SummaryConfirmRequest(
-            @NotBlank String summaryId,
-            @NotBlank String confirmedBy,
+            String summaryId,
+            String confirmedBy,
             @NotNull Map<String, Object> confirmedSummary
     ) {
     }

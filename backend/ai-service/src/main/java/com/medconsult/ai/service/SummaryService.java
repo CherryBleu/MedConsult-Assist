@@ -19,13 +19,20 @@ import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.MedicalRecordFeignClient;
 import com.medconsult.common.feign.dto.MedicalRecordFullDTO;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -45,6 +52,8 @@ public class SummaryService {
     /** 病历摘要结果缓存：按 recordNo 缓存，30 分钟 TTL。同一病历重复生成命中缓存，跳过 LLM 调用。 */
     private static final String SUMMARY_CACHE_PREFIX = "medconsult:ai:summary:record:";
     private static final Duration SUMMARY_CACHE_TTL = Duration.ofMinutes(30);
+    private static final String PROMPT_VERSION = "v1";
+    private static final String MEDICAL_RECORD_SERVICE = "medical-record-service";
 
     private final OpenAiCompatibleClient llmClient;
     private final MedicalRecordFeignClient medicalRecordClient;
@@ -64,15 +73,9 @@ public class SummaryService {
         this.redisTemplate = redisTemplate;
     }
 
-    public MedicalRecordSummaryResponse summarizeRecord(MedicalRecordSummaryRequest request) {
-        MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));
-        SummarySaveResult saved = summarizeAndSave(request, record, null);
-        return new MedicalRecordSummaryResponse(
-                saved.entity().getSummaryNo(),
-                request.recordId(),
-                saved.summary(),
-                saved.entity().getStatus()
-        );
+    public MedicalRecordSummaryResponse summarizeRecord(MedicalRecordSummaryRequest request, JwtPayload actor) {
+        requireMedicalRecordService(actor);
+        return summarizeResolvedRecord(request, actor, null, true);
     }
 
     /**
@@ -86,33 +89,41 @@ public class SummaryService {
      */
     public MedicalRecordSummaryResponse summarizeByRecordNo(String recordNo) {
         long started = System.currentTimeMillis();
+        Long recordId = resolveRecordId(recordNo);
+        MedicalRecordFullDTO record = fetchRecord(recordId);
+        JwtPayload actor = SecurityContext.getPayload();
+        authorizeUserRecord(actor, record);
+        String canonicalRecordNo = canonicalRecordNo(recordId, record);
+        String cacheKey = cacheKey(canonicalRecordNo);
+        String sourceFingerprint = sourceFingerprint(recordId, canonicalRecordNo, record);
         // 缓存命中检查
-        String cacheKey = SUMMARY_CACHE_PREFIX + recordNo;
         try {
             String cached = redisTemplate.opsForValue().get(cacheKey);
             if (cached != null && !cached.isBlank()) {
-                log.info("[AI-CACHE] summary hit cache: recordNo={}", recordNo);
                 CachedSummary cachedSummary = JsonUtils.MAPPER.readValue(cached, CachedSummary.class);
-                logCacheHit(recordNo, cachedSummary, started);
-                return new MedicalRecordSummaryResponse(
-                        cachedSummary.summaryNo(), recordNo, cachedSummary.summary(), cachedSummary.status());
+                if (recordId.equals(cachedSummary.recordId())
+                        && sourceFingerprint.equals(cachedSummary.sourceFingerprint())) {
+                    log.info("[AI-CACHE] summary hit cache: recordNo={}", canonicalRecordNo);
+                    logCacheHit(canonicalRecordNo, record.patientId(), cachedSummary, started);
+                    return new MedicalRecordSummaryResponse(
+                            cachedSummary.summaryNo(), canonicalRecordNo,
+                            cachedSummary.summary(), cachedSummary.status());
+                }
             }
         } catch (Exception e) {
             log.warn("[AI-CACHE] summary cache read failed, fallback to LLM: {}", e.getMessage());
         }
 
-        Long recordId = resolveRecordId(recordNo);
-        MedicalRecordFullDTO record = fetchRecord(recordId);
         // wrapper.recordId 必须传解析后的真实主键（纯数字字符串），不能用 recordNo：
         // summarizeAndSave 第 181 行用 BusinessIds.numericId(request.recordId()) 提取数字，
         // recordNo 是 base36（含字母 MR...），numericId 返回 null → setRecordId(null)
         // → INSERT ai_medical_summary 时 record_id NOT NULL 列报 500。
         MedicalRecordSummaryRequest wrapper = new MedicalRecordSummaryRequest(
                 String.valueOf(recordId), null, Boolean.FALSE);
-        SummarySaveResult saved = summarizeAndSave(wrapper, record, null);
+        SummarySaveResult saved = summarizeAndSave(wrapper, recordId, record, null);
         MedicalRecordSummaryResponse response = new MedicalRecordSummaryResponse(
                 saved.entity().getSummaryNo(),
-                recordNo,
+                canonicalRecordNo,
                 saved.summary(),
                 saved.entity().getStatus()
         );
@@ -120,7 +131,9 @@ public class SummaryService {
         try {
             String patientId = record.patientId() == null ? null : String.valueOf(record.patientId());
             redisTemplate.opsForValue().set(cacheKey,
-                    JsonUtils.toJson(new CachedSummary(response.summaryId(), response.summary(), response.status(), patientId)),
+                    JsonUtils.toJson(new CachedSummary(
+                            response.summaryId(), response.summary(), response.status(), patientId,
+                            recordId, sourceFingerprint)),
                     SUMMARY_CACHE_TTL);
         } catch (Exception e) {
             log.warn("[AI-CACHE] summary cache write failed: {}", e.getMessage());
@@ -129,46 +142,174 @@ public class SummaryService {
     }
 
     /** 摘要缓存结构（序列化存 Redis） */
-    private record CachedSummary(String summaryNo, Map<String, Object> summary, String status, String patientId) {}
+    private record CachedSummary(String summaryNo, Map<String, Object> summary, String status,
+                                 String patientId, Long recordId, String sourceFingerprint) {}
 
-    private void logCacheHit(String recordNo, CachedSummary cachedSummary, long started) {
+    private void logCacheHit(String recordNo, Long patientId, CachedSummary cachedSummary, long started) {
         try {
-            callLogService.success("MEDICAL_RECORD_SUMMARY", cachedSummary.patientId(), cachedSummary.summaryNo(),
-                    properties.llm().model(), recordNo, JsonUtils.toJson(cachedSummary.summary()), null,
+            callLogService.success("MEDICAL_RECORD_SUMMARY",
+                    patientId == null ? null : String.valueOf(patientId), cachedSummary.summaryNo(),
+                    llmModel(), recordNo, JsonUtils.toJson(cachedSummary.summary()), null,
                     System.currentTimeMillis() - started, AiCallLogService.AiCallLogMetrics.cacheHitMetrics());
         } catch (RuntimeException ex) {
             log.warn("[AI-CACHE] summary cache-hit log failed: {}", ex.getMessage());
         }
     }
 
-    public MedicalRecordSummaryResponse summarizeRecordStream(MedicalRecordSummaryRequest request, Consumer<String> tokenConsumer) {
-        MedicalRecordFullDTO record = fetchRecord(resolveRecordId(request.recordId()));
-        SummarySaveResult saved = summarizeAndSave(request, record, tokenConsumer);
-        return new MedicalRecordSummaryResponse(
-                saved.entity().getSummaryNo(),
-                request.recordId(),
-                saved.summary(),
-                saved.entity().getStatus()
-        );
+    public MedicalRecordSummaryResponse summarizeRecordStream(MedicalRecordSummaryRequest request,
+                                                              JwtPayload actor,
+                                                              Consumer<String> tokenConsumer) {
+        return summarizeResolvedRecord(request, actor, tokenConsumer, false);
+    }
+
+    public MedicalRecordSummaryResponse summarizeInternalRecordStream(MedicalRecordSummaryRequest request,
+                                                                      JwtPayload actor,
+                                                                      Consumer<String> tokenConsumer) {
+        requireMedicalRecordService(actor);
+        return summarizeResolvedRecord(request, actor, tokenConsumer, true);
     }
 
     public MedicalRecordSummaryTextResponse summarizeTextRequest(MedicalRecordSummaryTextRequest request) {
+        requireDoctor(SecurityContext.getPayload());
         return new MedicalRecordSummaryTextResponse(summarizeText(request.recordText()), "GENERATED");
     }
 
     public SummaryConfirmResponse confirm(String summaryId, SummaryConfirmRequest request) {
+        JwtPayload actor = requireDoctor(SecurityContext.getPayload());
         AiMedicalSummaryEntity entity = summaryMapper.selectOne(new LambdaQueryWrapper<AiMedicalSummaryEntity>()
                 .eq(AiMedicalSummaryEntity::getSummaryNo, summaryId)
                 .last("limit 1"));
         if (entity == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "summary not found");
         }
+        MedicalRecordFullDTO record = fetchRecord(entity.getRecordId());
+        if (!actor.doctorId().equals(record.doctorId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "doctor does not own this medical record");
+        }
         entity.setSummaryContent(JsonUtils.toJson(request.confirmedSummary()));
-        entity.setConfirmedBy(BusinessIds.numericId(request.confirmedBy()));
+        entity.setConfirmedBy(actor.doctorId());
         entity.setConfirmedAt(LocalDateTime.now());
         entity.setStatus("CONFIRMED");
         summaryMapper.updateById(entity);
+        invalidateCache(canonicalRecordNo(entity.getRecordId(), record));
+        invalidateCache(String.valueOf(entity.getRecordId()));
         return new SummaryConfirmResponse(summaryId, String.valueOf(entity.getRecordId()), "CONFIRMED");
+    }
+
+    private MedicalRecordSummaryResponse summarizeResolvedRecord(MedicalRecordSummaryRequest request,
+                                                                 JwtPayload actor,
+                                                                 Consumer<String> tokenConsumer,
+                                                                 boolean internal) {
+        Long recordId = resolveRecordId(request.recordId());
+        MedicalRecordFullDTO record = fetchRecord(recordId);
+        if (!internal) {
+            authorizeUserRecord(actor, record);
+        }
+        SummarySaveResult saved = summarizeAndSave(request, recordId, record, tokenConsumer);
+        return new MedicalRecordSummaryResponse(
+                saved.entity().getSummaryNo(), canonicalRecordNo(recordId, record),
+                saved.summary(), saved.entity().getStatus());
+    }
+
+    private static void authorizeUserRecord(JwtPayload actor, MedicalRecordFullDTO record) {
+        if (actor == null || !actor.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user login is required");
+        }
+        if (hasActiveRole(actor, "PATIENT")) {
+            if (actor.patientId() == null) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "patient identity is incomplete");
+            }
+            if (actor.patientId().equals(record.patientId())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN, "patient does not own this medical record");
+        }
+        if (hasActiveRole(actor, "DOCTOR")) {
+            if (actor.doctorId() == null) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "doctor identity is incomplete");
+            }
+            if (actor.doctorId().equals(record.doctorId())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN, "doctor does not own this medical record");
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN, "current role cannot access medical record summaries");
+    }
+
+    private static JwtPayload requireDoctor(JwtPayload actor) {
+        if (actor == null || !actor.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "doctor login is required");
+        }
+        if (!hasActiveRole(actor, "DOCTOR")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "doctor role is required");
+        }
+        if (actor.doctorId() == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "doctor identity is incomplete");
+        }
+        return actor;
+    }
+
+    private static void requireMedicalRecordService(JwtPayload actor) {
+        if (actor == null || !actor.isService()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "service identity is required");
+        }
+        if (!MEDICAL_RECORD_SERVICE.equals(actor.serviceCode())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "service cannot generate medical record summaries");
+        }
+    }
+
+    private static boolean hasActiveRole(JwtPayload actor, String role) {
+        if (StringUtils.hasText(actor.primaryRole())) {
+            return role.equals(actor.primaryRole());
+        }
+        return actor.hasRole(role);
+    }
+
+    private static String canonicalRecordNo(Long recordId, MedicalRecordFullDTO record) {
+        return StringUtils.hasText(record.recordNo()) ? record.recordNo() : String.valueOf(recordId);
+    }
+
+    private static String cacheKey(String recordNo) {
+        return SUMMARY_CACHE_PREFIX + recordNo;
+    }
+
+    private void invalidateCache(String recordNo) {
+        try {
+            redisTemplate.delete(cacheKey(recordNo));
+        } catch (RuntimeException ex) {
+            log.warn("[AI-CACHE] summary cache delete failed: recordNo={}, error={}",
+                    recordNo, ex.getMessage());
+        }
+    }
+
+    private String sourceFingerprint(Long recordId, String recordNo, MedicalRecordFullDTO record) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateDigest(digest, String.valueOf(recordId));
+            updateDigest(digest, recordNo);
+            updateDigest(digest, String.valueOf(record.patientId()));
+            updateDigest(digest, String.valueOf(record.doctorId()));
+            updateDigest(digest, recordText(record));
+            updateDigest(digest, llmModel());
+            updateDigest(digest, SUMMARY_PROMPT);
+            updateDigest(digest, PROMPT_VERSION);
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private static void updateDigest(MessageDigest digest, String value) {
+        byte[] bytes = String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+        digest.update((byte) (bytes.length >>> 24));
+        digest.update((byte) (bytes.length >>> 16));
+        digest.update((byte) (bytes.length >>> 8));
+        digest.update((byte) bytes.length);
+        digest.update(bytes);
+    }
+
+    private String llmModel() {
+        return properties.llm() == null ? "" : properties.llm().model();
     }
 
     private MedicalRecordFullDTO fetchRecord(Long recordId) {
@@ -231,6 +372,7 @@ public class SummaryService {
     }
 
     private SummarySaveResult summarizeAndSave(MedicalRecordSummaryRequest request,
+                                               Long recordId,
                                                MedicalRecordFullDTO record,
                                                Consumer<String> tokenConsumer) {
         long started = System.currentTimeMillis();
@@ -250,17 +392,17 @@ public class SummaryService {
         String summaryNo = BusinessIds.next("SUM");
         AiMedicalSummaryEntity entity = new AiMedicalSummaryEntity();
         entity.setSummaryNo(summaryNo);
-        entity.setRecordId(BusinessIds.numericId(request.recordId()));
+        entity.setRecordId(recordId);
         entity.setSummaryType(request.summaryType() == null ? "STRUCTURED" : request.summaryType());
         entity.setSummaryContent(JsonUtils.toJson(summary));
         entity.setStatus(Boolean.TRUE.equals(request.saveDraft()) ? "AI_DRAFT" : "GENERATED");
-        entity.setModelName(properties.llm().model());
-        entity.setPromptVersion("v1");
+        entity.setModelName(llmModel());
+        entity.setPromptVersion(PROMPT_VERSION);
         entity.setGeneratedAt(LocalDateTime.now());
         summaryMapper.insert(entity);
 
         callLogService.success("MEDICAL_RECORD_SUMMARY", record.patientId() == null ? null : String.valueOf(record.patientId()),
-                summaryNo, properties.llm().model(), request.recordId(), JsonUtils.toJson(summary), null,
+                summaryNo, llmModel(), request.recordId(), JsonUtils.toJson(summary), null,
                 System.currentTimeMillis() - started);
         return new SummarySaveResult(entity, summary);
     }

@@ -10,6 +10,8 @@ import com.medconsult.ai.dto.AiModels.TriageRecommendationDto;
 import com.medconsult.ai.dto.AiModels.TriageRequest;
 import com.medconsult.ai.dto.AiModels.TriageResponse;
 import com.medconsult.ai.security.AiHeaders;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,9 +97,9 @@ class AiSseServiceTest {
         MedicalRecordSummaryResponse response = new MedicalRecordSummaryResponse(
                 "SUM-1", "MR-1", Map.of("diagnosis", "上呼吸道感染"), "GENERATED"
         );
-        when(summaryService.summarizeRecordStream(any(), any())).thenAnswer(invocation -> {
+        when(summaryService.summarizeRecordStream(any(), any(), any())).thenAnswer(invocation -> {
             assertSame(request, invocation.getArgument(0));
-            Consumer<String> consumer = invocation.getArgument(1);
+            Consumer<String> consumer = invocation.getArgument(2);
             consumer.accept("第一段");
             consumer.accept("第二段");
             return response;
@@ -118,6 +120,28 @@ class AiSseServiceTest {
         assertSame(response, publishedEvents.get(3).data());
         assertEquals(Map.of("status", "COMPLETED"), publishedEvents.get(4).data());
         assertAllEventsUseRegistration(registered);
+    }
+
+    @Test
+    void summaryStreamShouldCaptureJwtActorBeforeRunningOnWorkerThread() throws Exception {
+        JwtPayload actor = new JwtPayload(
+                JwtPayload.SubjectType.USER, 17L, null, "doctor", List.of("DOCTOR"), "DOCTOR",
+                null, 29L, null, "U17", List.of(), "jti", Long.MAX_VALUE);
+        bindPayload(actor);
+        MedicalRecordSummaryRequest request = new MedicalRecordSummaryRequest("MR-SECURE", null, false);
+        MedicalRecordSummaryResponse response = new MedicalRecordSummaryResponse(
+                "SUM-SECURE", "MR-SECURE", Map.of("diagnosis", "bronchitis"), "GENERATED");
+        when(summaryService.summarizeRecordStream(any(), any(), any())).thenAnswer(invocation -> {
+            assertSame(request, invocation.getArgument(0));
+            assertSame(actor, invocation.getArgument(1));
+            return response;
+        });
+
+        service.streamSummary(request);
+        awaitTerminalEvent();
+
+        assertEventSequence("start", "result", "done");
+        assertSame(response, publishedEvents.get(1).data());
     }
 
     @Test
@@ -170,7 +194,7 @@ class AiSseServiceTest {
     @Test
     void streamShouldPublishFailedEventWithoutDoneWhenTaskThrows() throws Exception {
         IllegalStateException failure = new IllegalStateException("summary unavailable");
-        when(summaryService.summarizeRecordStream(any(), any())).thenThrow(failure);
+        when(summaryService.summarizeRecordStream(any(), any(), any())).thenThrow(failure);
 
         service.streamSummary(new MedicalRecordSummaryRequest("MR-2", null, false));
         awaitTerminalEvent();
@@ -223,6 +247,12 @@ class AiSseServiceTest {
         if (triggerUserId != null) {
             request.addHeader(AiHeaders.TRIGGER_USER_ID, triggerUserId);
         }
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+    }
+
+    private static void bindPayload(JwtPayload payload) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(SecurityContext.PAYLOAD_ATTR_KEY, payload);
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
     }
 

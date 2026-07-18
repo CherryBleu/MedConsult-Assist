@@ -39,6 +39,7 @@ import com.medconsult.ai.service.TriageService;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.security.DataScope;
+import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.Permission;
 import com.medconsult.common.security.SecurityContext;
 import io.swagger.v3.oas.annotations.Operation;
@@ -144,6 +145,7 @@ public class AiController {
     // ===== 病历摘要（路径对齐前端 /api/v1/ai/summary/*）=====
 
     @Operation(summary = "病历摘要（按病历）")
+    @Permission(roles = {"PATIENT", "DOCTOR"})
     @PostMapping("/api/v1/ai/summary/by-record/{recordNo}")
     public Result<MedicalRecordSummaryResponse> summaryByRecord(
             @PathVariable("recordNo") String recordNo) {
@@ -151,6 +153,7 @@ public class AiController {
     }
 
     @Operation(summary = "病历摘要（按文本）")
+    @Permission(roles = {"DOCTOR"})
     @PostMapping("/api/v1/ai/summary/by-text")
     public Result<MedicalRecordSummaryTextResponse> summaryByText(
             @Valid @RequestBody MedicalRecordSummaryTextRequest request) {
@@ -158,7 +161,7 @@ public class AiController {
     }
 
     @Operation(summary = "病历摘要确认/修正")
-    @Permission(code = "ai:summary:confirm", dataScope = DataScope.ALL, roles = {"DOCTOR", "HOSPITAL_ADMIN"})
+    @Permission(code = "ai:summary:confirm", dataScope = DataScope.ALL, roles = {"DOCTOR"})
     @PutMapping("/api/v1/ai/summary/{summaryId}/confirm")
     public Result<SummaryConfirmResponse> confirmSummary(
             @PathVariable("summaryId") String summaryId,
@@ -167,6 +170,7 @@ public class AiController {
     }
 
     @Operation(summary = "病历摘要（SSE 流式）")
+    @Permission(roles = {"PATIENT", "DOCTOR"})
     @PostMapping(value = "/api/v1/ai/summary/stream", produces = "text/event-stream")
     public SseEmitter summaryStream(@Valid @RequestBody MedicalRecordSummaryRequest request) {
         return aiSseService.streamSummary(request);
@@ -329,14 +333,14 @@ public class AiController {
 
     @PostMapping("/internal/ai/medical-record-summary")
     public Result<MedicalRecordSummaryResponse> internalSummary(@Valid @RequestBody MedicalRecordSummaryRequest request) {
-        SecurityContext.requireService();
-        return Result.ok(summaryService.summarizeRecord(request));
+        JwtPayload actor = SecurityContext.requireService();
+        return Result.ok(summaryService.summarizeRecord(request, actor));
     }
 
     @PostMapping(value = "/internal/ai/medical-record-summary/stream", produces = "text/event-stream")
     public SseEmitter internalSummaryStream(@Valid @RequestBody MedicalRecordSummaryRequest request) {
-        SecurityContext.requireService();
-        return aiSseService.streamSummary(request);
+        JwtPayload actor = SecurityContext.requireService();
+        return aiSseService.streamInternalSummary(request, actor);
     }
 
     @PostMapping("/internal/ai/report-analysis")

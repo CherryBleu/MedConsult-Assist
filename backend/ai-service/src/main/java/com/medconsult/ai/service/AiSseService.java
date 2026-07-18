@@ -6,6 +6,8 @@ import com.medconsult.ai.dto.AiModels.MedicationAnalysisRequest;
 import com.medconsult.ai.dto.AiModels.TriageRequest;
 import com.medconsult.ai.dto.AiModels.TriageResponse;
 import com.medconsult.ai.security.AiHeaders;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -41,8 +43,18 @@ public class AiSseService {
     }
 
     public SseEmitter streamSummary(MedicalRecordSummaryRequest request) {
+        JwtPayload actor = SecurityContext.getPayload();
         return emit((userId, streamId) -> summaryService.summarizeRecordStream(
                 request,
+                actor,
+                token -> sendQuietly(userId, streamId, "delta", Map.of("token", token))
+        ));
+    }
+
+    public SseEmitter streamInternalSummary(MedicalRecordSummaryRequest request, JwtPayload actor) {
+        return emit((userId, streamId) -> summaryService.summarizeInternalRecordStream(
+                request,
+                actor,
                 token -> sendQuietly(userId, streamId, "delta", Map.of("token", token))
         ));
     }
