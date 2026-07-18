@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.time.LocalDate;
 
@@ -65,7 +66,7 @@ class DrugFlowTest {
                 {"genericName":"硝苯地平","tradeName":"拜新同","specification":"30mg*7片",
                  "dosageForm":"控释片","manufacturer":"示例制药","unit":"盒","minStockThreshold":50,
                  "contraindications":["严重低血压","心源性休克"]}""";
-        mvc.perform(post("/api/v1/drugs").contentType("application/json").content(body))
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs")).contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.drugId").exists())
@@ -88,7 +89,7 @@ class DrugFlowTest {
         String inboundBody = """
                 {"batchNo":"BATCH001","quantity":100,"unitPrice":12.50,
                  "productionDate":"2026-01-01","expireDate":"2028-06-01","supplier":"供应链公司"}""";
-        mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/inbound")
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
                         .contentType("application/json").content(inboundBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -97,7 +98,7 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data.currentStock").value(100));
 
         // 再次入库同批次：累加 quantity
-        mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/inbound")
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
                         .contentType("application/json").content(inboundBody))
                 .andExpect(jsonPath("$.data.currentStock").value(200));
     }
@@ -114,7 +115,7 @@ class DrugFlowTest {
         // 出库 30：FEFO 应全部从近效期 BATCH_NEAR 扣（near 还剩 20，far 仍 100）
         String outBody = """
                 {"quantity":30,"purpose":"PRESCRIPTION","relatedRecordId":"MR001"}""";
-        mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/outbound")
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/outbound"))
                         .contentType("application/json").content(outBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -138,7 +139,7 @@ class DrugFlowTest {
         // 出库 10 > 库存 5 → CONFLICT
         String outBody = """
                 {"quantity":10,"purpose":"DISPENSE"}""";
-        mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/outbound")
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/outbound"))
                         .contentType("application/json").content(outBody))
                 .andExpect(jsonPath("$.code").value(409001))
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("库存不足")));
@@ -160,7 +161,7 @@ class DrugFlowTest {
         // 出库 15：应跳过过期的 BATCH_EXPIRED，全部从 BATCH_OK 扣
         String outBody = """
                 {"quantity":15,"purpose":"DISPENSE"}""";
-        mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/outbound")
+        mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/outbound"))
                         .contentType("application/json").content(outBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.currentStock").value(105)); // 120 - 15
@@ -307,7 +308,7 @@ class DrugFlowTest {
         String body = """
                 {"genericName":"%s","unit":"盒","minStockThreshold":%d,
                  "contraindications":["禁忌A"],"interactions":["相互作用B"]}""".formatted(genericName, threshold);
-        MvcResult r = mvc.perform(post("/api/v1/drugs").contentType("application/json").content(body))
+        MvcResult r = mvc.perform(withPharmacyAdmin(post("/api/v1/drugs")).contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/drugId").asText();
@@ -318,7 +319,7 @@ class DrugFlowTest {
         String body = """
                 {"batchNo":"%s","quantity":%d,"unitPrice":10.00,"expireDate":"%s","supplier":"测试供应商"}""".formatted(
                 batchNo, quantity, expireDate);
-        MvcResult r = mvc.perform(post("/api/v1/drugs/" + drugNo + "/stock/inbound")
+        MvcResult r = mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andReturn();
@@ -393,5 +394,11 @@ class DrugFlowTest {
         mvc.perform(get("/internal/drugs/" + drugId + "/current-stock")
                         .header("X-Caller-Service", "test-service"))
                 .andExpect(jsonPath("$.data").value(expected));
+    }
+
+    private MockHttpServletRequestBuilder withPharmacyAdmin(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "4")
+                .header("X-User-Primary-Role", "PHARMACY_ADMIN")
+                .header("X-User-Roles", "PHARMACY_ADMIN");
     }
 }

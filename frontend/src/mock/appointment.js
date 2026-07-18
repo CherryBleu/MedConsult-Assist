@@ -207,7 +207,8 @@ export const mockMarkNoShow = (id) => {
 }
 
 export const mockReceptionList = (params = {}) => {
-  if (consumeFailOnce('mock_reception_list_fail_once')) {
+  const isReceptionPage = typeof window !== 'undefined' && window.location.pathname === '/doctor/reception'
+  if (isReceptionPage && consumeFailOnce('mock_reception_list_fail_once')) {
     return Promise.reject(new Error('接诊列表加载失败，请重试'))
   }
   let list = mockAppointments.filter(a => a.doctorId === 1)

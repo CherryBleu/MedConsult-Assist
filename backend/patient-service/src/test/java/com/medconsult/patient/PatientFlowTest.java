@@ -9,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -36,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:schema.sql",
         // 禁用 Nacos discovery/config，避免测试连接 Nacos
         "spring.cloud.nacos.discovery.enabled=false",
         "spring.cloud.nacos.config.enabled=false",
@@ -83,7 +85,7 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.code").value(400001));
 
         // 4. 查询详情 + 脱敏
-        mvc.perform(get("/api/v1/patients/" + patientNo))
+        mvc.perform(withAdmin(get("/api/v1/patients/" + patientNo)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.patientId").value(patientNo))
                 .andExpect(jsonPath("$.data.name").value("张三"))
@@ -95,7 +97,7 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
 
         // 5. 分页查询
-        mvc.perform(get("/api/v1/patients").param("page", "1").param("pageSize", "10").param("keyword", "张三"))
+        mvc.perform(withAdmin(get("/api/v1/patients")).param("page", "1").param("pageSize", "10").param("keyword", "张三"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.page").value(1))
@@ -110,21 +112,21 @@ class PatientFlowTest {
         String updateBody = """
                 {"phone":"13800000009","address":"北京市海淀区示例路 9 号",
                  "allergies":["青霉素","头孢类"],"pastMedicalHistory":["高血压","慢性胃炎"]}""";
-        mvc.perform(put("/api/v1/patients/" + patientNo).contentType("application/json").content(updateBody))
+        mvc.perform(withAdmin(put("/api/v1/patients/" + patientNo)).contentType("application/json").content(updateBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.patientId").value(patientNo))
                 .andExpect(jsonPath("$.data.updatedAt").exists());
 
         // 验证更新生效（详情手机号脱敏后为 138****0009）
-        mvc.perform(get("/api/v1/patients/" + patientNo))
+        mvc.perform(withAdmin(get("/api/v1/patients/" + patientNo)))
                 .andExpect(jsonPath("$.data.phoneMasked").value("138****0009"))
                 .andExpect(jsonPath("$.data.allergies[1]").value("头孢类"));
 
         // 7. 状态流转 ACTIVE → DISABLED
         String statusBody = """
                 {"status":"DISABLED","reason":"重复档案，已完成合并"}""";
-        mvc.perform(patch("/api/v1/patients/" + patientNo + "/status").contentType("application/json").content(statusBody))
+        mvc.perform(withAdmin(patch("/api/v1/patients/" + patientNo + "/status")).contentType("application/json").content(statusBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.patientId").value(patientNo))
                 .andExpect(jsonPath("$.data.status").value("DISABLED"));
@@ -132,7 +134,7 @@ class PatientFlowTest {
         // 非法状态 → 400
         String badStatus = """
                 {"status":"BANNED","reason":"x"}""";
-        mvc.perform(patch("/api/v1/patients/" + patientNo + "/status").contentType("application/json").content(badStatus))
+        mvc.perform(withAdmin(patch("/api/v1/patients/" + patientNo + "/status")).contentType("application/json").content(badStatus))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
@@ -191,6 +193,12 @@ class PatientFlowTest {
 
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.context.ApplicationContext ctx;
+
+    private MockHttpServletRequestBuilder withAdmin(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "1")
+                .header("X-User-Primary-Role", "HOSPITAL_ADMIN")
+                .header("X-User-Roles", "HOSPITAL_ADMIN");
+    }
 
     /**
      * DTO 格式校验回归测试：对应 review 发现的 P0 问题——name=纯数字、非法手机号、

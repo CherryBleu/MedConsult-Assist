@@ -116,6 +116,14 @@ class MedicalRecordFlowTest {
                 .header("X-User-Roles", "PATIENT")
                 .header("X-User-Patient-Id", "9999");
     }
+    /** 药房管理员身份（处方审方 / 调剂 / 完成） */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder pharmacyAdminAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "7001")
+                .header("X-User-Primary-Role", "PHARMACY_ADMIN")
+                .header("X-User-Roles", "PHARMACY_ADMIN")
+                .header("X-User-Pharmacist-Id", "4001");
+    }
 
     /**
      * 统一 stub Feign 反查：任意业务编号 → 固定确定性主键。
@@ -290,7 +298,7 @@ class MedicalRecordFlowTest {
     void createPrescription_draftWithItems() throws Exception {
         String rxNo = createPrescription();
         // 验证详情含明细
-        mvc.perform(get("/api/v1/prescriptions/" + rxNo))
+        mvc.perform(doctorAuth(get("/api/v1/prescriptions/" + rxNo)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.items[0].drugName").value("硝苯地平控释片"))
@@ -308,27 +316,27 @@ class MedicalRecordFlowTest {
                 {"recordId":"%s","patientId":"%s","doctorId":"%s",
                  "items":[{"drugName":"测试药","days":3}]}""".formatted(recordNo, PATIENT_NO, DOCTOR_NO);
         // quantity 缺失 → @NotNull 校验失败 → PARAM_ERROR
-        mvc.perform(post("/api/v1/prescriptions").contentType("application/json").content(body))
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions").contentType("application/json").content(body)))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
     @Test
     void prescriptionList_filterByStatus() throws Exception {
         createPrescription(); // DRAFT
-        mvc.perform(get("/api/v1/prescriptions").param("status", "DRAFT"))
+        mvc.perform(doctorAuth(get("/api/v1/prescriptions").param("status", "DRAFT")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].status").value("DRAFT"));
         // PENDING_REVIEW 应为 0
-        mvc.perform(get("/api/v1/prescriptions").param("status", "PENDING_REVIEW"))
+        mvc.perform(doctorAuth(get("/api/v1/prescriptions").param("status", "PENDING_REVIEW")))
                 .andExpect(jsonPath("$.data.total").value(0));
     }
 
     @Test
     void submit_draftToPendingReview() throws Exception {
         String rxNo = createPrescription();
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/submit"))
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("PENDING_REVIEW"));
@@ -339,27 +347,27 @@ class MedicalRecordFlowTest {
         String rxNo = createPrescription();
         submitPrescription(rxNo); // DRAFT → PENDING_REVIEW
         // 已 PENDING_REVIEW 再 submit → CONFLICT
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/submit"))
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
     @Test
     void submit_notFound() throws Exception {
-        mvc.perform(post("/api/v1/prescriptions/RX_NOT_EXIST/submit"))
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/RX_NOT_EXIST/submit")))
                 .andExpect(jsonPath("$.code").value(404001));
     }
 
     @Test
     void prescriptionDetail_notFound() throws Exception {
-        mvc.perform(get("/api/v1/prescriptions/RX_NOT_EXIST"))
+        mvc.perform(doctorAuth(get("/api/v1/prescriptions/RX_NOT_EXIST")))
                 .andExpect(jsonPath("$.code").value(404001));
     }
 
     @Test
     void review_notFound() throws Exception {
-        mvc.perform(post("/api/v1/prescriptions/RX_NOT_EXIST/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/RX_NOT_EXIST/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(404001));
     }
 
@@ -367,9 +375,9 @@ class MedicalRecordFlowTest {
     void review_pendingToApproved() throws Exception {
         String rxNo = createPrescription();
         submitPrescription(rxNo);
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}"))
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
@@ -380,9 +388,9 @@ class MedicalRecordFlowTest {
     void review_pendingToRejected() throws Exception {
         String rxNo = createPrescription();
         submitPrescription(rxNo);
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"REJECT\",\"pharmacistId\":\"PH2001\",\"rejectReason\":\"剂量超限\"}"))
+                        .content("{\"action\":\"REJECT\",\"pharmacistId\":\"PH2001\",\"rejectReason\":\"剂量超限\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("REJECTED"));
@@ -392,9 +400,9 @@ class MedicalRecordFlowTest {
     void review_illegalAction_onDraft() throws Exception {
         String rxNo = createPrescription();
         // DRAFT 直接 review → CONFLICT（必须先 submit）
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
@@ -403,9 +411,9 @@ class MedicalRecordFlowTest {
         String rxNo = createPrescription();
         submitPrescription(rxNo);
         // REJECT 无 rejectReason → PARAM_ERROR
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"REJECT\",\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"action\":\"REJECT\",\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
@@ -414,9 +422,9 @@ class MedicalRecordFlowTest {
     @Test
     void pay_approvedToPaid() throws Exception {
         String rxNo = createApprovedPrescription();
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/pay")
+        mvc.perform(selfPatientAuth(post("/api/v1/prescriptions/" + rxNo + "/pay")
                         .contentType("application/json")
-                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}"))
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("PAID"))
@@ -427,9 +435,9 @@ class MedicalRecordFlowTest {
     @Test
     void pay_nonApprovedRejected() throws Exception {
         String rxNo = createPrescription(); // DRAFT，未审
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/pay")
+        mvc.perform(selfPatientAuth(post("/api/v1/prescriptions/" + rxNo + "/pay")
                         .contentType("application/json")
-                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}"))
+                        .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
@@ -440,9 +448,9 @@ class MedicalRecordFlowTest {
         when(drugFeignClient.outbound(any(), any())).thenReturn(
                 Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK_1", "D_MOCK", 50)));
 
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
-                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("DISPENSED"))
@@ -458,18 +466,18 @@ class MedicalRecordFlowTest {
         when(drugFeignClient.outbound(any(), any())).thenThrow(
                 new BusinessException(ErrorCode.CONFLICT, "库存不足"));
 
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
-                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
     @Test
     void dispense_draftRejected() throws Exception {
         String rxNo = createPrescription(); // DRAFT，未审未缴费
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
-                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
@@ -481,24 +489,24 @@ class MedicalRecordFlowTest {
                 {"recordId":"%s","patientId":"%s","doctorId":"%s",
                  "items":[{"drugNo":"D001","drugName":"测试药","days":3,"quantity":1.5,"unit":"片"}]}"""
                 .formatted(recordNo, PATIENT_NO, DOCTOR_NO);
-        String rxNo = om.readTree(mvc.perform(post("/api/v1/prescriptions")
-                        .contentType("application/json").content(body))
+        String rxNo = om.readTree(mvc.perform(doctorAuth(post("/api/v1/prescriptions")
+                        .contentType("application/json").content(body)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .at("/data/prescriptionId").asText();
         submitPrescription(rxNo);
         approvePrescription(rxNo);
         when(drugFeignClient.outbound(any(), any())).thenReturn(
                 Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK", "D001", 50)));
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
-                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(jsonPath("$.code").value(400001));
     }
 
     @Test
     void complete_dispensedToCompleted() throws Exception {
         String rxNo = createDispensedPrescription();
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/complete"))
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/complete")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"));
@@ -507,16 +515,16 @@ class MedicalRecordFlowTest {
     @Test
     void complete_nonDispensedRejected() throws Exception {
         String rxNo = createApprovedPrescription(); // APPROVED，未调剂
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/complete"))
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/complete")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
     @Test
     void cancel_approvedToCancelled() throws Exception {
         String rxNo = createApprovedPrescription();
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/cancel")
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/cancel")
                         .contentType("application/json")
-                        .content("{\"cancelReason\":\"患者取消\",\"operatorId\":\"D10001\"}"))
+                        .content("{\"cancelReason\":\"患者取消\",\"operatorId\":\"D10001\"}")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"))
@@ -526,9 +534,9 @@ class MedicalRecordFlowTest {
     @Test
     void cancel_alreadyDispensedRejected() throws Exception {
         String rxNo = createDispensedPrescription(); // DISPENSED
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/cancel")
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/cancel")
                         .contentType("application/json")
-                        .content("{\"cancelReason\":\"尝试退已发药\",\"operatorId\":\"D10001\"}"))
+                        .content("{\"cancelReason\":\"尝试退已发药\",\"operatorId\":\"D10001\"}")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
 
@@ -561,7 +569,7 @@ class MedicalRecordFlowTest {
                  "items":[{"drugNo":"D001","drugName":"硝苯地平控释片","specification":"30mg*7片","dosage":"30mg",
                            "frequency":"每日一次","days":7,"quantity":7,"unit":"片","unitPrice":30.00}]}"""
                 .formatted(recordNo, PATIENT_NO, DOCTOR_NO);
-        MvcResult r = mvc.perform(post("/api/v1/prescriptions").contentType("application/json").content(body))
+        MvcResult r = mvc.perform(doctorAuth(post("/api/v1/prescriptions").contentType("application/json").content(body)))
                 .andExpect(status().isOk())
                 .andReturn();
         return om.readTree(r.getResponse().getContentAsString()).at("/data/prescriptionId").asText();
@@ -569,15 +577,15 @@ class MedicalRecordFlowTest {
 
     /** 提交审方（DRAFT → PENDING_REVIEW） */
     private void submitPrescription(String rxNo) throws Exception {
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/submit"))
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
                 .andExpect(status().isOk());
     }
 
     /** 审方通过（PENDING_REVIEW → APPROVED） */
     private void approvePrescription(String rxNo) throws Exception {
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/review")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
-                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}"))
+                        .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}")))
                 .andExpect(status().isOk());
     }
 
@@ -594,9 +602,9 @@ class MedicalRecordFlowTest {
         String rxNo = createApprovedPrescription();
         when(drugFeignClient.outbound(any(), any())).thenReturn(
                 Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK_1", "D001", 50)));
-        mvc.perform(post("/api/v1/prescriptions/" + rxNo + "/dispense")
+        mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
-                        .content("{\"pharmacistId\":\"PH2001\"}"))
+                        .content("{\"pharmacistId\":\"PH2001\"}")))
                 .andExpect(status().isOk());
         return rxNo;
     }
