@@ -68,6 +68,25 @@ public class DrugController {
         return Result.ok(drugService.listFlows(drugId, page, pageSize));
     }
 
+    /**
+     * §2.7.5b 全局库存流水（管理员视角，跨所有药品）。每条带 drugId/drugName。
+     * <p>仅 PHARMACY_ADMIN / HOSPITAL_ADMIN 可访问（库存流水含经营数据，非对患者公开）。
+     * <p>路径 /stock/flows 是常量段，优先于 /{drugId}/stock/flows 的路径变量匹配。
+     */
+    @GetMapping("/stock/flows")
+    @Operation(summary = "全局库存流水")
+    public Result<PageResult<DrugDTO.StockFlowListItem>> listAllFlows(
+            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") int pageSize) {
+        com.medconsult.common.security.JwtPayload p = com.medconsult.common.security.SecurityContext.requireUser();
+        boolean admin = p.hasRole("HOSPITAL_ADMIN") || p.hasRole("PHARMACY_ADMIN");
+        if (!admin) {
+            throw new com.medconsult.common.core.BusinessException(com.medconsult.common.core.ErrorCode.FORBIDDEN,
+                    "仅医院管理员/药师可查看全局库存流水");
+        }
+        return Result.ok(drugService.listAllFlows(page, pageSize));
+    }
+
     /** §2.7.6 查询库存预警（LOW_STOCK / NEAR_EXPIRY） */
     @GetMapping("/stock/alerts")
     @Operation(summary = "查询库存预警")

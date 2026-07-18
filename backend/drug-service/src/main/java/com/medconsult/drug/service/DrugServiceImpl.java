@@ -181,6 +181,55 @@ public class DrugServiceImpl implements DrugService {
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
     }
 
+    @Override
+    public PageResult<DrugDTO.StockFlowListItem> listAllFlows(int page, int pageSize) {
+        Page<DrugStockFlow> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
+        QueryWrapper<DrugStockFlow> qw = new QueryWrapper<DrugStockFlow>().orderByDesc("created_at");
+        IPage<DrugStockFlow> result = flowMapper.selectPage(p, qw);
+
+        // 批量回填 batchNo + drugNo/drugName（全局视图每条可能属不同药品）
+        java.util.Set<Long> batchIdSet = new java.util.LinkedHashSet<>();
+        java.util.Set<Long> drugIdSet = new java.util.LinkedHashSet<>();
+        for (DrugStockFlow f : result.getRecords()) {
+            if (f.getBatchId() != null) batchIdSet.add(f.getBatchId());
+            if (f.getDrugId() != null) drugIdSet.add(f.getDrugId());
+        }
+        Map<Long, String> batchNoMap = toBatchNoMap(
+                batchBatchList(batchIdSet));
+        Map<Long, Drug> drugMap = toDrugMap(drugIdSet);
+
+        List<DrugDTO.StockFlowListItem> items = new ArrayList<>();
+        for (DrugStockFlow f : result.getRecords()) {
+            Drug d = f.getDrugId() != null ? drugMap.get(f.getDrugId()) : null;
+            items.add(new DrugDTO.StockFlowListItem(
+                    f.getFlowNo(),
+                    f.getType(),
+                    f.getQuantity(),
+                    f.getBatchId() != null ? batchNoMap.get(f.getBatchId()) : null,
+                    f.getCreatedAt(),
+                    d != null ? d.getDrugNo() : null,
+                    d != null ? d.getGenericName() : null));
+        }
+        return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+    }
+
+    /** 批量查批次（listAllFlows 用，抽出来避免重复） */
+    private java.util.List<DrugStockBatch> batchBatchList(java.util.Set<Long> ids) {
+        if (ids.isEmpty()) return java.util.List.of();
+        return batchMapper.selectBatchIds(new ArrayList<>(ids));
+    }
+
+    /** drugId → Drug 映射（listAllFlows 全局视图回填药品名用） */
+    private Map<Long, Drug> toDrugMap(java.util.Set<Long> ids) {
+        if (ids.isEmpty()) return java.util.Collections.emptyMap();
+        List<Drug> drugs = drugMapper.selectBatchIds(new ArrayList<>(ids));
+        Map<Long, Drug> map = new java.util.HashMap<>();
+        for (Drug d : drugs) {
+            map.put(d.getId(), d);
+        }
+        return map;
+    }
+
     // ===== §2.7.6 查询库存预警 =====
 
     @Override

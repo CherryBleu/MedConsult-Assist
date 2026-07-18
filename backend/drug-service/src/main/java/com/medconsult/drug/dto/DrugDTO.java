@@ -207,8 +207,17 @@ public class DrugDTO {
             @Schema(description = "类型：INBOUND / OUTBOUND") String type,            // INBOUND/OUTBOUND/ADJUST
             @Schema(description = "数量") Integer quantity,
             @Schema(description = "批次号") String batchNo,         // 关联批次号（便于追溯，组装自 batch）
-            @Schema(description = "创建时间") LocalDateTime createdAt
-    ) {}
+            @Schema(description = "创建时间") LocalDateTime createdAt,
+            /** 药品编号（drug_no）。按药品查询时为 null（已知），全局查询时填充 */
+            @Schema(description = "药品编号") String drugId,
+            /** 药品名称。全局查询时填充便于识别 */
+            @Schema(description = "药品名称") String drugName
+    ) {
+        /** 向后兼容：按药品查询的旧构造（drugId/drugName 为 null） */
+        public StockFlowListItem(String stockFlowId, String type, Integer quantity, String batchNo, LocalDateTime createdAt) {
+            this(stockFlowId, type, quantity, batchNo, createdAt, null, null);
+        }
+    }
 
     // ===== §2.7.6 查询库存预警 =====
 
