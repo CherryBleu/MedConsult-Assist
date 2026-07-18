@@ -38,6 +38,19 @@ public class ScheduleController {
         return Result.ok(scheduleService.create(req));
     }
 
+    /** §2.4.5 全量更新排班（仅 HOSPITAL_ADMIN，不可改医生） */
+    @PutMapping("/{scheduleId}")
+    @Operation(summary = "更新排班")
+    public Result<ScheduleDTO.CreateResponse> update(
+            @Parameter(description = "排班编号", required = true) @PathVariable String scheduleId,
+            @Valid @RequestBody ScheduleDTO.CreateRequest req) {
+        JwtPayload p = SecurityContext.requireUser();
+        if (!p.hasRole("HOSPITAL_ADMIN")) {
+            throw new com.medconsult.common.core.BusinessException(com.medconsult.common.core.ErrorCode.FORBIDDEN, "仅医院管理员可更新排班");
+        }
+        return Result.ok(scheduleService.update(scheduleId, req));
+    }
+
     /** §2.4.2 查询排班列表 */
     @GetMapping
     @Operation(summary = "查询排班列表")

@@ -18,6 +18,9 @@ public interface ScheduleService {
     /** §2.4.1 创建排班 */
     ScheduleDTO.CreateResponse create(ScheduleDTO.CreateRequest req);
 
+    /** §2.4.5 全量更新排班（仅 HOSPITAL_ADMIN，不可改 doctor）；约束：totalQuota 不能小于已预约数 */
+    ScheduleDTO.CreateResponse update(String scheduleNo, ScheduleDTO.CreateRequest req);
+
     /** §2.4.2 分页查询排班，可按 departmentId(department_no)/dateFrom/dateTo 过滤 */
     PageResult<ScheduleDTO.ListItem> list(int page, int pageSize, String departmentId,
                                           LocalDate dateFrom, LocalDate dateTo);

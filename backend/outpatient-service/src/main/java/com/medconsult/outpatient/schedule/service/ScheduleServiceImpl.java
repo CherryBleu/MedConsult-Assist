@@ -123,6 +123,77 @@ public class ScheduleServiceImpl implements ScheduleService {
         return new ScheduleDTO.CreateResponse(s.getScheduleNo(), remaining, s.getStatus());
     }
 
+    // ===== §2.4.5 全量更新排班（仅 HOSPITAL_ADMIN） =====
+
+    @Override
+    @Transactional
+    public ScheduleDTO.CreateResponse update(String scheduleNo, ScheduleDTO.CreateRequest req) {
+        // 时段合法性
+        if (!ALLOWED_PERIOD.contains(req.getPeriod())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "非法时段: " + req.getPeriod());
+        }
+        if (req.getTotalQuota() == null || req.getTotalQuota() <= 0) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "总号源必须大于 0");
+        }
+
+        DoctorSchedule s = requireByNo(scheduleNo);
+
+        // 编辑模式不改医生（前端 ScheduleManage 医生字段 :disabled）：req.doctorId 应与现状一致，
+        // 不一致直接拒（防绕过前端改归属）。以现状 doctorId 校验科室。
+        Doctor doctor = doctorMapper.selectById(s.getDoctorId());
+        if (doctor == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "排班关联医生不存在");
+        }
+        if (req.getDoctorId() != null && !req.getDoctorId().isBlank()
+                && !req.getDoctorId().equals(doctor.getDoctorNo())) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "不允许修改排班的归属医生");
+        }
+
+        // 科室：若传了则校验存在启用，否则沿用现状
+        Long deptId = s.getDepartmentId();
+        if (req.getDepartmentId() != null && !req.getDepartmentId().isBlank()) {
+            Department dept = departmentMapper.selectOne(
+                    new QueryWrapper<Department>().eq("department_no", req.getDepartmentId()));
+            if (dept == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + req.getDepartmentId());
+            }
+            if (dept.getEnabled() == null || dept.getEnabled() != 1) {
+                throw new BusinessException(ErrorCode.CONFLICT, "科室已停用: " + req.getDepartmentId());
+            }
+            deptId = dept.getId();
+        }
+
+        // 同医生同日期同时段不重复（排除自身）
+        Long dupCount = scheduleMapper.selectCount(new QueryWrapper<DoctorSchedule>()
+                .eq("doctor_id", doctor.getId())
+                .eq("schedule_date", req.getScheduleDate())
+                .eq("period", req.getPeriod())
+                .ne("id", s.getId()));
+        if (dupCount != null && dupCount > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "该医生在此日期此时段已存在排班: " + req.getScheduleDate() + "/" + req.getPeriod());
+        }
+
+        // 号源约束：新 totalQuota 不能小于已预约 bookedQuota（避免超卖）
+        int booked = s.getBookedQuota() == null ? 0 : s.getBookedQuota();
+        if (req.getTotalQuota() < booked) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "总号源不能小于已预约数 " + booked);
+        }
+
+        s.setDepartmentId(deptId);
+        s.setScheduleDate(req.getScheduleDate());
+        s.setPeriod(req.getPeriod());
+        s.setStartTime(req.getStartTime());
+        s.setEndTime(req.getEndTime());
+        s.setTotalQuota(req.getTotalQuota());
+        s.setRegistrationFee(req.getRegistrationFee());
+        scheduleMapper.updateById(s);
+
+        int remaining = req.getTotalQuota() - booked;
+        return new ScheduleDTO.CreateResponse(s.getScheduleNo(), remaining, s.getStatus());
+    }
+
     // ===== §2.4.2 列表 =====
 
     @Override
