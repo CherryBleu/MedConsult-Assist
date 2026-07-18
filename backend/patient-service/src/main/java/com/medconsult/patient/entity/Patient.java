@@ -1,6 +1,8 @@
 package com.medconsult.patient.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.medconsult.common.crypto.EncryptedStringTypeHandler;
 import com.medconsult.common.mybatis.BaseEntity;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,14 +15,16 @@ import java.time.LocalDate;
  * <p>承载患者基础信息、联系方式、病史和过敏史，是预约、病历和 AI 分析的核心数据来源
  * （《需求文档》§4.1.1）。
  *
- * <p><b>敏感字段</b>：{@code id_no} 在生产应做 AES-256 落库（《修改建议》§5.3），
- * 当前暂明文存储（待 common 加密模块就绪后改造，见 schema.sql TODO）。
- * {@code allergies} / {@code past_medical_history} / {@code family_history} 存 JSON 数组串
- * （如 {@code ["青霉素","头孢类"]}），{@code emergency_contact} 存 JSON 对象串。
+ * <p><b>敏感字段加密（2026-07-17，§5.3）</b>：{@code id_no} 用 AES-256-GCM 字段级加密
+ * （经 {@link EncryptedStringTypeHandler} 透明加解密）；{@code id_no_hash} 存 SHA-256 指纹
+ * 支撑唯一性校验/精确检索（密文每次 IV 不同不可直接比较）。{@code @TableName(autoResultMap=true)}
+ * 是 MyBatis-Plus 让字段级 TypeHandler 生效的前提。
+ * <p>{@code allergies} / {@code past_medical_history} / {@code family_history} 存 JSON 数组串，
+ * {@code emergency_contact} 存 JSON 对象串。
  */
 @Getter
 @Setter
-@TableName("patient")
+@TableName(value = "patient", autoResultMap = true)
 public class Patient extends BaseEntity {
 
     /** 患者编号，如 P202607060001（业务可读，对外暴露） */
@@ -38,8 +42,15 @@ public class Patient extends BaseEntity {
     /** 证件类型：ID_CARD / PASSPORT / OTHER */
     private String idType;
 
-    /** 证件号（TODO AES-256 加密，见 schema.sql 注释） */
+    /**
+     * 证件号（AES-256-GCM 加密存储，TypeHandler 透明加解密）。
+     * <p>业务侧读写均为明文；唯一性/检索用 {@link #idNoHash}。
+     */
+    @TableField(value = "id_no", typeHandler = EncryptedStringTypeHandler.class)
     private String idNo;
+
+    /** 证件号指纹 SHA-256 hex（64 字符）。唯一键挂此列，业务侧用 .eq("id_no_hash", ...) 查重/检索 */
+    private String idNoHash;
 
     /** 手机号 */
     private String phone;
@@ -62,3 +73,4 @@ public class Patient extends BaseEntity {
     /** 档案状态：ACTIVE / DISABLED / MERGED */
     private String status;
 }
+

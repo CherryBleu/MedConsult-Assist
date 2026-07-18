@@ -24,6 +24,11 @@ medconsult:
   security:
     jwt:
       secret: ${JWT_SECRET:dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+  # id_no 字段级加密 AES-256-GCM（§5.3）：Base64 编码的 32 字节 key。
+  # 生产从 Nacos/KMS 注入；dev 默认值为 32 字节全 0（仅冒烟，生产必须替换）。
+  crypto:
+    id-no:
+      key: ${ID_NO_KEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
 
 mybatis-plus:
   global-config:

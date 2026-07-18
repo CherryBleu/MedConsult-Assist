@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS patient (
     gender                VARCHAR(20),
     birth_date            DATE,
     id_type               VARCHAR(30),
-    id_no                 VARCHAR(64),
+    id_no                 VARCHAR(255),
+    id_no_hash            VARCHAR(64),
     phone                 VARCHAR(20),
     address               VARCHAR(255),
     allergies             TEXT,
@@ -26,4 +27,4 @@ CREATE TABLE IF NOT EXISTS patient (
     PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_patient_no ON patient(patient_no);
-CREATE UNIQUE INDEX IF NOT EXISTS uk_patient_id_card ON patient(id_type, id_no);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_patient_id_card ON patient(id_type, id_no_hash);

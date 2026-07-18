@@ -27,6 +27,7 @@
         <module>common-mq</module>
         <module>common-redis</module>
         <module>common-feign</module>
+        <module>common-crypto</module>
     </modules>
 
 </project>

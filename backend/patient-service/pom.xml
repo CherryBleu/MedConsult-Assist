@@ -29,6 +29,11 @@
             <groupId>com.medconsult</groupId>
             <artifactId>common-mybatis</artifactId>
         </dependency>
+        <!-- common-crypto：id_no 字段级 AES-256-GCM 加密（§5.3）-->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-crypto</artifactId>
+        </dependency>
         <!-- common-feign：patient-service 提供 /internal/* context 接口契约（PatientContextDTO），
              并在将来调用其他服务时复用 AuthRelayInterceptor -->
         <dependency>

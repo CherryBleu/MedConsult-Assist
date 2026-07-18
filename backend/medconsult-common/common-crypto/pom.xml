@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.medconsult</groupId>
+        <artifactId>medconsult-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>common-crypto</artifactId>
+
+    <name>common-crypto</name>
+    <description>字段级加密 AES-256-GCM + MyBatis TypeHandler + 确定性 hash（《修改建议》§5.3）</description>
+
+    <dependencies>
+        <!-- 地基：Result/ErrorCode/BusinessException（本模块主要抛 IllegalStateException，core 非必须但惯例引用） -->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+
+        <!-- MyBatis：TypeHandler 基类来自 mybatis（经 common-mybatis 传递，避免单独锁版本）-->
+        <dependency>
+            <groupId>com.medconsult</groupId>
+            <artifactId>common-mybatis</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring（@AutoConfiguration/@Bean/@ConditionalOnProperty/@Value）-->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+
+        <!-- 测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

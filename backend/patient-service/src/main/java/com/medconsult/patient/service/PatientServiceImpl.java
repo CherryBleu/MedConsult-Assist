@@ -11,6 +11,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.crypto.IdNoHasher;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.feign.dto.PatientContextDTO;
 import com.medconsult.common.security.JwtPayload;
@@ -72,14 +73,17 @@ public class PatientServiceImpl implements PatientService {
         }
 
         // 规则 2：同一证件类型 + 证件号不允许重复建档（仅当填了证件号时校验）
+        // 加密后密文不可比较，用 id_no_hash 确定性指纹查重（§5.3）
         if (hasIdNo) {
             String idType = req.getIdType() != null ? req.getIdType() : "ID_CARD";
+            String idNoHash = IdNoHasher.hash(req.getIdNo());
             Long count = patientMapper.selectCount(new QueryWrapper<Patient>()
                     .eq("id_type", idType)
-                    .eq("id_no", req.getIdNo()));
+                    .eq("id_no_hash", idNoHash));
             if (count != null && count > 0) {
+                // 不回显明文 idNo（脱敏/省略），仅给指纹前 8 位便于排查
                 throw new BusinessException(ErrorCode.CONFLICT,
-                        "该证件号已存在患者档案: " + idType + "/" + req.getIdNo());
+                        "该证件号已存在患者档案: " + idType + "（hash " + idNoHash.substring(0, 8) + "...）");
             }
         }
 
@@ -100,6 +104,8 @@ public class PatientServiceImpl implements PatientService {
         p.setBirthDate(req.getBirthDate());
         p.setIdType(hasIdNo ? (req.getIdType() != null ? req.getIdType() : "ID_CARD") : req.getIdType());
         p.setIdNo(req.getIdNo());
+        // 同步填 id_no_hash（唯一键列，加密后查重/检索依据）
+        p.setIdNoHash(hasIdNo ? IdNoHasher.hash(req.getIdNo()) : null);
         p.setPhone(req.getPhone());
         p.setAddress(req.getAddress());
         p.setAllergies(toJsonArray(req.getAllergies()));
@@ -147,11 +153,21 @@ public class PatientServiceImpl implements PatientService {
             // PATIENT 身份：只查自己
             qw.eq("id", scopePatientId);
         } else if (keyword != null && !keyword.isBlank()) {
-            // 按 姓名/手机号/证件号/患者编号 模糊检索（需求 §4.1.1 核心功能 3）
-            qw.and(w -> w.like("name", keyword)
-                    .or().like("phone", keyword)
-                    .or().like("id_no", keyword)
-                    .or().like("patient_no", keyword));
+            // 按 姓名/手机号/患者编号 模糊检索（需求 §4.1.1 核心功能 3）。
+            // id_no 已加密无法模糊匹配：若 keyword 长度等于完整身份证（18位）则精确匹配 id_no_hash，
+            // 否则降级跳过 id_no 维度（仅姓名/手机/编号模糊）。
+            final String kw = keyword;
+            if (kw.length() == 18) {
+                // 完整身份证：精确匹配 hash 列
+                qw.and(w -> w.like("name", kw)
+                        .or().like("phone", kw)
+                        .or().like("patient_no", kw)
+                        .or().eq("id_no_hash", IdNoHasher.hash(kw)));
+            } else {
+                qw.and(w -> w.like("name", kw)
+                        .or().like("phone", kw)
+                        .or().like("patient_no", kw));
+            }
         }
         qw.orderByDesc("created_at");
         IPage<Patient> result = patientMapper.selectPage(p, qw);
@@ -292,14 +308,16 @@ public class PatientServiceImpl implements PatientService {
         // 注册即建档场景：PATIENT 角色身份证必填（auth-service 侧已强制），phone 来自注册表单
         String resolvedIdType = (idType != null && !idType.isBlank()) ? idType : "ID_CARD";
 
-        // 证件号唯一性校验
+        // 证件号唯一性校验（加密后用 id_no_hash 查重，§5.3）
+        String idNoHash = null;
         if (idNo != null && !idNo.isBlank()) {
+            idNoHash = IdNoHasher.hash(idNo);
             Long count = patientMapper.selectCount(new QueryWrapper<Patient>()
                     .eq("id_type", resolvedIdType)
-                    .eq("id_no", idNo));
+                    .eq("id_no_hash", idNoHash));
             if (count != null && count > 0) {
                 throw new BusinessException(ErrorCode.CONFLICT,
-                        "该证件号已存在患者档案: " + resolvedIdType + "/" + idNo);
+                        "该证件号已存在患者档案: " + resolvedIdType + "（hash " + idNoHash.substring(0, 8) + "...）");
             }
         }
         // 手机号唯一性校验
@@ -318,6 +336,7 @@ public class PatientServiceImpl implements PatientService {
         p.setGender("UNKNOWN");
         p.setIdType(resolvedIdType);
         p.setIdNo(idNo);
+        p.setIdNoHash(idNoHash);
         p.setPhone(phone);
         p.setStatus("ACTIVE");
         patientMapper.insert(p);

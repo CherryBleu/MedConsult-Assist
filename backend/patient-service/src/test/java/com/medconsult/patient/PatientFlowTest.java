@@ -30,6 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
         "medconsult.security.jwt.secret=test-secret-0123456789abcdef0123456789abcdef-min32bytes",
+        // id_no 加密 key（32 字节全 0 的 Base64，测试用），让 CryptoHolder 装配、TypeHandler 加解密生效
+        "medconsult.crypto.id-no.key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         // 测试用 H2 内存库（MySQL dialect 模式），不连真实 MySQL 避免污染数据
         "spring.datasource.url=jdbc:h2:mem:medconsult_patient_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE",
         "spring.datasource.driver-class-name=org.h2.Driver",

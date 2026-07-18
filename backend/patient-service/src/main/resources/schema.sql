@@ -12,10 +12,10 @@ CREATE TABLE IF NOT EXISTS patient (
     gender                VARCHAR(20)                           COMMENT '性别：MALE/FEMALE/UNKNOWN',
     birth_date            DATE                                  COMMENT '出生日期',
     id_type               VARCHAR(30)                           COMMENT '证件类型：ID_CARD/PASSPORT/OTHER',
-    -- TODO 字段级加密：id_no 应做 AES-256 落库（《修改建议》§5.3）。
-    --      当前无现成加密工具（common-security 暂未提供对称加密组件），先明文存储，
-    --      待 common 加密模块就绪后改为密文存储 + 查询时解密脱敏。
-    id_no                 VARCHAR(64)                           COMMENT '证件号（预留加密长度，TODO AES-256）',
+    -- id_no 字段级加密（§5.3）：AES-256-GCM 密文存储（base64(iv‖cipher‖tag)），VARCHAR(255) 防超长。
+    -- 唯一性/检索不靠密文列（IV 随机不可比较），靠 id_no_hash。
+    id_no                 VARCHAR(255)                          COMMENT '证件号（AES-256-GCM 密文，经 EncryptedStringTypeHandler 透明加解密）',
+    id_no_hash            VARCHAR(64)                           COMMENT '证件号指纹 SHA-256 hex（唯一键列，支撑查重/检索）',
     phone                 VARCHAR(20)                           COMMENT '手机号',
     address               VARCHAR(255)                          COMMENT '地址',
     allergies             TEXT                                  COMMENT '过敏史（JSON 数组串，如 ["青霉素","头孢类"]）',
@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS patient (
     deleted               TINYINT      NOT NULL DEFAULT 0       COMMENT '逻辑删除：0 否 1 是',
     PRIMARY KEY (id),
     UNIQUE KEY uk_patient_no (patient_no),
-    UNIQUE KEY uk_patient_id_card (id_type, id_no),
+    -- 唯一键挂 id_no_hash（密文不可比较）；种子/存量明文迁移前 id_no_hash 可为 NULL（MySQL NULL 不参与唯一约束）
+    UNIQUE KEY uk_patient_id_card (id_type, id_no_hash),
     KEY idx_patient_status (status),
     KEY idx_patient_phone (phone),
     KEY idx_patient_name (name)
