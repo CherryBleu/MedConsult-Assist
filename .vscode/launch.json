@@ -1,0 +1,85 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Spring Boot-AiServiceApplication<ai-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.ai.AiServiceApplication",
+      "projectName": "ai-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-AuthServiceApplication<auth-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.auth.AuthServiceApplication",
+      "projectName": "auth-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-DrugServiceApplication<drug-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.drug.DrugServiceApplication",
+      "projectName": "drug-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-GatewayApplication<gateway>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.gateway.GatewayApplication",
+      "projectName": "gateway",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-MedicalRecordServiceApplication<medical-record-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.medicalrecord.MedicalRecordServiceApplication",
+      "projectName": "medical-record-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-NotificationServiceApplication<notification-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.notification.NotificationServiceApplication",
+      "projectName": "notification-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-OutpatientServiceApplication<outpatient-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.outpatient.OutpatientServiceApplication",
+      "projectName": "outpatient-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    },
+    {
+      "type": "java",
+      "name": "Spring Boot-PatientServiceApplication<patient-service>",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "mainClass": "com.medconsult.patient.PatientServiceApplication",
+      "projectName": "patient-service",
+      "args": "",
+      "shortenCommandLine": "argfile"
+    }
+  ]
+}

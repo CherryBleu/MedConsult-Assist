@@ -1,7 +1,6 @@
 package com.medconsult.common.mq;
 
 import org.mybatis.spring.annotation.MapperScan;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
@@ -10,7 +9,4 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 @MapperScan("com.medconsult.common.mq")
 public class MqTestApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(MqTestApplication.class, args);
-    }
 }
