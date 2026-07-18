@@ -1,6 +1,8 @@
 package com.medconsult.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.ai.client.MedicalImageFetcher;
 import com.medconsult.ai.client.MedicalImageFetcher.MedicalImagePayload;
 import com.medconsult.ai.client.MedicalVisionClient;
@@ -23,14 +25,14 @@ import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.ai.util.JsonUtils;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.mq.LocalMessage;
+import com.medconsult.common.mq.LocalMessageMapper;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -41,8 +43,6 @@ import java.util.Map;
 
 @Service
 public class ImagingDetectionService {
-    private static final Logger log = LoggerFactory.getLogger(ImagingDetectionService.class);
-
     private static final String PROMPT = """
             You are a medical report abnormality screening assistant.
             Generate JSON only:
@@ -55,7 +55,8 @@ public class ImagingDetectionService {
     private final AiImageDetectionMapper imageDetectionMapper;
     private final AiProperties properties;
     private final AiCallLogService callLogService;
-    private final RabbitTemplate rabbitTemplate;
+    private final LocalMessageMapper localMessageMapper;
+    private final ObjectMapper objectMapper;
     private final MedicalImageFetcher imageFetcher;
     private final MedicalVisionClient visionClient;
     private final FileUploadService fileUploadService;
@@ -65,7 +66,8 @@ public class ImagingDetectionService {
                                    AiImageDetectionMapper imageDetectionMapper,
                                    AiProperties properties,
                                    AiCallLogService callLogService,
-                                   RabbitTemplate rabbitTemplate,
+                                   LocalMessageMapper localMessageMapper,
+                                   ObjectMapper objectMapper,
                                    MedicalImageFetcher imageFetcher,
                                    MedicalVisionClient visionClient,
                                    FileUploadService fileUploadService) {
@@ -74,7 +76,8 @@ public class ImagingDetectionService {
         this.imageDetectionMapper = imageDetectionMapper;
         this.properties = properties;
         this.callLogService = callLogService;
-        this.rabbitTemplate = rabbitTemplate;
+        this.localMessageMapper = localMessageMapper;
+        this.objectMapper = objectMapper;
         this.imageFetcher = imageFetcher;
         this.visionClient = visionClient;
         this.fileUploadService = fileUploadService;
@@ -111,6 +114,7 @@ public class ImagingDetectionService {
         return new ReportAnalysisResponse(analysisNo, "COMPLETED", abnormal, findings, disclaimer());
     }
 
+    @Transactional
     public ImageDetectionResponse submitImageDetection(ImageDetectionRequest request) {
         JwtPayload actor = requireImagingSubmitter();
         Long requestedPatientId = resolveSubmittedPatientId(request.patientId(), actor);
@@ -145,21 +149,26 @@ public class ImagingDetectionService {
         String patientReference = patientReference(request.patientId(), patientId);
         callLogService.success("IMAGING_DETECTION", patientReference, detectionNo, entity.getExternalModel(),
                 JsonUtils.toJson(auditSources), "PENDING", null, 0);
-        try {
-            // 影像检测任务发到 ai.imaging exchange（架构文档 §4.2），路由键 ai.image.detect
-            rabbitTemplate.convertAndSend(MqConstants.EXCHANGE_AI_IMAGING, MqConstants.RK_AI_IMAGE_DETECT,
-                    new ImageDetectionTaskMessage(detectionNo, currentTraceId()));
-        } catch (RuntimeException ex) {
-            // MQ 投递失败：把记录置为 FAILED 并如实返回，避免前端拿到 PENDING 后任务永久卡死无人处理。
-            log.warn("submit image detection task failed, detectionNo={}", detectionNo, ex);
-            entity.setStatus("FAILED");
-            entity.setUpdatedAt(LocalDateTime.now());
-            imageDetectionMapper.updateById(entity);
-            callLogService.failed("IMAGING_DETECTION_QUEUE", patientReference, detectionNo, entity.getExternalModel(),
-                    JsonUtils.toJson(auditSources), 0, ex);
-            return toResponse(entity);
-        }
+        enqueueImageDetectionTask(detectionNo, currentTraceId());
         return toResponse(entity);
+    }
+
+    private void enqueueImageDetectionTask(String detectionNo, String traceId) {
+        ImageDetectionTaskMessage payload = new ImageDetectionTaskMessage(detectionNo, traceId);
+        LocalMessage message = LocalMessage.of(
+                MqConstants.EXCHANGE_AI_IMAGING,
+                "imaging-detect:" + detectionNo,
+                MqConstants.RK_AI_IMAGE_DETECT,
+                serialize(payload));
+        localMessageMapper.insert(message);
+    }
+
+    private String serialize(ImageDetectionTaskMessage payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Serialize image detection task failed", e);
+        }
     }
 
     public void processImageDetection(String detectionId) {

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.medconsult.ai.client.MedicalImageFetcher;
 import com.medconsult.ai.client.MedicalImageFetcher.MedicalImagePayload;
 import com.medconsult.ai.client.MedicalVisionClient;
@@ -16,7 +17,6 @@ import com.medconsult.ai.dto.AiModels.ImageDetectionResponse;
 import com.medconsult.ai.dto.AiModels.ImagingReviewResponse;
 import com.medconsult.ai.dto.AiModels.ReportAnalysisRequest;
 import com.medconsult.ai.dto.AiModels.ReportAnalysisResponse;
-import com.medconsult.ai.mq.ImageDetectionTaskMessage;
 import com.medconsult.ai.persistence.entity.AiImageDetectionEntity;
 import com.medconsult.ai.persistence.entity.AiReportTextAnalysisEntity;
 import com.medconsult.ai.persistence.mapper.AiImageDetectionMapper;
@@ -25,6 +25,8 @@ import com.medconsult.ai.service.FileUploadService.DetectionFileResolution;
 import com.medconsult.ai.util.JsonUtils;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.mq.LocalMessage;
+import com.medconsult.common.mq.LocalMessageMapper;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
@@ -35,7 +37,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.MDC;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -45,7 +46,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -71,7 +71,7 @@ class ImagingDetectionServiceTest {
     private AiReportTextAnalysisMapper reportMapper;
     private AiImageDetectionMapper imageMapper;
     private AiCallLogService callLogService;
-    private RabbitTemplate rabbitTemplate;
+    private LocalMessageMapper localMessageMapper;
     private MedicalImageFetcher imageFetcher;
     private MedicalVisionClient visionClient;
     private FileUploadService fileUploadService;
@@ -90,7 +90,7 @@ class ImagingDetectionServiceTest {
         reportMapper = mock(AiReportTextAnalysisMapper.class);
         imageMapper = mock(AiImageDetectionMapper.class);
         callLogService = mock(AiCallLogService.class);
-        rabbitTemplate = mock(RabbitTemplate.class);
+        localMessageMapper = mock(LocalMessageMapper.class);
         imageFetcher = mock(MedicalImageFetcher.class);
         visionClient = mock(MedicalVisionClient.class);
         fileUploadService = mock(FileUploadService.class);
@@ -100,7 +100,8 @@ class ImagingDetectionServiceTest {
                 imageMapper,
                 properties(),
                 callLogService,
-                rabbitTemplate,
+                localMessageMapper,
+                JsonUtils.MAPPER,
                 imageFetcher,
                 visionClient,
                 fileUploadService
@@ -204,14 +205,13 @@ class ImagingDetectionServiceTest {
     }
 
     @Test
-    void submitImageDetectionShouldPersistPendingTaskAndPublishCurrentTrace() {
+    void submitImageDetectionShouldPersistPendingTaskAndEnqueueCurrentTrace() throws Exception {
         bindPayload(userPayload("PATIENT", List.of("PATIENT"), 101L));
         MDC.put("traceId", "trace-imaging-123");
         ArgumentCaptor<AiImageDetectionEntity> entityCaptor =
                 ArgumentCaptor.forClass(AiImageDetectionEntity.class);
         when(imageMapper.insert(entityCaptor.capture())).thenReturn(1);
-        ArgumentCaptor<ImageDetectionTaskMessage> messageCaptor =
-                ArgumentCaptor.forClass(ImageDetectionTaskMessage.class);
+        ArgumentCaptor<LocalMessage> outboxCaptor = ArgumentCaptor.forClass(LocalMessage.class);
 
         List<String> fileIds = List.of("FILE-1", "FILE-2");
         List<String> locators = List.of(
@@ -242,12 +242,17 @@ class ImagingDetectionServiceTest {
         assertEquals("default-provider", entity.getExternalProvider());
         assertEquals("default-imaging-model", entity.getExternalModel());
 
-        verify(rabbitTemplate).convertAndSend(
-                eq(MqConstants.EXCHANGE_AI_IMAGING),
-                eq(MqConstants.RK_AI_IMAGE_DETECT),
-                messageCaptor.capture());
-        assertEquals(response.detectionId(), messageCaptor.getValue().detectionId());
-        assertEquals("trace-imaging-123", messageCaptor.getValue().traceId());
+        verify(localMessageMapper).insert(outboxCaptor.capture());
+        LocalMessage outbox = outboxCaptor.getValue();
+        assertEquals(MqConstants.EXCHANGE_AI_IMAGING, outbox.getExchange());
+        assertEquals(MqConstants.RK_AI_IMAGE_DETECT, outbox.getRoutingKey());
+        assertEquals(LocalMessage.STATUS_PENDING, outbox.getStatus());
+        assertEquals(0, outbox.getRetryCount());
+        assertEquals("imaging-detect:" + response.detectionId(), outbox.getMessageNo());
+        assertTrue(outbox.getMessageNo().length() <= 64);
+        JsonNode payload = JsonUtils.MAPPER.readTree(outbox.getPayloadJson());
+        assertEquals(response.detectionId(), payload.get("detectionId").asText());
+        assertEquals("trace-imaging-123", payload.get("traceId").asText());
         verify(callLogService).success(
                 eq("IMAGING_DETECTION"), eq("PAT101"), eq(response.detectionId()),
                 eq("default-imaging-model"), eq(JsonUtils.toJson(locators)), eq("PENDING"), isNull(), eq(0L));
@@ -284,7 +289,7 @@ class ImagingDetectionServiceTest {
                         null, null, "CT", null, null, null, null)));
 
         assertEquals(ErrorCode.UNAUTHORIZED, error.getErrorCode());
-        verifyNoInteractions(fileUploadService, imageMapper, rabbitTemplate);
+        verifyNoInteractions(fileUploadService, imageMapper, localMessageMapper);
     }
 
     @Test
@@ -296,7 +301,7 @@ class ImagingDetectionServiceTest {
                         null, null, "CT", null, null, null, null)));
 
         assertEquals(ErrorCode.UNAUTHORIZED, error.getErrorCode());
-        verifyNoInteractions(fileUploadService, imageMapper, rabbitTemplate);
+        verifyNoInteractions(fileUploadService, imageMapper, localMessageMapper);
     }
 
     @Test
@@ -312,22 +317,18 @@ class ImagingDetectionServiceTest {
                         "PAT43", "REC82", "CT", fileIds, null, null, null)));
 
         assertEquals(ErrorCode.FORBIDDEN, error.getErrorCode());
-        verifyNoInteractions(imageMapper, rabbitTemplate);
+        verifyNoInteractions(imageMapper, localMessageMapper);
     }
 
     @Test
-    void submitImageDetectionShouldMarkTaskFailedWhenQueuePublishFails() {
+    void submitImageDetectionShouldLeaveTaskPendingWhenOutboxIsEnqueued() {
         bindPayload(servicePayload());
-        RuntimeException queueFailure = new RuntimeException("rabbit unavailable");
-        doThrow(queueFailure).when(rabbitTemplate)
-                .convertAndSend(anyString(), anyString(), any(ImageDetectionTaskMessage.class));
-        AtomicReference<String> statusAtInsert = new AtomicReference<>();
+        List<String> statusesAtInsert = new ArrayList<>();
         when(imageMapper.insert(any(AiImageDetectionEntity.class))).thenAnswer(invocation -> {
-            statusAtInsert.set(invocation.<AiImageDetectionEntity>getArgument(0).getStatus());
+            statusesAtInsert.add(invocation.<AiImageDetectionEntity>getArgument(0).getStatus());
             return 1;
         });
-        ArgumentCaptor<AiImageDetectionEntity> updatedCaptor =
-                ArgumentCaptor.forClass(AiImageDetectionEntity.class);
+        ArgumentCaptor<LocalMessage> outboxCaptor = ArgumentCaptor.forClass(LocalMessage.class);
 
         ImageDetectionResponse response = service.submitImageDetection(new ImageDetectionRequest(
                 "PAT11", "REC22", "CT", null,
@@ -335,37 +336,29 @@ class ImagingDetectionServiceTest {
                 new ExternalModelDto("hospital", "vision-v2")
         ));
 
-        assertEquals("PENDING", statusAtInsert.get());
-        assertEquals("FAILED", response.status());
+        assertEquals(List.of("PENDING"), statusesAtInsert);
+        assertEquals("PENDING", response.status());
         assertFalse(response.abnormalDetected());
-        verify(imageMapper).updateById(updatedCaptor.capture());
-        assertEquals("FAILED", updatedCaptor.getValue().getStatus());
-        assertEquals("MINIO", updatedCaptor.getValue().getStorageType());
-        assertEquals(null, updatedCaptor.getValue().getSubmittedByUserId());
-        assertEquals("medical-record-service", updatedCaptor.getValue().getSubmittedByServiceCode());
-        assertEquals(List.of("https://files.example.test/study.dcm?X-Amz-Signature=secret"),
-                JsonUtils.toStringList(updatedCaptor.getValue().getImageUrls()));
-        assertEquals("hospital", updatedCaptor.getValue().getExternalProvider());
-        assertEquals("vision-v2", updatedCaptor.getValue().getExternalModel());
-        verify(callLogService).failed(
-                eq("IMAGING_DETECTION_QUEUE"), eq("PAT11"), eq(response.detectionId()),
-                eq("vision-v2"), eq("[\"https://files.example.test/study.dcm\"]"), eq(0L), same(queueFailure));
+        verify(imageMapper, never()).updateById(any());
+        verify(localMessageMapper).insert(outboxCaptor.capture());
+        assertEquals("imaging-detect:" + response.detectionId(), outboxCaptor.getValue().getMessageNo());
+        verify(callLogService, never()).failed(anyString(), anyString(), anyString(), anyString(), anyString(), anyLong(), any());
     }
 
     @Test
-    void submitImageDetectionShouldGenerateTraceWhenMdcIsBlank() {
+    void submitImageDetectionShouldGenerateTraceWhenMdcIsBlank() throws Exception {
         bindPayload(servicePayload());
         when(imageMapper.insert(any(AiImageDetectionEntity.class))).thenReturn(1);
-        ArgumentCaptor<ImageDetectionTaskMessage> messageCaptor =
-                ArgumentCaptor.forClass(ImageDetectionTaskMessage.class);
+        ArgumentCaptor<LocalMessage> outboxCaptor = ArgumentCaptor.forClass(LocalMessage.class);
 
         service.submitImageDetection(new ImageDetectionRequest(
                 null, null, "XRAY", null, List.of("https://files.example.test/xray.jpg"), null,
                 new ExternalModelDto(" ", " ")
         ));
 
-        verify(rabbitTemplate).convertAndSend(anyString(), anyString(), messageCaptor.capture());
-        assertTrue(messageCaptor.getValue().traceId().matches("trace-[0-9a-f]{32}"));
+        verify(localMessageMapper).insert(outboxCaptor.capture());
+        JsonNode payload = JsonUtils.MAPPER.readTree(outboxCaptor.getValue().getPayloadJson());
+        assertTrue(payload.get("traceId").asText().matches("trace-[0-9a-f]{32}"));
     }
 
     @Test
@@ -382,7 +375,7 @@ class ImagingDetectionServiceTest {
 
         assertEquals(ErrorCode.PARAM_ERROR, directUrl.getErrorCode());
         assertEquals(ErrorCode.FORBIDDEN, crossPatient.getErrorCode());
-        verifyNoInteractions(fileUploadService, rabbitTemplate);
+        verifyNoInteractions(fileUploadService, localMessageMapper);
     }
 
     @Test
@@ -403,7 +396,7 @@ class ImagingDetectionServiceTest {
 
         assertEquals(ErrorCode.PARAM_ERROR, missing.getErrorCode());
         assertEquals("at most 8 images are allowed", excessive.getMessage());
-        verifyNoInteractions(fileUploadService, rabbitTemplate);
+        verifyNoInteractions(fileUploadService, localMessageMapper);
     }
 
     @Test
