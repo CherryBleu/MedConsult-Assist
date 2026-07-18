@@ -76,10 +76,12 @@ public record AiProperties(
             String publicEndpoint,
             String accessKey,
             String secretKey,
+            String region,
             String bucket,
             String objectPrefix,
             String chunkPrefix,
-            boolean autoCreateBucket
+            boolean autoCreateBucket,
+            int presignedUrlExpirySeconds
     ) {
     }
 

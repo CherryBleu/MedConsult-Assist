@@ -41,8 +41,8 @@ class DiseaseCacheServiceTest {
                         milvusCollection, 0.6, "COSINE", 15),
                 new AiProperties.ImagingProperties("provider", "model"),
                 new AiProperties.VisionProperties("http://vision", "key", "model", 5, 1024),
-                new AiProperties.FileStorageProperties("http://minio", "http://minio", "ak", "sk", "bucket",
-                        "imaging", "chunks", true),
+                new AiProperties.FileStorageProperties("http://minio", "http://minio", "ak", "sk", "us-east-1", "bucket",
+                        "imaging", "chunks", true, 300),
                 new AiProperties.InternalProperties("ai-service", "key"),
                 new AiProperties.RateLimitProperties(true, 60, 60, false, Map.of()),
                 new AiProperties.RagProperties(8807, 8807, 512, true, false)

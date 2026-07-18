@@ -13,17 +13,20 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class MedicalImageFetcher {
     private final HttpClient httpClient;
     private final AiProperties properties;
+    private final List<Origin> allowedOrigins;
 
     public MedicalImageFetcher(AiProperties properties) {
         this.properties = properties;
+        this.allowedOrigins = configuredStorageOrigins(properties == null ? null : properties.fileStorage());
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
     }
 
@@ -65,6 +68,7 @@ public class MedicalImageFetcher {
 
     private MedicalImagePayload fetchHttp(URI uri) {
         guardSsrf(uri);
+        guardConfiguredStorageOrigin(uri);
         try {
             HttpRequest request = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(timeoutSeconds()))
@@ -82,6 +86,33 @@ public class MedicalImageFetcher {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("image fetch interrupted: " + uri, ex);
+        }
+    }
+
+    private void guardConfiguredStorageOrigin(URI uri) {
+        Origin requestedOrigin = Origin.from(uri);
+        if (requestedOrigin == null || !allowedOrigins.contains(requestedOrigin)) {
+            throw new IllegalArgumentException("image url must match a configured file storage origin: " + uri);
+        }
+    }
+
+    private static List<Origin> configuredStorageOrigins(AiProperties.FileStorageProperties storage) {
+        if (storage == null) {
+            return List.of();
+        }
+        List<Origin> origins = new ArrayList<>(2);
+        addConfiguredOrigin(origins, storage.endpoint());
+        addConfiguredOrigin(origins, storage.publicEndpoint());
+        return List.copyOf(origins);
+    }
+
+    private static void addConfiguredOrigin(List<Origin> origins, String value) {
+        if (!StringUtils.hasText(value)) {
+            return;
+        }
+        Origin origin = Origin.from(URI.create(value.trim()));
+        if (origin != null && !origins.contains(origin)) {
+            origins.add(origin);
         }
     }
 
@@ -118,6 +149,23 @@ public class MedicalImageFetcher {
             return "application/dicom";
         }
         return "image/jpeg";
+    }
+
+    private record Origin(String scheme, String host, int port) {
+        private static Origin from(URI uri) {
+            if (uri == null || !StringUtils.hasText(uri.getScheme()) || !StringUtils.hasText(uri.getHost())) {
+                return null;
+            }
+            String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                return null;
+            }
+            int port = uri.getPort();
+            if (port < 0) {
+                port = "https".equals(scheme) ? 443 : 80;
+            }
+            return new Origin(scheme, uri.getHost().toLowerCase(Locale.ROOT), port);
+        }
     }
 
     public record MedicalImagePayload(String sourceUrl, String contentType, int byteSize, String dataUrl) {

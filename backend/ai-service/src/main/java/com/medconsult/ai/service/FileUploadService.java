@@ -9,52 +9,81 @@ import com.medconsult.ai.persistence.mapper.AiFileUploadMapper;
 import com.medconsult.ai.util.BusinessIds;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import io.minio.BucketExistsArgs;
 import io.minio.ComposeObjectArgs;
 import io.minio.ComposeSource;
+import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
+import io.minio.http.Method;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class FileUploadService {
+    private static final Logger log = LoggerFactory.getLogger(FileUploadService.class);
     private static final long UNKNOWN_PART_SIZE = -1L;
+    private static final int MAX_PRESIGNED_URL_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
+    private static final Pattern UPLOAD_ID_PATTERN =
+            Pattern.compile("UP-[0-9a-f]{24}-[0-9a-f]{32}");
 
     private final AiProperties properties;
     private final AiFileUploadMapper fileUploadMapper;
     private final MinioClient minioClient;
+    private final MinioClient presignClient;
+    private final int presignedUrlExpirySeconds;
 
     public FileUploadService(AiProperties properties, AiFileUploadMapper fileUploadMapper) {
         this.properties = properties;
         this.fileUploadMapper = fileUploadMapper;
         AiProperties.FileStorageProperties storage = storage();
+        String endpoint = required(storage.endpoint(), "MINIO endpoint is not configured");
+        String accessKey = required(storage.accessKey(), "MINIO access key is not configured");
+        String secretKey = required(storage.secretKey(), "MINIO secret key is not configured");
+        String region = StringUtils.hasText(storage.region()) ? storage.region().trim() : "us-east-1";
+        this.presignedUrlExpirySeconds = validPresignedUrlExpiry(storage.presignedUrlExpirySeconds());
         this.minioClient = MinioClient.builder()
-                .endpoint(required(storage.endpoint(), "MINIO endpoint is not configured"))
-                .credentials(required(storage.accessKey(), "MINIO access key is not configured"),
-                        required(storage.secretKey(), "MINIO secret key is not configured"))
+                .endpoint(endpoint)
+                .region(region)
+                .credentials(accessKey, secretKey)
                 .build();
+        String publicEndpoint = StringUtils.hasText(storage.publicEndpoint())
+                ? storage.publicEndpoint().trim()
+                : endpoint;
+        this.presignClient = publicEndpoint.equals(endpoint)
+                ? minioClient
+                : MinioClient.builder().endpoint(publicEndpoint).region(region)
+                        .credentials(accessKey, secretKey).build();
     }
 
     public FileUploadResponse upload(MultipartFile file, String patientId, String recordId) {
         validateFile(file);
+        UploadOwner owner = resolveUploadOwner(patientId);
         ensureBucket();
         String objectKey = objectKey(file.getOriginalFilename());
         putObject(objectKey, file);
         AiFileUploadEntity entity = saveCompleted(file.getOriginalFilename(), file.getContentType(), file.getSize(),
-                patientId, recordId, objectKey, "SINGLE", null, null);
+                owner, recordId, objectKey, "SINGLE", null, null);
         return toResponse(entity);
     }
 
@@ -67,8 +96,9 @@ public class FileUploadService {
         if (chunkIndex == null || totalChunks == null || chunkIndex < 0 || totalChunks <= 0 || chunkIndex >= totalChunks) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "invalid chunk index or total chunks");
         }
+        UploadOwner owner = resolveUploadOwner(patientId);
+        String normalizedUploadId = normalizeUploadId(owner, uploadId, chunkIndex);
         ensureBucket();
-        String normalizedUploadId = StringUtils.hasText(uploadId) ? uploadId : "UP" + UUID.randomUUID().toString().replace("-", "");
         String chunkObjectKey = chunkObjectKey(normalizedUploadId, chunkIndex);
         putObject(chunkObjectKey, file);
 
@@ -78,19 +108,22 @@ public class FileUploadService {
             String objectKey = objectKey(filename);
             composeChunks(normalizedUploadId, totalChunks, objectKey);
             AiFileUploadEntity entity = saveCompleted(filename, file.getContentType(), objectSize(objectKey),
-                    patientId, recordId, objectKey, "CHUNK", normalizedUploadId, totalChunks);
+                    owner, recordId, objectKey, "CHUNK", normalizedUploadId, totalChunks);
+            removeSourceChunks(normalizedUploadId, totalChunks);
             response = toResponse(entity);
         }
         return new ChunkUploadResponse(normalizedUploadId, chunkIndex, totalChunks, completed, response);
     }
 
     public FileUploadResponse getFile(String fileId) {
+        JwtPayload payload = requirePublicFileUser();
         AiFileUploadEntity entity = fileUploadMapper.selectOne(new LambdaQueryWrapper<AiFileUploadEntity>()
                 .eq(AiFileUploadEntity::getFileNo, fileId)
                 .last("limit 1"));
         if (entity == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "file not found");
         }
+        enforceReadOwnership(payload, entity);
         return toResponse(entity);
     }
 
@@ -168,12 +201,14 @@ public class FileUploadService {
     }
 
     private AiFileUploadEntity saveCompleted(String filename, String contentType, long fileSize,
-                                             String patientId, String recordId, String objectKey,
+                                             UploadOwner owner, String recordId, String objectKey,
                                              String uploadMode, String uploadId, Integer totalChunks) {
         LocalDateTime now = LocalDateTime.now();
         AiFileUploadEntity entity = new AiFileUploadEntity();
         entity.setFileNo(BusinessIds.next("FILE"));
-        entity.setPatientId(BusinessIds.numericId(patientId));
+        entity.setPatientId(owner.patientId());
+        entity.setUploadedByUserId(owner.userId());
+        entity.setUploadedByServiceCode(owner.serviceCode());
         entity.setRecordId(BusinessIds.numericId(recordId));
         entity.setOriginalFilename(safeFilename(filename));
         entity.setFileType(contentType(contentType, filename));
@@ -181,7 +216,7 @@ public class FileUploadService {
         entity.setStorageType("MINIO");
         entity.setBucket(bucket());
         entity.setObjectKey(objectKey);
-        entity.setFileUrl(fileUrl(objectKey));
+        entity.setFileUrl(fileLocator(bucket(), objectKey));
         entity.setUploadMode(uploadMode);
         entity.setChunkUploadId(uploadId);
         entity.setTotalChunks(totalChunks);
@@ -189,14 +224,25 @@ public class FileUploadService {
         entity.setStatus("COMPLETED");
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
-        fileUploadMapper.insert(entity);
+        try {
+            if (fileUploadMapper.insert(entity) != 1) {
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR, "file metadata persistence failed");
+            }
+        } catch (BusinessException ex) {
+            removeUploadedObject(objectKey);
+            throw ex;
+        } catch (RuntimeException ex) {
+            removeUploadedObject(objectKey);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+                    "file metadata persistence failed: " + ex.getMessage());
+        }
         return entity;
     }
 
     private FileUploadResponse toResponse(AiFileUploadEntity entity) {
         return new FileUploadResponse(
                 entity.getFileNo(),
-                entity.getFileUrl(),
+                presignedGetUrl(entity.getBucket(), entity.getObjectKey()),
                 entity.getFileSize(),
                 entity.getFileType(),
                 entity.getStorageType(),
@@ -220,10 +266,42 @@ public class FileUploadService {
                 + "/" + String.format("%06d.part", chunkIndex);
     }
 
-    private String fileUrl(String objectKey) {
-        String endpoint = StringUtils.hasText(storage().publicEndpoint()) ? storage().publicEndpoint() : storage().endpoint();
-        String cleanEndpoint = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
-        return cleanEndpoint + "/" + bucket() + "/" + encodePath(objectKey);
+    private String presignedGetUrl(String objectBucket, String objectKey) {
+        try {
+            return presignClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(required(objectBucket, "file bucket is missing"))
+                    .object(required(objectKey, "file object key is missing"))
+                    .expiry(presignedUrlExpirySeconds)
+                    .build());
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+                    "MINIO presigned URL generation failed: " + ex.getMessage());
+        }
+    }
+
+    private void removeUploadedObject(String objectKey) {
+        removeObjectBestEffort(objectKey, "orphan upload");
+    }
+
+    private void removeSourceChunks(String uploadId, int totalChunks) {
+        for (int i = 0; i < totalChunks; i++) {
+            removeObjectBestEffort(chunkObjectKey(uploadId, i), "composed source chunk");
+        }
+    }
+
+    private void removeObjectBestEffort(String objectKey, String reason) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucket())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception cleanupError) {
+            log.warn("failed to remove MINIO object reason={} bucket={} object={}: {}",
+                    reason, bucket(), objectKey, cleanupError.getMessage());
+        }
     }
 
     private AiProperties.FileStorageProperties storage() {
@@ -260,6 +338,14 @@ public class FileUploadService {
         return value;
     }
 
+    private static int validPresignedUrlExpiry(int value) {
+        if (value <= 0 || value > MAX_PRESIGNED_URL_EXPIRY_SECONDS) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+                    "MINIO presigned URL expiry must be between 1 and 604800 seconds");
+        }
+        return value;
+    }
+
     private static String prefix(String value, String fallback) {
         String raw = StringUtils.hasText(value) ? value : fallback;
         return raw.replace("\\", "/").replaceAll("^/+", "").replaceAll("/+$", "");
@@ -289,12 +375,131 @@ public class FileUploadService {
         return "image/jpeg";
     }
 
-    private static String encodePath(String objectKey) {
-        String[] parts = objectKey.split("/");
-        List<String> encoded = new ArrayList<>();
-        for (String part : parts) {
-            encoded.add(URLEncoder.encode(part, StandardCharsets.UTF_8).replace("+", "%20"));
+    private UploadOwner resolveUploadOwner(String requestedPatientId) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "authentication is required");
         }
-        return String.join("/", encoded);
+        Long requestedOwner = optionalNumericId(requestedPatientId, "patientId");
+        if (payload.isService()) {
+            if (!StringUtils.hasText(payload.serviceCode())) {
+                throw new BusinessException(ErrorCode.UNAUTHORIZED, "service identity is incomplete");
+            }
+            return new UploadOwner(requestedOwner, null, payload.serviceCode());
+        }
+        if (!payload.isUser() || payload.userId() == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user identity is incomplete");
+        }
+        if (isActiveRole(payload, "PATIENT")) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN,
+                        "current account is not linked to a patient profile");
+            }
+            if (requestedOwner != null && !selfPatientId.equals(requestedOwner)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN,
+                        "patientId must match the current patient");
+            }
+            return new UploadOwner(selfPatientId, payload.userId(), null);
+        }
+        if (isActiveRole(payload, "DOCTOR") || isActiveRole(payload, "HOSPITAL_ADMIN")) {
+            return new UploadOwner(requestedOwner, payload.userId(), null);
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN,
+                "current role cannot upload medical images");
+    }
+
+    private static JwtPayload requirePublicFileUser() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "user login is required");
+        }
+        if (!isActiveRole(payload, "PATIENT") && !isActiveRole(payload, "DOCTOR")
+                && !isActiveRole(payload, "HOSPITAL_ADMIN")) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "current role cannot access medical images");
+        }
+        return payload;
+    }
+
+    private static void enforceReadOwnership(JwtPayload payload, AiFileUploadEntity entity) {
+        boolean hasBusinessOwner = entity.getPatientId() != null;
+        boolean hasUserUploader = entity.getUploadedByUserId() != null;
+        boolean hasServiceUploader = StringUtils.hasText(entity.getUploadedByServiceCode());
+        if (!hasBusinessOwner && !hasUserUploader && !hasServiceUploader) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "file ownership is missing");
+        }
+        if (isActiveRole(payload, "PATIENT")) {
+            if (payload.patientId() != null && payload.patientId().equals(entity.getPatientId())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN, "no permission to access this file");
+        }
+        if (payload.userId() != null && payload.userId().equals(entity.getUploadedByUserId())) {
+            return;
+        }
+        if (payload.patientId() != null && payload.patientId().equals(entity.getPatientId())) {
+            return;
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN, "no permission to access this file");
+    }
+
+    private static boolean isActiveRole(JwtPayload payload, String role) {
+        if (StringUtils.hasText(payload.primaryRole())) {
+            return role.equals(payload.primaryRole());
+        }
+        return payload.hasRole(role);
+    }
+
+    private static Long optionalNumericId(String value, String fieldName) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        Long numericId = BusinessIds.numericId(value);
+        if (numericId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "invalid " + fieldName);
+        }
+        return numericId;
+    }
+
+    private static String fileLocator(String objectBucket, String objectKey) {
+        return "minio://" + objectBucket + "/" + objectKey;
+    }
+
+    private static String normalizeUploadId(UploadOwner owner, String uploadId, int chunkIndex) {
+        if (!StringUtils.hasText(uploadId)) {
+            if (chunkIndex != 0) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR,
+                        "uploadId is required after the first chunk");
+            }
+            return "UP-" + ownerNamespace(owner) + "-"
+                    + UUID.randomUUID().toString().replace("-", "");
+        }
+        if (!UPLOAD_ID_PATTERN.matcher(uploadId).matches()) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "invalid uploadId");
+        }
+        String expectedPrefix = "UP-" + ownerNamespace(owner) + "-";
+        if (!uploadId.startsWith(expectedPrefix)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "uploadId does not belong to current uploader");
+        }
+        return uploadId;
+    }
+
+    private static String ownerNamespace(UploadOwner owner) {
+        String actor = owner.userId() != null
+                ? "USER:" + owner.userId()
+                : "SERVICE:" + owner.serviceCode();
+        actor += ":PATIENT:" + (owner.patientId() == null ? "NONE" : owner.patientId());
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(actor.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest, 0, 12);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private record UploadOwner(Long patientId, Long userId, String serviceCode) {
     }
 }

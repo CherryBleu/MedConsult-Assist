@@ -11,6 +11,8 @@ public class AiFileUploadEntity {
     private Long id;
     private String fileNo;
     private Long patientId;
+    private Long uploadedByUserId;
+    private String uploadedByServiceCode;
     private Long recordId;
     private String originalFilename;
     private String fileType;
@@ -49,6 +51,22 @@ public class AiFileUploadEntity {
 
     public void setPatientId(Long patientId) {
         this.patientId = patientId;
+    }
+
+    public Long getUploadedByUserId() {
+        return uploadedByUserId;
+    }
+
+    public void setUploadedByUserId(Long uploadedByUserId) {
+        this.uploadedByUserId = uploadedByUserId;
+    }
+
+    public String getUploadedByServiceCode() {
+        return uploadedByServiceCode;
+    }
+
+    public void setUploadedByServiceCode(String uploadedByServiceCode) {
+        this.uploadedByServiceCode = uploadedByServiceCode;
     }
 
     public Long getRecordId() {

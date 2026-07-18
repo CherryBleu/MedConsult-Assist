@@ -102,10 +102,12 @@ medconsult:
       public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
       access-key: ${MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      region: ${MINIO_REGION:us-east-1}
       bucket: ${MINIO_BUCKET:medconsult}
       object-prefix: ${MINIO_OBJECT_PREFIX:imaging}
       chunk-prefix: ${MINIO_CHUNK_PREFIX:chunks}
       auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
+      presigned-url-expiry-seconds: ${MINIO_PRESIGNED_URL_EXPIRY_SECONDS:300}
     # 服务身份（向 auth-service 换发 SERVICE JWT 用，架构文档 §4.2）
     internal:
       service-code: ${AI_SERVICE_CODE:ai-service}

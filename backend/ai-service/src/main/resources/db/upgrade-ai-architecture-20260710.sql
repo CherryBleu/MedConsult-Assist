@@ -76,6 +76,8 @@ CREATE TABLE IF NOT EXISTS ai_file_upload (
     id BIGINT PRIMARY KEY,
     file_no VARCHAR(32) NOT NULL UNIQUE,
     patient_id BIGINT NULL,
+    uploaded_by_user_id BIGINT NULL,
+    uploaded_by_service_code VARCHAR(64) NULL,
     record_id BIGINT NULL,
     original_filename VARCHAR(255) NOT NULL,
     file_type VARCHAR(100) NULL,
@@ -93,6 +95,8 @@ CREATE TABLE IF NOT EXISTS ai_file_upload (
     updated_at DATETIME NOT NULL,
     UNIQUE KEY uk_ai_file_object (bucket, object_key),
     INDEX idx_ai_file_patient (patient_id),
+    INDEX idx_ai_file_uploader_user (uploaded_by_user_id),
+    INDEX idx_ai_file_uploader_service (uploaded_by_service_code),
     INDEX idx_ai_file_record (record_id),
     INDEX idx_ai_file_chunk_upload (chunk_upload_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

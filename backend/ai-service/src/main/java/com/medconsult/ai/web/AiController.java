@@ -273,6 +273,7 @@ public class AiController {
     // ===== 文件上传 =====
 
     @Operation(summary = "文件上传")
+    @Permission(roles = {"PATIENT", "DOCTOR", "HOSPITAL_ADMIN"})
     @PostMapping(value = "/api/v1/files/upload", consumes = "multipart/form-data")
     public Result<FileUploadResponse> uploadFile(
             @RequestParam("file") MultipartFile file,
@@ -283,6 +284,7 @@ public class AiController {
     }
 
     @Operation(summary = "分片上传")
+    @Permission(roles = {"PATIENT", "DOCTOR", "HOSPITAL_ADMIN"})
     @PostMapping(value = "/api/v1/files/upload/chunk", consumes = "multipart/form-data")
     public Result<ChunkUploadResponse> uploadFileChunk(
             @RequestParam("file") MultipartFile file,
@@ -297,6 +299,7 @@ public class AiController {
     }
 
     @Operation(summary = "获取文件信息")
+    @Permission(roles = {"PATIENT", "DOCTOR", "HOSPITAL_ADMIN"})
     @GetMapping("/api/v1/files/{fileId}")
     public Result<FileUploadResponse> getFile(@PathVariable("fileId") String fileId) {
         return Result.ok(fileUploadService.getFile(fileId));
