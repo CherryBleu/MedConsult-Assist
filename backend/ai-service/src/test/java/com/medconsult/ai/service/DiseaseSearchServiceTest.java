@@ -81,6 +81,32 @@ class DiseaseSearchServiceTest {
     }
 
     @Test
+    void extractIntentShouldInferHighSpecificityDiseaseHintsFromSymptoms() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+
+        DiseaseIntent childCough = service.extractIntent("孩子咳嗽像鸡叫，咳后呕吐，应该挂什么科");
+        DiseaseIntent chestPain = service.extractIntent("持续胸痛伴呼吸困难和大汗");
+
+        assertEquals("百日咳", childCough.candidates().getFirst().diseaseName());
+        assertTrue(childCough.toSearchInfo().symptoms().contains("咳后呕吐"));
+        assertEquals(List.of("儿科"), childCough.metadataQuery().filters().get("cure_department"));
+
+        assertTrue(chestPain.candidates().stream()
+                .map(DiseaseCandidate::diseaseName)
+                .anyMatch(name -> name.equals("急性心肌梗死")));
+        assertTrue(chestPain.candidates().stream()
+                .map(DiseaseCandidate::diseaseName)
+                .anyMatch(name -> name.equals("急性冠脉综合征")));
+        assertTrue(chestPain.toSearchInfo().symptoms().contains("胸痛"));
+        assertTrue(chestPain.toSearchInfo().symptoms().contains("大汗"));
+    }
+
+    @Test
     void namedCandidateSearchShouldReturnFiveResultsWhenTopKIsFive() {
         OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
         MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
@@ -200,7 +226,7 @@ class DiseaseSearchServiceTest {
     }
 
     @Test
-    void symptomSearchShouldReturnMongoMatchesWithoutSemanticWhenEnough() {
+    void symptomSearchShouldSupplementSpecificSemanticEvidenceEvenWhenMongoHasEnoughGenericMatches() {
         OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
         MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
         MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
@@ -208,20 +234,59 @@ class DiseaseSearchServiceTest {
         DiseaseSearchService service = new DiseaseSearchService(
                 llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
         DiseaseIntent intent = new DiseaseIntent(
-                List.of(new DiseaseCandidate("unknown", List.of("cough", "fever"), "symptom-only input")),
+                List.of(new DiseaseCandidate("unknown",
+                        List.of("咳嗽", "儿童患者", "鸡鸣样吸气声", "咳后呕吐"), "specific symptom-only input")),
                 new MetadataQuery(List.of(), Map.of())
         );
-        when(mongoDiseaseRepository.findBySymptom(List.of("cough", "fever"), 2)).thenReturn(List.of(
-                knowledge("mongo-1", "Disease-1", 1.0, MatchSource.MONGODB_NAME_EXACT),
-                knowledge("mongo-2", "Disease-2", 1.0, MatchSource.MONGODB_NAME_EXACT)
+        when(mongoDiseaseRepository.findBySymptom(List.of("咳嗽", "儿童患者", "鸡鸣样吸气声", "咳后呕吐"), 5)).thenReturn(List.of(
+                knowledge("mongo-1", "肺炎", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-2", "禽流感", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-3", "气管肿瘤", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-4", "哮喘", 1.0, MatchSource.MONGODB_NAME_EXACT),
+                knowledge("mongo-5", "粒细胞缺乏症", 1.0, MatchSource.MONGODB_NAME_EXACT)
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(5))).thenReturn(List.of(
+                knowledge("milvus-pertussis", "百日咳", 0.97, MatchSource.MILVUS_SEMANTIC,
+                        "symptom,cure_department", "疾病名称：百日咳\n症状：鸡鸣样吸气声、咳后呕吐")
         ));
 
-        List<DiseaseKnowledge> results = service.search("cough fever", intent, 2);
+        List<DiseaseKnowledge> results = service.search("孩子咳嗽像鸡叫，咳后呕吐，应该挂什么科", intent, 5);
 
-        assertEquals(List.of("Disease-1", "Disease-2"),
+        assertTrue(results.stream().map(DiseaseKnowledge::diseaseName).toList().contains("百日咳"));
+        verify(llmClient).embedOne(anyString());
+        verify(milvusRestClient).search(anyList(), eq(5));
+    }
+
+    @Test
+    void highRiskCardiacSymptomsShouldUseRuleHintsWithDepartmentEvidence() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+
+        DiseaseIntent intent = service.extractIntent("持续胸痛伴呼吸困难和大汗");
+        when(cacheService.get(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(mongoDiseaseRepository.findByNameExact("急性心肌梗死"))
+                .thenReturn(Optional.of(knowledgeWithDepartment("mongo-ami", "急性心肌梗死", "心胸外科")));
+        when(mongoDiseaseRepository.findByNameExact("急性冠脉综合征"))
+                .thenReturn(Optional.of(knowledgeWithDepartment("mongo-acs", "急性冠脉综合征", "心内科")));
+        when(mongoDiseaseRepository.findBySymptom(anyList(), eq(5))).thenReturn(List.of(
+                knowledge("mongo-generic", "食管源性胸痛", 1.0, MatchSource.MONGODB_NAME_EXACT)
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(4))).thenReturn(List.of());
+
+        List<DiseaseKnowledge> results = service.search("持续胸痛伴呼吸困难和大汗", intent, 5);
+
+        assertEquals(List.of("急性心肌梗死", "急性冠脉综合征", "食管源性胸痛"),
                 results.stream().map(DiseaseKnowledge::diseaseName).toList());
-        verify(llmClient, times(0)).embedOne(anyString());
-        verify(milvusRestClient, times(0)).search(anyList(), eq(2));
+        assertTrue(results.stream()
+                .filter(item -> item.diseaseName().equals("急性心肌梗死"))
+                .flatMap(item -> item.metadata().keySet().stream())
+                .anyMatch("cure_department"::equals));
     }
 
     @Test
@@ -385,6 +450,21 @@ class DiseaseSearchServiceTest {
                 chunkText,
                 score,
                 source
+        );
+    }
+
+    private static DiseaseKnowledge knowledgeWithDepartment(String id, String name, String department) {
+        return new DiseaseKnowledge(
+                id,
+                "DISEASE_JSON:" + name,
+                name,
+                name + "描述",
+                List.of("胸痛", "呼吸困难"),
+                Map.of("cure_department", List.of(department)),
+                "name",
+                "疾病名称：" + name + "\n症状：胸痛、呼吸困难\n疾病描述：" + name + "描述",
+                1.0,
+                MatchSource.MONGODB_NAME_EXACT
         );
     }
 }

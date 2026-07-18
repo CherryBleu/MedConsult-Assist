@@ -6,6 +6,7 @@ import com.medconsult.ai.client.OpenAiCompatibleClient;
 import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.DiseaseCandidate;
 import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.DiseaseIntent;
 import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.DiseaseKnowledge;
+import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.MatchSource;
 import com.medconsult.ai.knowledge.DiseaseKnowledgeModels.MetadataQuery;
 import com.medconsult.ai.knowledge.EncodingComplaintGuard;
 import com.medconsult.ai.knowledge.QueryExpander;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,6 +37,9 @@ public class DiseaseSearchService {
     private static final int DEFAULT_TOP_K = 5;
     private static final int MAX_TOP_K = 10;
     private static final long DEFAULT_RETRIEVAL_TIMEOUT_MILLIS = 15_000L;
+    private static final String PERTUSSIS = "百日咳";
+    private static final String ACUTE_MYOCARDIAL_INFARCTION = "急性心肌梗死";
+    private static final String ACUTE_CORONARY_SYNDROME = "急性冠脉综合征";
 
     private final OpenAiCompatibleClient llmClient;
     private final MongoDiseaseRepository mongoDiseaseRepository;
@@ -133,7 +138,12 @@ public class DiseaseSearchService {
         } finally {
             executor.shutdownNow();
         }
-        List<DiseaseKnowledge> deduped = aggregateEvidence(results).stream().limit(limit).toList();
+        List<DiseaseKnowledge> deduped = selectTopMatches(userText, intent, results, limit);
+        if (deduped.size() < limit && hasSearchableSymptoms(intent)) {
+            List<DiseaseKnowledge> supplemented = new ArrayList<>(deduped);
+            supplemented.addAll(searchBySymptomText(userText, intent, limit, deadlineNanos));
+            deduped = selectTopMatches(userText, intent, supplemented, limit);
+        }
         log.info("[AI-TIMER] disease.search={}ms candidates={} rawResults={} results={} sources={}",
                 elapsed(started), candidates.size(), results.size(), deduped.size(), summarizeSources(deduped));
         return deduped;
@@ -172,7 +182,8 @@ public class DiseaseSearchService {
                     () -> mongoDiseaseRepository.findBySymptom(symptoms, limit), deadlineNanos)
                     .orElse(List.of()));
             List<DiseaseKnowledge> mongoMatches = aggregateEvidence(results);
-            if (mongoMatches.size() >= limit) {
+            boolean forceSemanticSupplement = shouldForceSemanticSupplement(userText, symptoms);
+            if (mongoMatches.size() >= limit && !forceSemanticSupplement) {
                 List<DiseaseKnowledge> matches = mongoMatches.stream().limit(limit).toList();
                 log.info("[AI-TIMER] disease.searchBySymptomText source=mongodb_symptom results={}",
                         matches.size());
@@ -183,11 +194,14 @@ public class DiseaseSearchService {
 
         // 路径2：Milvus 语义检索（本地 Embedding 向量化，非生成式 LLM）。
         // 当 Mongo 症状召回不足 topK 时补齐语义候选，提高纯症状输入的召回质量。
+        boolean forceSemanticSupplement = shouldForceSemanticSupplement(userText, symptoms);
         int remaining = limit - aggregateEvidence(results).size();
-        if (remaining <= 0) {
+        if (remaining <= 0 && !forceSemanticSupplement) {
             return results.stream().limit(limit).toList();
         }
-        int semanticLimit = Math.min(limit, Math.max(remaining, remaining * 2));
+        int semanticLimit = forceSemanticSupplement && remaining <= 0
+                ? limit
+                : Math.min(limit, Math.max(remaining, remaining * 2));
         DiseaseCandidate fallbackCandidate = new DiseaseCandidate(
                 "", symptoms.isEmpty() ? List.of(userText) : symptoms,
                 "纯症状输入，基于原始文本做语义检索兜底。");
@@ -195,7 +209,7 @@ public class DiseaseSearchService {
         results.addAll(callWithinBudget("milvus_semantic",
                 () -> semanticSearch(queryText, semanticLimit), deadlineNanos).orElse(List.of()));
 
-        List<DiseaseKnowledge> matches = aggregateEvidence(results).stream().limit(limit).toList();
+        List<DiseaseKnowledge> matches = selectTopMatches(userText, intent, results, limit);
         if (!matches.isEmpty()) {
             log.info("[AI-TIMER] disease.searchBySymptomText source=merged_symptom_semantic results={}",
                     matches.size());
@@ -273,6 +287,7 @@ public class DiseaseSearchService {
         extractExplicitDiseaseName(userText).stream()
                 .map(name -> new DiseaseCandidate(name, symptoms, "用户输入中明确提到的疾病名称，优先按 MongoDB name 精确匹配标准条目"))
                 .forEach(candidates::add);
+        candidates.addAll(inferredDiseaseCandidates(userText, symptoms));
         candidates.add(new DiseaseCandidate("待鉴别", symptoms, "LLM 标准化不可用，已基于用户原始症状描述继续进行数据库标准化和语义检索。"));
         return new DiseaseIntent(
                 candidates.stream().distinct().limit(3).toList(),
@@ -298,6 +313,12 @@ public class DiseaseSearchService {
         if (containsAny(userText, "喘不上气", "喘", "憋", "呼吸困难")) {
             symptoms.add("呼吸困难或喘息");
         }
+        if (containsAny(userText, "胸痛", "胸口痛", "心口痛")) {
+            symptoms.add("胸痛");
+        }
+        if (containsAny(userText, "大汗", "冷汗", "出汗")) {
+            symptoms.add("大汗");
+        }
         if (containsAny(userText, "胸闷", "心慌", "心悸")) {
             symptoms.add("胸闷");
             symptoms.add("心悸");
@@ -306,6 +327,39 @@ public class DiseaseSearchService {
             symptoms.add(userText);
         }
         return symptoms.stream().distinct().toList();
+    }
+
+    private static List<DiseaseCandidate> inferredDiseaseCandidates(String userText, List<String> symptoms) {
+        List<DiseaseCandidate> candidates = new ArrayList<>();
+        List<String> names = inferredDiseaseNames(userText, symptoms);
+        for (String name : names) {
+            if (PERTUSSIS.equals(name)) {
+                candidates.add(new DiseaseCandidate(name, symptoms,
+                        "儿童出现鸡鸣样咳嗽、咳后呕吐时，需优先鉴别百日咳并召回儿科证据。"));
+            } else if (ACUTE_MYOCARDIAL_INFARCTION.equals(name)) {
+                candidates.add(new DiseaseCandidate(name, symptoms,
+                        "持续胸痛伴呼吸困难、大汗属于心血管急症信号，需优先召回心梗证据。"));
+            } else if (ACUTE_CORONARY_SYNDROME.equals(name)) {
+                candidates.add(new DiseaseCandidate(name, symptoms,
+                        "胸痛急症需覆盖急性冠脉综合征等心内科高危鉴别。"));
+            }
+        }
+        return candidates;
+    }
+
+    private static List<String> inferredDiseaseNames(String userText, List<String> symptoms) {
+        LinkedHashSet<String> names = new LinkedHashSet<>();
+        String text = joinText(userText, symptoms);
+        if (containsAny(text, "鸡叫", "鸡鸣", "像鸡", "鸡鸣样吸气声", "咳后呕吐", "阵发性痉挛性咳嗽")) {
+            names.add(PERTUSSIS);
+        }
+        boolean chestPain = containsAny(text, "胸痛", "胸口痛", "心口痛");
+        boolean emergencyCompanion = containsAny(text, "呼吸困难", "喘不上气", "大汗", "冷汗", "持续胸痛");
+        if (chestPain && emergencyCompanion) {
+            names.add(ACUTE_MYOCARDIAL_INFARCTION);
+            names.add(ACUTE_CORONARY_SYNDROME);
+        }
+        return new ArrayList<>(names);
     }
 
     private static Map<String, List<String>> fallbackFilters(String userText) {
@@ -367,6 +421,104 @@ public class DiseaseSearchService {
             }
         }
         return false;
+    }
+
+    private static boolean hasSearchableSymptoms(DiseaseIntent intent) {
+        return intent.candidates().stream()
+                .flatMap(candidate -> candidate.symptoms().stream())
+                .anyMatch(symptom -> symptom != null && !symptom.isBlank());
+    }
+
+    private static boolean shouldForceSemanticSupplement(String userText, List<String> symptoms) {
+        return !inferredDiseaseNames(userText, symptoms).isEmpty();
+    }
+
+    private static List<DiseaseKnowledge> selectTopMatches(String userText,
+                                                           DiseaseIntent intent,
+                                                           List<DiseaseKnowledge> results,
+                                                           int limit) {
+        List<DiseaseKnowledge> aggregated = aggregateEvidence(results);
+        if (aggregated.size() <= limit || !hasHighSpecificitySignals(userText, intent)) {
+            return aggregated.stream().limit(limit).toList();
+        }
+        return aggregated.stream()
+                .sorted(Comparator.comparingDouble(
+                        (DiseaseKnowledge item) -> relevanceScore(userText, intent, item)).reversed())
+                .limit(limit)
+                .toList();
+    }
+
+    private static boolean hasHighSpecificitySignals(String userText, DiseaseIntent intent) {
+        List<String> symptoms = intent.candidates().stream()
+                .flatMap(candidate -> candidate.symptoms().stream())
+                .filter(symptom -> symptom != null && !symptom.isBlank())
+                .toList();
+        return !inferredDiseaseNames(userText, symptoms).isEmpty();
+    }
+
+    private static double relevanceScore(String userText, DiseaseIntent intent, DiseaseKnowledge item) {
+        List<String> symptoms = intent.candidates().stream()
+                .flatMap(candidate -> candidate.symptoms().stream())
+                .filter(symptom -> symptom != null && !symptom.isBlank())
+                .distinct()
+                .toList();
+        List<String> hints = inferredDiseaseNames(userText, symptoms);
+        String haystack = joinText(
+                item.diseaseName(),
+                item.desc(),
+                item.chunkText(),
+                item.symptoms() == null ? "" : String.join(" ", item.symptoms())
+        );
+
+        double score = item.score();
+        for (String hint : hints) {
+            if (containsNormalized(item.diseaseName(), hint) || containsNormalized(hint, item.diseaseName())) {
+                score += 5.0;
+            } else if (haystack.contains(hint)) {
+                score += 2.0;
+            }
+        }
+        for (String symptom : symptoms) {
+            if (!symptom.isBlank() && haystack.contains(symptom)) {
+                score += 0.75;
+            }
+        }
+        if (item.metadata() != null && item.metadata().containsKey("cure_department")) {
+            score += 0.2;
+        }
+        if (item.source() == MatchSource.MILVUS_SEMANTIC) {
+            score += 0.1;
+        }
+        return score;
+    }
+
+    private static boolean containsNormalized(String left, String right) {
+        String normalizedLeft = left == null ? "" : left.trim();
+        String normalizedRight = right == null ? "" : right.trim();
+        return !normalizedLeft.isBlank() && !normalizedRight.isBlank() && normalizedLeft.contains(normalizedRight);
+    }
+
+    private static String joinText(String value, List<String> values) {
+        List<String> parts = new ArrayList<>();
+        if (value != null && !value.isBlank()) {
+            parts.add(value);
+        }
+        if (values != null) {
+            values.stream().filter(item -> item != null && !item.isBlank()).forEach(parts::add);
+        }
+        return String.join(" ", parts);
+    }
+
+    private static String joinText(String... values) {
+        List<String> parts = new ArrayList<>();
+        if (values != null) {
+            for (String value : values) {
+                if (value != null && !value.isBlank()) {
+                    parts.add(value);
+                }
+            }
+        }
+        return String.join(" ", parts);
     }
 
     private <T> Optional<T> callWithinBudget(String name, Callable<T> task, long deadlineNanos) {

@@ -297,5 +297,6 @@ mvn -f backend/pom.xml -pl :ai-service -am "-Dtest=RagProbeServiceTest,RagReadin
 当前测试重点：
 
 - 口语化症状扩展后可提升 RAG 命中质量。
+- 儿童鸡鸣样咳嗽和胸痛急症会生成本地疾病提示，Mongo 通用症状结果已满时仍会补语义召回并重排。
 - 高危症状规则命中后返回急诊建议。
-- `GET /api/v1/ai/rag/probes` 可显式执行固定症状探针，检查召回疾病、引用字段和高危规则；真实环境关闭 RAG 质量门禁时需要在 Mongo、Embedding、Milvus 均可用时执行该接口并记录结果。
+- `GET /api/v1/ai/rag/probes` 可显式执行固定症状探针，检查召回疾病、引用字段和高危规则；2026-07-19 本地 Mongo/Embedding/Milvus 环境已验证 3 个固定探针全部 UP，后续环境仍需按同一接口复验。
