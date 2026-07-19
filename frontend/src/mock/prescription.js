@@ -105,6 +105,17 @@ const consumeFailOnce = (...keys) => {
   return false
 }
 
+const consumeDelayOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) === '1') {
+    localStorage.removeItem(key)
+    return true
+  }
+  return false
+}
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
 const findPrescription = (id) => mockPrescriptions.find(item =>
   item.prescriptionId === id ||
   item.id === id ||
@@ -130,7 +141,11 @@ export const mockPrescriptionList = (params = {}) => {
     records = records.filter(item => item.status === params.status)
   }
   records.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-  return { code: 0, message: 'success', data: pageResult(records, params) }
+  const response = { code: 0, message: 'success', data: pageResult(records, params) }
+  if (params.status === 'PENDING_REVIEW' && consumeDelayOnce('mock_prescription_pending_review_delay_once')) {
+    return delay(600).then(() => response)
+  }
+  return response
 }
 
 export const mockPrescriptionDetail = (id) => {
@@ -171,6 +186,9 @@ export const mockSubmitPrescription = (id) => {
 }
 
 export const mockReviewPrescription = (id, data = {}) => {
+  if (consumeFailOnce('mock_prescription_review_fail_once')) {
+    return Promise.reject(new Error('审方提交失败，请重试'))
+  }
   const prescription = findPrescription(id)
   if (!prescription) return Promise.reject(new Error('处方不存在'))
   if (data.action === 'REJECT') {
@@ -211,6 +229,9 @@ export const mockPayPrescription = (id, data = {}) => {
 }
 
 export const mockDispensePrescription = (id) => {
+  if (consumeFailOnce('mock_prescription_dispense_fail_once')) {
+    return Promise.reject(new Error('发药失败，请重试'))
+  }
   const prescription = findPrescription(id)
   if (!prescription) return Promise.reject(new Error('处方不存在'))
   prescription.status = 'DISPENSED'

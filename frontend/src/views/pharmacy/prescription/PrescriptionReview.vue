@@ -48,13 +48,15 @@
                 </template>
               </el-table-column>
               <el-table-column prop="createdAt" label="创建时间" min-width="170" />
-              <el-table-column label="操作" width="260" fixed="right">
+              <el-table-column label="操作" width="284" fixed="right">
                 <template #default="{ row }">
-                  <el-button size="small" link type="primary" @click="showDetail(row)">详情</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="success" @click="openReview(row, 'APPROVE')">通过</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" size="small" link type="danger" @click="openReview(row, 'REJECT')">驳回</el-button>
-                  <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" size="small" link type="warning" @click="openDispense(row)">发药</el-button>
-                  <el-button v-if="row.status === 'DISPENSED'" size="small" link type="primary" @click="handleComplete(row)">完成</el-button>
+                  <div class="table-actions">
+                    <el-button class="prescription-review-action" size="small" link type="primary" :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
+                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="success" :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
+                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="danger" :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
+                    <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" size="small" link type="warning" :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
+                    <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" size="small" link type="primary" :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -90,11 +92,11 @@
                 </div>
               </dl>
               <div class="prescription-card__actions">
-                <el-button plain @click="showDetail(row)">详情</el-button>
-                <el-button v-if="row.status === 'PENDING_REVIEW'" type="success" plain @click="openReview(row, 'APPROVE')">通过</el-button>
-                <el-button v-if="row.status === 'PENDING_REVIEW'" type="danger" plain @click="openReview(row, 'REJECT')">驳回</el-button>
-                <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" type="warning" plain @click="openDispense(row)">发药</el-button>
-                <el-button v-if="row.status === 'DISPENSED'" type="primary" plain @click="handleComplete(row)">完成</el-button>
+                <el-button class="prescription-review-action" plain :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
+                <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
+                <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
+                <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
+                <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" type="primary" plain :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
               </div>
             </article>
           </template>
@@ -115,9 +117,13 @@
     </div>
 
     <!-- 处方详情 -->
-    <el-dialog v-model="detailVisible" title="处方详情" width="min(720px, calc(100vw - 32px))">
+    <el-dialog v-model="detailVisible" title="处方详情" width="min(720px, calc(100vw - 32px))" class="prescription-detail-dialog">
       <div v-loading="detailLoading">
-        <el-descriptions :column="2" border v-if="detail">
+        <div v-if="detailError" class="inline-error" role="alert">
+          <span>{{ detailError }}</span>
+          <el-button class="inline-error__action" type="danger" plain @click="retryDetail">重试</el-button>
+        </div>
+        <el-descriptions :column="descriptionColumns" border v-if="detail">
           <el-descriptions-item label="处方编号">{{ detail.prescriptionId }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="getStatusType(detail.status)">{{ getStatusLabel(detail.status) }}</el-tag>
@@ -130,7 +136,7 @@
           <el-descriptions-item v-if="detail.rejectReason" label="驳回原因" :span="2">{{ detail.rejectReason }}</el-descriptions-item>
         </el-descriptions>
 
-        <h4 style="margin: 16px 0 8px">处方明细</h4>
+        <h4 class="detail-section-title">处方明细</h4>
         <div class="detail-table-wrap">
           <el-table :data="detail?.items || []" border size="small">
             <el-table-column prop="drugName" label="药品名称" min-width="140" />
@@ -146,11 +152,46 @@
             </el-table-column>
           </el-table>
         </div>
+        <div class="detail-medicine-list" aria-label="处方明细移动列表">
+          <article
+            v-for="item in detail?.items || []"
+            :key="item.id || item.itemId || item.drugName"
+            class="detail-medicine-card"
+            data-testid="prescription-detail-medicine-card"
+          >
+            <div class="detail-medicine-card__header">
+              <strong>{{ item.drugName || '-' }}</strong>
+              <span>{{ item.subtotal != null ? '¥' + Number(item.subtotal).toFixed(2) : '-' }}</span>
+            </div>
+            <dl class="detail-medicine-card__facts">
+              <div>
+                <dt>规格</dt>
+                <dd>{{ item.specification || '-' }}</dd>
+              </div>
+              <div>
+                <dt>用法用量</dt>
+                <dd>{{ [item.route, item.dosage].filter(Boolean).join(' / ') || '-' }}</dd>
+              </div>
+              <div>
+                <dt>频次</dt>
+                <dd>{{ item.frequency || '-' }}</dd>
+              </div>
+              <div>
+                <dt>疗程</dt>
+                <dd>{{ item.days ? `${item.days} 天` : '-' }}</dd>
+              </div>
+              <div>
+                <dt>数量</dt>
+                <dd>{{ item.quantity }} {{ item.unit || '' }}</dd>
+              </div>
+            </dl>
+          </article>
+        </div>
       </div>
     </el-dialog>
 
     <!-- 审方对话框 -->
-    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '审方通过' : '审方驳回'" width="480px">
+    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '审方通过' : '审方驳回'" width="min(480px, calc(100vw - 32px))" class="prescription-workflow-dialog">
       <el-form :model="reviewForm" label-width="90px">
         <el-form-item label="处方编号">
           <span>{{ currentPrescription?.prescriptionId }}</span>
@@ -162,14 +203,15 @@
           <el-input v-model="reviewForm.rejectReason" type="textarea" :rows="2" placeholder="请填写驳回原因（必填）" />
         </el-form-item>
       </el-form>
+      <div v-if="reviewError" class="inline-error" role="alert">{{ reviewError }}</div>
       <template #footer>
-        <el-button @click="reviewDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleReview">确认</el-button>
+        <el-button class="prescription-dialog-action" @click="reviewDialogVisible = false">取消</el-button>
+        <el-button type="primary" class="prescription-dialog-action" :loading="submitting" @click="handleReview">确认</el-button>
       </template>
     </el-dialog>
 
     <!-- 调剂发药对话框 -->
-    <el-dialog v-model="dispenseDialogVisible" title="调剂发药" width="480px">
+    <el-dialog v-model="dispenseDialogVisible" title="调剂发药" width="min(480px, calc(100vw - 32px))" class="prescription-workflow-dialog">
       <el-alert title="发药将触发药品库存 FEFO 出库，请确认处方明细无误。" type="warning" :closable="false" style="margin-bottom: 12px" />
       <el-form label-width="90px">
         <el-form-item label="处方编号">
@@ -179,16 +221,17 @@
           <span>{{ userStore.userInfo?.name || '当前药师' }}</span>
         </el-form-item>
       </el-form>
+      <div v-if="dispenseError" class="inline-error" role="alert">{{ dispenseError }}</div>
       <template #footer>
-        <el-button @click="dispenseDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="submitting" @click="handleDispense">确认发药</el-button>
+        <el-button class="prescription-dialog-action" @click="dispenseDialogVisible = false">取消</el-button>
+        <el-button type="warning" class="prescription-dialog-action" :loading="submitting" @click="handleDispense">确认发药</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getPrescriptionListApi, getPrescriptionDetailApi,
@@ -197,8 +240,10 @@ import {
 import { useUserStore } from '@/store/modules/user'
 import PageState from '@/components/common/PageState.vue'
 import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
+import { useResponsive } from '@/composables/useResponsive'
 
 const userStore = useUserStore()
+const { isMobile } = useResponsive()
 
 const loading = ref(false)
 const prescriptionList = ref([])
@@ -208,6 +253,8 @@ const loadError = ref('')
 let listRequestSeq = 0
 
 const pagination = reactive({ page: 1, pageSize: 10 })
+const descriptionColumns = computed(() => isMobile.value ? 1 : 2)
+const getErrorMessage = (error, fallback) => error?.response?.data?.message || error?.message || fallback
 
 const fetchList = async () => {
   const requestSeq = ++listRequestSeq
@@ -241,18 +288,29 @@ const handleFilterChange = () => {
 // ===== 详情 =====
 const detailVisible = ref(false)
 const detailLoading = ref(false)
+const detailError = ref('')
 const detail = ref(null)
+const lastDetailId = ref('')
 
 const showDetail = async (row) => {
   detailVisible.value = true
   detailLoading.value = true
+  detailError.value = ''
   detail.value = null
+  lastDetailId.value = row.prescriptionId
   try {
     const res = await getPrescriptionDetailApi(row.prescriptionId)
     detail.value = res.data
+  } catch (e) {
+    detailError.value = getErrorMessage(e, '处方详情加载失败，请重试')
   } finally {
     detailLoading.value = false
   }
+}
+
+const retryDetail = () => {
+  if (!lastDetailId.value) return
+  showDetail({ prescriptionId: lastDetailId.value })
 }
 
 // ===== 审方 =====
@@ -260,18 +318,21 @@ const reviewDialogVisible = ref(false)
 const currentPrescription = ref(null)
 const reviewForm = reactive({ action: 'APPROVE', reviewComment: '', rejectReason: '' })
 const submitting = ref(false)
+const reviewError = ref('')
 
 const openReview = (row, action) => {
   currentPrescription.value = row
   reviewForm.action = action
   reviewForm.reviewComment = ''
   reviewForm.rejectReason = ''
+  reviewError.value = ''
   reviewDialogVisible.value = true
 }
 
 const handleReview = async () => {
+  reviewError.value = ''
   if (reviewForm.action === 'REJECT' && !reviewForm.rejectReason?.trim()) {
-    ElMessage.warning('驳回必须填写驳回原因')
+    reviewError.value = '驳回必须填写驳回原因'
     return
   }
   submitting.value = true
@@ -286,6 +347,8 @@ const handleReview = async () => {
     ElMessage.success(reviewForm.action === 'APPROVE' ? '已通过审方' : '已驳回')
     reviewDialogVisible.value = false
     fetchList()
+  } catch (e) {
+    reviewError.value = getErrorMessage(e, '审方提交失败，请重试')
   } finally {
     submitting.value = false
   }
@@ -293,13 +356,16 @@ const handleReview = async () => {
 
 // ===== 调剂发药 =====
 const dispenseDialogVisible = ref(false)
+const dispenseError = ref('')
 
 const openDispense = (row) => {
   currentPrescription.value = row
+  dispenseError.value = ''
   dispenseDialogVisible.value = true
 }
 
 const handleDispense = async () => {
+  dispenseError.value = ''
   submitting.value = true
   try {
     // pharmacistId 取当前登录药师关联编号（与 handleReview 一致，由 /auth/me 返回、JWT 透传）
@@ -309,6 +375,8 @@ const handleDispense = async () => {
     ElMessage.success('发药成功')
     dispenseDialogVisible.value = false
     fetchList()
+  } catch (e) {
+    dispenseError.value = getErrorMessage(e, '发药失败，请重试')
   } finally {
     submitting.value = false
   }
@@ -380,6 +448,21 @@ onMounted(() => {
 .status-filter {
   width: 160px;
 }
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.table-actions .el-button {
+  margin-left: 0;
+}
+.prescription-review-action,
+.prescription-dialog-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
+}
 .pagination-wrapper {
   display: flex;
   justify-content: center;
@@ -443,7 +526,7 @@ onMounted(() => {
 }
 .prescription-card__actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 8px;
 }
 .prescription-card__actions .el-button {
@@ -451,9 +534,79 @@ onMounted(() => {
   min-height: var(--touch-target);
   margin-left: 0;
 }
+.detail-section-title {
+  margin: 16px 0 8px;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
 .detail-table-wrap {
   max-width: 100%;
   overflow-x: auto;
+}
+.detail-medicine-list {
+  display: none;
+}
+.detail-medicine-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-color);
+}
+.detail-medicine-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+}
+.detail-medicine-card__header strong,
+.detail-medicine-card__header span {
+  overflow-wrap: anywhere;
+}
+.detail-medicine-card__facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.detail-medicine-card__facts div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+}
+.detail-medicine-card__facts dt,
+.detail-medicine-card__facts dd {
+  margin: 0;
+}
+.detail-medicine-card__facts dt {
+  color: var(--text-secondary);
+}
+.detail-medicine-card__facts dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  color: var(--text-primary);
+}
+.inline-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(185, 28, 28, .22);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--el-color-danger);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+.inline-error span {
+  min-width: 0;
+  flex: 1;
+}
+.inline-error__action {
+  min-height: var(--touch-target);
 }
 @media (max-width: 640px) {
   .page-header {
@@ -481,6 +634,45 @@ onMounted(() => {
   .pagination-wrapper :deep(.el-pagination) {
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .detail-table-wrap {
+    display: none;
+  }
+
+  .detail-medicine-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .inline-error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inline-error__action {
+    width: 100%;
+  }
+
+  :deep(.el-dialog) {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 48px);
+    margin: 24px auto !important;
+  }
+
+  :deep(.el-dialog__body) {
+    overflow-y: auto;
+  }
+
+  :deep(.el-dialog__footer) {
+    display: grid;
+    gap: 8px;
+  }
+
+  :deep(.el-dialog__footer .el-button) {
+    width: 100%;
+    margin-left: 0;
   }
 }
 </style>

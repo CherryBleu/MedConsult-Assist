@@ -192,78 +192,56 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
-  test('prescription review ignores stale list responses after filter changes', async ({ page }) => {
-    let pendingRoute: any = null
-    let resolvePendingStarted: () => void = () => {}
-    const pendingStarted = new Promise<void>(resolve => {
-      resolvePendingStarted = resolve
-    })
-
-    const buildBody = (status: string | null) => JSON.stringify({
-      code: 0,
-      message: 'success',
-      data: {
-        total: 1,
-        items: status === 'APPROVED'
-          ? [{
-              id: 2,
-              prescriptionId: 'RX202607170099',
-              status: 'APPROVED',
-              totalFee: 126,
-              paymentStatus: 'UNPAID',
-              createdAt: '2026-07-17 10:20:00'
-            }]
-          : [{
-              id: 1,
-              prescriptionId: 'RX202607170000',
-              status: 'PENDING_REVIEW',
-              totalFee: 88.5,
-              paymentStatus: 'UNPAID',
-              createdAt: '2026-07-17 10:15:00'
-            }]
-      }
-    })
-
-    await page.route('**/api/v1/prescriptions**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.continue()
-        return
-      }
-
-      const url = new URL(route.request().url())
-      const status = url.searchParams.get('status')
-      if (status === 'PENDING_REVIEW' && !pendingRoute) {
-        pendingRoute = route
-        resolvePendingStarted()
-        return
-      }
-
-      await route.fulfill({
-        contentType: 'application/json',
-        body: buildBody(status)
-      })
-
-      if (status === 'APPROVED' && pendingRoute) {
-        setTimeout(() => {
-          pendingRoute.fulfill({
-            contentType: 'application/json',
-            body: buildBody('PENDING_REVIEW')
-          })
-          pendingRoute = null
-        }, 100)
-      }
-    })
+  test('prescription review detail shows medicine cards on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
     await loginViaUI(page, 'staff', 'pharmacy')
 
     await page.goto('/pharmacy/prescription-review')
-    await pendingStarted
+
+    const firstCard = page.locator('[data-testid="responsive-prescription-card"]').first()
+    await expect(firstCard).toBeVisible()
+    await firstCard.getByRole('button', { name: '查看 RX202607160002 处方详情' }).click()
+
+    const detailDialog = page.getByRole('dialog', { name: '处方详情' })
+    await expect(detailDialog).toBeVisible()
+    await expect(detailDialog.getByTestId('prescription-detail-medicine-card')).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('prescription review keeps pharmacist review dialog recoverable on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await loginViaUI(page, 'staff', 'pharmacy')
+    await page.evaluate(() => localStorage.setItem('mock_prescription_review_fail_once', '1'))
+
+    await page.goto('/pharmacy/prescription-review')
+
+    const firstCard = page.locator('[data-testid="responsive-prescription-card"]').first()
+    await expect(firstCard).toBeVisible()
+    await expectTouchTargetsAtLeast(page, '.prescription-review-action:visible')
+    await firstCard.getByRole('button', { name: '驳回 RX202607160002' }).click()
+
+    const reviewDialog = page.getByRole('dialog', { name: '审方驳回' })
+    await expect(reviewDialog).toBeVisible()
+    await reviewDialog.getByPlaceholder('请填写驳回原因（必填）').fill('剂量需要医生复核')
+    await reviewDialog.getByRole('button', { name: '确认' }).click()
+
+    await expect(reviewDialog.getByRole('alert')).toContainText(/审方提交失败|请重试/)
+    await expect(reviewDialog).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('prescription review ignores stale list responses after filter changes', async ({ page }) => {
+    await loginViaUI(page, 'staff', 'pharmacy')
+    await page.evaluate(() => localStorage.setItem('mock_prescription_pending_review_delay_once', '1'))
+
+    await page.goto('/pharmacy/prescription-review')
     await page.locator('.header-actions .el-select').click()
     await page.getByRole('option', { name: '已通过' }).click()
 
     const desktopTable = page.locator('.responsive-table__desktop')
-    await expect(desktopTable.getByText('RX202607170099')).toBeVisible()
-    await page.waitForTimeout(400)
-    await expect(desktopTable.getByText('RX202607170099')).toBeVisible()
-    await expect(desktopTable.getByText('RX202607170000')).toHaveCount(0)
+    await expect(desktopTable.getByText('RX202607190001')).toBeVisible()
+    await page.waitForTimeout(700)
+    await expect(desktopTable.getByText('RX202607190001')).toBeVisible()
+    await expect(desktopTable.getByText('RX202607160002')).toHaveCount(0)
   })
 })
