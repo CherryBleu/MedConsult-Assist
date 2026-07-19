@@ -86,11 +86,14 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         // ① 事务外：反查真实主键（不存在 → NOT_FOUND，此时无 DB 写入可回滚）
         // - recordId：record_no → medical_record.id（同服务直查）
         // - patientId/doctorId/departmentId：业务编号 → 真实主键（Feign 反查 patient/outpatient）
-        Long recordId = resolveRecordId(req.getRecordId());
+        MedicalRecord record = resolveRecord(req.getRecordId());
+        Long recordId = record.getId();
         Long patientId = resolvePatientId(req.getPatientId());
         Long doctorId = resolveDoctorId(req.getDoctorId());
         Long departmentId = (req.getDepartmentId() != null && !req.getDepartmentId().isBlank())
                 ? resolveDepartmentId(req.getDepartmentId()) : null;
+        enforceCreateOwnership(record, patientId, doctorId);
+        enforceDoctorOwnership(doctorId);
 
         // ② 事务内：纯 DB 写入（无远程调用，事务持有时间短）
         return txService.createInTx(req, recordId, patientId, doctorId, departmentId);
@@ -169,6 +172,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             detail = "'status=' + #result.status()")
     public PrescriptionDTO.SubmitResponse submit(String prescriptionNo) {
         Prescription p = requireByNo(prescriptionNo);
+        enforceDoctorOwnership(p.getDoctorId());
         if (!"DRAFT".equals(p.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿处方可提交审方，当前状态: " + p.getStatus());
@@ -271,6 +275,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     @Override
     public PrescriptionDTO.CancelResponse cancel(String prescriptionNo, PrescriptionDTO.CancelRequest req) {
         Prescription p = requireByNo(prescriptionNo);
+        enforceDoctorOwnership(p.getDoctorId());
         String st = p.getStatus();
         if (!"APPROVED".equals(st) && !"PAID".equals(st)) {
             throw new BusinessException(ErrorCode.CONFLICT,
@@ -303,8 +308,8 @@ public class PrescriptionServiceImpl implements PrescriptionService {
 
     // ===== 私有助手 =====
 
-    /** record_no → medical_record.id（同服务直查）。不存在抛 NOT_FOUND。 */
-    private Long resolveRecordId(String recordNo) {
+    /** record_no -> medical_record entity. */
+    private MedicalRecord resolveRecord(String recordNo) {
         if (recordNo == null || recordNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "病历编号不能为空");
         }
@@ -313,7 +318,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         if (mr == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "病历不存在: " + recordNo);
         }
-        return mr.getId();
+        return mr;
     }
 
     /** patient_no → 真实主键（Feign 反查 patient-service）。 */
@@ -365,6 +370,28 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         }
     }
 
+    private void enforceCreateOwnership(MedicalRecord record, Long patientId, Long doctorId) {
+        if (record.getPatientId() == null || !record.getPatientId().equals(patientId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Cannot create prescription for a different record patient");
+        }
+        if (record.getDoctorId() == null || !record.getDoctorId().equals(doctorId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Cannot create prescription for a different record doctor");
+        }
+    }
+
+    private void enforceDoctorOwnership(Long resourceDoctorId) {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User login required");
+        }
+        if (isDoctor(payload)) {
+            Long selfDoctorId = payload.doctorId();
+            if (selfDoctorId == null || !selfDoctorId.equals(resourceDoctorId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "Cannot operate another doctor's prescription");
+            }
+        }
+    }
+
     private static boolean isPatient(JwtPayload payload) {
         if (payload == null) {
             return false;
@@ -373,6 +400,16 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             return true;
         }
         return payload.roles() != null && payload.roles().contains("PATIENT");
+    }
+
+    private static boolean isDoctor(JwtPayload payload) {
+        if (payload == null) {
+            return false;
+        }
+        if (payload.primaryRole() != null && !payload.primaryRole().isBlank()) {
+            return "DOCTOR".equals(payload.primaryRole());
+        }
+        return payload.roles() != null && payload.roles().contains("DOCTOR");
     }
 
 }

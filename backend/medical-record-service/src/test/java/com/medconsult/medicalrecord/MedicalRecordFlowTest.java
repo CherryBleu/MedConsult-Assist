@@ -96,6 +96,7 @@ class MedicalRecordFlowTest {
     DoctorFeignClient doctorFeignClient;
 
     private static final String PATIENT_NO = "P202607060001";
+    private static final String OTHER_PATIENT_NO = "P202607069999";
     private static final String DOCTOR_NO = "D10001";
     private static final String PHARMACIST_NO = "PH2001";
 
@@ -418,6 +419,25 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void createPrescription_recordPatientMismatchForbidden() throws Exception {
+        String recordNo = createRecord();
+        when(patientFeignClient.resolveId(OTHER_PATIENT_NO))
+                .thenReturn(Result.ok(EntityIdDTO.of(9999L)));
+
+        String body = """
+                {"recordId":"%s","patientId":"%s","doctorId":"%s","source":"OUTPATIENT",
+                 "items":[{"drugNo":"D001","drugName":"owner guard drug","days":1,
+                           "quantity":1,"unit":"tablet","unitPrice":10.00}]}"""
+                .formatted(recordNo, OTHER_PATIENT_NO, DOCTOR_NO);
+
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions")
+                        .contentType("application/json")
+                        .content(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
     void createPrescription_nullQuantityRejected() throws Exception {
         // 验证 #1 修复：quantity/days null 不再漏过到 service（@DecimalMin/@Min 对 null 返回 valid）
         String recordNo = createRecord();
@@ -449,6 +469,15 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("PENDING_REVIEW"));
+    }
+
+    @Test
+    void submit_otherDoctorForbidden() throws Exception {
+        String rxNo = createPrescription();
+
+        mvc.perform(otherDoctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
@@ -663,6 +692,17 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.data.cancelReason").value("患者取消"));
+    }
+
+    @Test
+    void cancel_otherDoctorForbidden() throws Exception {
+        String rxNo = createApprovedPrescription();
+
+        mvc.perform(otherDoctorAuth(post("/api/v1/prescriptions/" + rxNo + "/cancel")
+                        .contentType("application/json")
+                        .content("{\"cancelReason\":\"other doctor cancel\",\"operatorId\":\"D2999\"}")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
