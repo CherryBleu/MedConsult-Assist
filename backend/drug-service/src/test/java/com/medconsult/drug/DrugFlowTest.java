@@ -2,6 +2,7 @@ package com.medconsult.drug;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -59,6 +60,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.cloud.bootstrap.enabled=false"
 })
 class DrugFlowTest {
+
+    private static final String JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef-min32bytes";
 
     @Autowired
     MockMvc mvc;
@@ -254,9 +257,8 @@ class DrugFlowTest {
         // 这里直接查药品列表拿到 drugNo 后，用 JdbcTemplate 反查主键 id（drug_no 是业务编号）。
         Long drugId = queryDrugIdByNo(drugNo);
 
-        // getRiskInfo（内部接口需带 X-Caller-Service 头通过 requireService 鉴权）
-        mvc.perform(get("/internal/drugs/" + drugId + "/risk-info")
-                        .header("X-Caller-Service", "test-service"))
+        // getRiskInfo（内部接口需带 SERVICE JWT 通过 requireService 鉴权）
+        mvc.perform(withService(get("/internal/drugs/" + drugId + "/risk-info")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.drugId").value(drugId))
@@ -264,8 +266,8 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data.contraindications").isArray());
 
         // ffeoBatches：返回 2 个批次（data 是数组，非分页对象），按 expire_date ASC（近效期在前）
-        mvc.perform(get("/internal/drugs/batch/ffeo").param("drugId", String.valueOf(drugId)).param("quantity", "40")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/drugs/batch/ffeo")
+                        .param("drugId", String.valueOf(drugId)).param("quantity", "40")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.size()").value(2))
@@ -275,8 +277,7 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data[1].quantity").value(70));
 
         // getCurrentStock
-        mvc.perform(get("/internal/drugs/" + drugId + "/current-stock")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/drugs/" + drugId + "/current-stock")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data").value(100));
@@ -292,8 +293,7 @@ class DrugFlowTest {
                 {"drugIds":[%d,%d,%d,%d,null,-1]}""".formatted(
                 aspirinId, ibuprofenId, aspirinId, missingId);
 
-        mvc.perform(post("/internal/drugs/risk-info/batch")
-                        .header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/drugs/risk-info/batch"))
                         .contentType("application/json")
                         .content(body))
                 .andExpect(status().isOk())
@@ -338,15 +338,13 @@ class DrugFlowTest {
         String outBody = """
                 {"quantity":5,"purpose":"DISPENSE","batchStrategy":"FEFO",
                  "prescriptionId":%d,"prescriptionItemId":%d}""".formatted(prescriptionId, itemId);
-        mvc.perform(post("/internal/drugs/" + drugNo + "/outbound")
-                        .header("X-Caller-Service", "medical-record-service")
+        mvc.perform(withService(post("/internal/drugs/" + drugNo + "/outbound"), "medical-record-service")
                         .header("X-Trace-Id", traceId)
                         .contentType("application/json")
                         .content(outBody))
                 .andExpect(status().isOk());
 
-        mvc.perform(post("/internal/drugs/" + drugNo + "/rollback-outbound")
-                        .header("X-Caller-Service", "medical-record-service")
+        mvc.perform(withService(post("/internal/drugs/" + drugNo + "/rollback-outbound"), "medical-record-service")
                         .header("X-Trace-Id", traceId)
                         .param("prescriptionItemId", String.valueOf(itemId)))
                 .andExpect(status().isOk());
@@ -451,8 +449,7 @@ class DrugFlowTest {
         String body = """
                 {"quantity":%d,"purpose":"DISPENSE","batchStrategy":"FEFO","prescriptionId":%d,"prescriptionItemId":%d}""".formatted(
                 quantity, prescriptionId, itemId);
-        mvc.perform(post("/internal/drugs/" + drugNo + "/outbound")
-                        .header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/drugs/" + drugNo + "/outbound"))
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
@@ -460,8 +457,7 @@ class DrugFlowTest {
 
     /** 内部回滚出库（POST /internal/drugs/{drugNo}/rollback-outbound），返回回滚的 flow 条数。 */
     private int rollbackOutbound(String drugNo, Long itemId) throws Exception {
-        MvcResult r = mvc.perform(post("/internal/drugs/" + drugNo + "/rollback-outbound")
-                        .header("X-Caller-Service", "test-service")
+        MvcResult r = mvc.perform(withService(post("/internal/drugs/" + drugNo + "/rollback-outbound"))
                         .param("prescriptionItemId", String.valueOf(itemId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -471,8 +467,7 @@ class DrugFlowTest {
 
     /** 断言某药品当前总库存。 */
     private void assertCurrentStock(Long drugId, int expected) throws Exception {
-        mvc.perform(get("/internal/drugs/" + drugId + "/current-stock")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/drugs/" + drugId + "/current-stock")))
                 .andExpect(jsonPath("$.data").value(expected));
     }
 
@@ -480,5 +475,19 @@ class DrugFlowTest {
         return builder.header("X-User-Id", "4")
                 .header("X-User-Primary-Role", "PHARMACY_ADMIN")
                 .header("X-User-Roles", "PHARMACY_ADMIN");
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {
+        return withService(builder, "test-service");
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder, String serviceCode) {
+        return builder.header("Authorization", "Bearer " + serviceToken(serviceCode))
+                .header("X-Caller-Service", serviceCode);
+    }
+
+    private String serviceToken(String serviceCode) {
+        return new JwtCodec(JWT_SECRET)
+                .signService(serviceCode, serviceCode, List.of("*"), 3600L, "svc-jti-" + serviceCode);
     }
 }

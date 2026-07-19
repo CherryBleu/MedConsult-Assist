@@ -1,16 +1,20 @@
 package com.medconsult.common.feign;
 
+import com.medconsult.common.security.JwtCodec;
 import feign.Request;
 import feign.codec.ErrorDecoder;
 import jakarta.servlet.Filter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * common-feign 自动装配（架构文档 §2.4 / §3.2）。
@@ -21,7 +25,8 @@ import java.time.Duration;
  *   <li>{@link FeignErrorDecoder} 作为 Feign 错误解码器（下游错误→BusinessException）</li>
  *   <li>{@link RequestContextRelayFilter}（servlet 环境）接线请求级 token/traceId 到
  *       {@link RequestContext}，并在请求结束清理 ThreadLocal 防泄漏</li>
- *   <li>默认 ServiceTokenProvider 返回 null（无服务 token），业务服务自行覆盖</li>
+ *   <li>默认 ServiceTokenProvider 在存在 JwtCodec 时为当前服务签发 SERVICE JWT；
+ *       业务服务可覆盖为 auth-service API Key 换发实现</li>
  *   <li>默认 {@link Request.Options}（connect 5s / read 10s / followRedirects），
  *       替代 Spring Cloud OpenFeign 默认的 10s/60s，避免下游不可用时长时间挂起；
  *       可用 {@code medconsult.feign.connect-timeout/read-timeout} 调整，
@@ -35,12 +40,31 @@ import java.time.Duration;
 public class MedConsultFeignAutoConfiguration {
 
     /**
-     * 默认服务 Token 提供者：返回 null。
-     * 业务服务（需要调 /internal/* 的）必须覆盖此 bean，从 auth-service 换发服务 JWT。
+     * 默认服务 Token 提供者：用当前服务共享 JWT secret 本地签发 SERVICE JWT。
+     *
+     * <p>auth-service / ai-service 等可声明自己的 {@link AuthRelayInterceptor.ServiceTokenProvider}
+     * 覆盖本 bean（例如用 API Key 调 auth-service 换发并缓存）。本默认实现保证普通业务服务
+     * 也能以 SERVICE JWT 调用 /internal/**，避免回落到用户 JWT 或可伪造服务头。
      */
     @Bean
     @ConditionalOnMissingBean
-    public AuthRelayInterceptor.ServiceTokenProvider defaultServiceTokenProvider() {
+    @ConditionalOnBean(JwtCodec.class)
+    public AuthRelayInterceptor.ServiceTokenProvider defaultServiceTokenProvider(
+            JwtCodec jwtCodec,
+            @Value("${spring.application.name:unknown}") String applicationName,
+            @Value("${medconsult.feign.service-token.scope:*}") String scope,
+            @Value("${medconsult.feign.service-token.ttl:3600s}") Duration ttl) {
+        List<String> scopes = parseCsv(scope);
+        long ttlSeconds = Math.max(60L, ttl.toSeconds());
+        return () -> jwtCodec.signService(applicationName, applicationName, scopes, ttlSeconds, null);
+    }
+
+    /**
+     * 没有 JwtCodec（例如只想复用 Feign 错误解码且未配置 JWT secret）时保持无 token 行为。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthRelayInterceptor.ServiceTokenProvider emptyServiceTokenProvider() {
         return () -> null;
     }
 
@@ -104,5 +128,15 @@ public class MedConsultFeignAutoConfiguration {
         // AuthRelayInterceptor 每次 Feign 调用读取它注入 X-Caller-Service 头。
         RequestContext.setCallerService(applicationName);
         return new RequestContextRelayFilter();
+    }
+
+    private static List<String> parseCsv(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 }

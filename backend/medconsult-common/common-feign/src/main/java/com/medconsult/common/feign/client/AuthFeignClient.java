@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  * <p><b>注意</b>：本客户端调用的是 {@code /internal/auth/service-token}，是服务获取首个 token 的
  * bootstrap 入口，凭证在请求体里（serviceCode + apiKey），因此<b>不</b>依赖
  * {@link com.medconsult.common.feign.AuthRelayInterceptor} 注入服务 token。
- * 故用独立 contextId 隔离，避免全局拦截器在此接口上注入无效头。
+ * 全局拦截器会识别本路径并跳过 Authorization 注入，避免 ServiceTokenProvider 递归自举。
  */
 @FeignClient(name = "auth-service", contextId = "authFeignClient")
 public interface AuthFeignClient {

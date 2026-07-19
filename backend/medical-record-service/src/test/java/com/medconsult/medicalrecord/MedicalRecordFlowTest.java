@@ -10,6 +10,7 @@ import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.DispenseDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,6 +69,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @org.springframework.transaction.annotation.Transactional
 class MedicalRecordFlowTest {
+
+    private static final String JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef-min32bytes";
 
     @Autowired
     MockMvc mvc;
@@ -289,8 +292,7 @@ class MedicalRecordFlowTest {
         String recordNo = createRecord();
         // 内部接口用 BIGINT 主键，需先查出 id（H2 直接查）
         Long id = resolveRecordId(recordNo);
-        mvc.perform(get("/internal/medical-records/" + id + "/full")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/medical-records/" + id + "/full")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordNo").value(recordNo))
@@ -792,5 +794,16 @@ class MedicalRecordFlowTest {
         return new org.springframework.jdbc.core.JdbcTemplate(dataSource)
                 .queryForObject("SELECT id FROM " + table + " WHERE " + noCol + " = ?",
                         Long.class, noVal);
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder withService(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("Authorization", "Bearer " + serviceToken("test-service"))
+                .header("X-Caller-Service", "test-service");
+    }
+
+    private static String serviceToken(String serviceCode) {
+        return new JwtCodec(JWT_SECRET)
+                .signService(serviceCode, serviceCode, List.of("*"), 3600L, "svc-jti-" + serviceCode);
     }
 }

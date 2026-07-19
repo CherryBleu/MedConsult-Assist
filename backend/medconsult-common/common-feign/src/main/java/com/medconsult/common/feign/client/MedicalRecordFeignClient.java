@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  * <p>供 ai-service 调用 medical-record-service 的 /internal/medical-records/* 内部接口。
  * name = {@code "medical-record-service"} 对应 Nacos 注册的服务名。
  *
- * <p><b>身份透传 / 错误处理</b>：同 {@link PatientFeignClient}，由 common-feign 的
+ * <p><b>身份透传 / 错误处理</b>：/internal/** 固定注入 SERVICE JWT；其余同 {@link PatientFeignClient}，由 common-feign 的
  * {@link com.medconsult.common.feign.AuthRelayInterceptor} 和
  * {@link com.medconsult.common.feign.FeignErrorDecoder} 处理。
  */

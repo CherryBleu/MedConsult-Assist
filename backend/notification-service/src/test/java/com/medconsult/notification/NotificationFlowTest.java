@@ -1,6 +1,7 @@
 package com.medconsult.notification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -9,6 +10,9 @@ import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -54,6 +58,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @org.springframework.transaction.annotation.Transactional
 class NotificationFlowTest {
+
+    private static final String JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef-min32bytes";
 
     @Autowired
     MockMvc mvc;
@@ -177,7 +183,7 @@ class NotificationFlowTest {
         String body = """
                 {"receiverId":"D10001","receiverRole":"DOCTOR","type":"SYSTEM",
                  "title":"系统通知","content":"测试内部接口"}""";
-        mvc.perform(post("/internal/notifications").header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/notifications"))
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -192,7 +198,7 @@ class NotificationFlowTest {
                 {"resourceType":"PATIENT","resourceId":"P202607060001","resourceName":"张三",
                  "action":"CREATE","operatorId":"U001","operatorRole":"HOSPITAL_ADMIN",
                  "operatorName":"管理员","ip":"127.0.0.1","result":"SUCCESS"}""";
-        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/audit-logs"))
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -244,7 +250,7 @@ class NotificationFlowTest {
     void writeAuditLog_invalidAction_rejected() throws Exception {
         String body = """
                 {"resourceType":"PATIENT","action":"INVALID","operatorId":"U001"}""";
-        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/audit-logs"))
                         .contentType("application/json").content(body))
                 .andExpect(jsonPath("$.code").value(400001));
     }
@@ -269,8 +275,18 @@ class NotificationFlowTest {
         String body = """
                 {"resourceType":"%s","action":"%s","operatorId":"%s","result":"SUCCESS"}"""
                 .formatted(resourceType, action, operatorId);
-        mvc.perform(post("/internal/audit-logs").header("X-Caller-Service", "test-service")
+        mvc.perform(withService(post("/internal/audit-logs"))
                         .contentType("application/json").content(body))
                 .andExpect(status().isOk());
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {
+        return builder.header("Authorization", "Bearer " + serviceToken("test-service"))
+                .header("X-Caller-Service", "test-service");
+    }
+
+    private String serviceToken(String serviceCode) {
+        return new JwtCodec(JWT_SECRET)
+                .signService(serviceCode, serviceCode, List.of("*"), 3600L, "svc-jti-" + serviceCode);
     }
 }

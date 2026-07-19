@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * name = {@code "drug-service"} 对应 Nacos 注册的服务名。
  *
  * <p><b>身份透传</b>：由 common-feign 的 {@link com.medconsult.common.feign.AuthRelayInterceptor}
- * 自动处理——用户链路（如药师触发 dispense）透传 userToken，无用户链路用服务自身 token。
+ * 自动处理——/internal/** 固定注入 SERVICE JWT，X-Caller-Service 仅作为调用方元数据。
  *
  * <p><b>错误处理</b>：下游返回 4xx/5xx 时由 {@link com.medconsult.common.feign.FeignErrorDecoder}
  * 解码为 BusinessException（保留下游 ErrorCode），调用方可直接 try/catch。

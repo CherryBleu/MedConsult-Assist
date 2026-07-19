@@ -14,7 +14,7 @@ import java.util.List;
  * <p>供 medical-record-service 把 doctor_no / department_no 反查为真实 BIGINT 主键落库，
  * 替代正哈希占位。name = {@code "outpatient-service"} 对应 Nacos 注册的服务名。
  *
- * <p><b>身份透传 / 错误处理</b>：同 {@link DrugFeignClient}。
+ * <p><b>身份透传 / 错误处理</b>：/internal/** 固定注入 SERVICE JWT；其余同 {@link DrugFeignClient}。
  */
 @FeignClient(name = "outpatient-service", contextId = "doctorFeignClient")
 public interface DoctorFeignClient {

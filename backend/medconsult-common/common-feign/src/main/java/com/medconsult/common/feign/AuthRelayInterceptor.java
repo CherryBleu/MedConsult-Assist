@@ -11,8 +11,8 @@ import feign.RequestTemplate;
  * <ul>
  *   <li><b>用户链路</b>（RequestContext.currentUser() 非空）：透传用户 JWT +
  *       X-User-Id / X-User-Roles，被调方审计挂在用户名下（医生开方→drug 审计记医生）</li>
- *   <li><b>服务/自动链路</b>（无用户，如定时任务/MQ 消费）：注入服务自身 JWT +
- *       X-Caller-Service，被调方按 sys_service_account.scope 鉴权</li>
+ *   <li><b>服务/自动链路</b>（无用户，如定时任务/MQ 消费）：注入服务自身 JWT，
+ *       透传 X-Caller-Service 作为审计/限流元数据，被调方按 SERVICE JWT 的 serviceCode/scope 鉴权</li>
  * </ul>
  *
  * <p>无论哪种模式，永远透传 X-Trace-Id（§7.4 链路追踪）。
@@ -30,6 +30,7 @@ public class AuthRelayInterceptor implements RequestInterceptor {
     public static final String HEADER_USER_SCOPE = "X-User-Scope";
     public static final String HEADER_CALLER_SERVICE = "X-Caller-Service";
     public static final String HEADER_TRACE_ID = "X-Trace-Id";
+    private static final String SERVICE_TOKEN_BOOTSTRAP_PATH = "/internal/auth/service-token";
 
     private final ServiceTokenProvider serviceTokenProvider;
 
@@ -51,6 +52,20 @@ public class AuthRelayInterceptor implements RequestInterceptor {
             tpl.header(HEADER_CALLER_SERVICE, caller);
         }
 
+        // /internal/auth/service-token 是服务获取首个 SERVICE JWT 的 bootstrap 入口。
+        // 此调用以 body 中的 serviceCode/apiKey 鉴权，不能再调用 ServiceTokenProvider，
+        // 否则 AiServiceTokenProvider -> AuthFeignClient -> 本拦截器 -> provider.get() 会递归。
+        if (isServiceTokenBootstrap(tpl)) {
+            return;
+        }
+
+        // /internal/** 一律使用服务身份。即使当前请求由用户触发，下游 Controller 也会
+        // 调 SecurityContext.requireService()，透传 X-User-* 会被判为非服务身份而 401。
+        if (isInternalEndpoint(tpl)) {
+            applyServiceToken(tpl);
+            return;
+        }
+
         // 3. 双模鉴权
         JwtPayload user = RequestContext.currentUser();
         if (user != null && user.isUser()) {
@@ -66,17 +81,38 @@ public class AuthRelayInterceptor implements RequestInterceptor {
                 tpl.header(HEADER_USER_ROLES, String.join(",", user.roles()));
             }
             // 透传权限点列表（scope）：与网关 JwtAuthFilter 一致，避免下游业务服务
-            // 重建 JwtPayload 时 scope 为空导致 @Permission 校验 403（服务间调用同样命中
-            // JwtAuthServletFilter 的"网关头优先"策略）。
+            // 重建 JwtPayload 时 scope 为空导致 @Permission 校验 403。
             if (user.scope() != null && !user.scope().isEmpty()) {
                 tpl.header(HEADER_USER_SCOPE, String.join(",", user.scope()));
             }
         } else {
             // 服务/自动链路：注入服务自身 JWT
-            String serviceToken = serviceTokenProvider.get();
-            if (serviceToken != null) {
-                tpl.header(HEADER_AUTH, HEADER_BEARER_PREFIX + serviceToken);
-            }
+            applyServiceToken(tpl);
+        }
+    }
+
+    private static boolean isServiceTokenBootstrap(RequestTemplate tpl) {
+        String path = requestPath(tpl);
+        return path != null && path.contains(SERVICE_TOKEN_BOOTSTRAP_PATH);
+    }
+
+    private static boolean isInternalEndpoint(RequestTemplate tpl) {
+        String path = requestPath(tpl);
+        return path != null && path.contains("/internal/");
+    }
+
+    private static String requestPath(RequestTemplate tpl) {
+        String path = tpl.path();
+        if (path == null || path.isBlank()) {
+            path = tpl.url();
+        }
+        return path;
+    }
+
+    private void applyServiceToken(RequestTemplate tpl) {
+        String serviceToken = serviceTokenProvider.get();
+        if (serviceToken != null) {
+            tpl.header(HEADER_AUTH, HEADER_BEARER_PREFIX + serviceToken);
         }
     }
 

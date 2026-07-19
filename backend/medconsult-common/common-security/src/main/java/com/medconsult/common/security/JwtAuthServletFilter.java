@@ -22,12 +22,14 @@ import java.util.List;
  *
  * <p>解析策略（按优先级）：
  * <ol>
- *   <li><b>Gateway 透传头</b>：经网关的请求，网关已用 JwtAuthFilter 解析过 JWT 并注入
+ *   <li><b>Gateway 用户透传头</b>：经网关的请求，网关已用 JwtAuthFilter 解析过 JWT 并注入
  *       {@code X-User-Id} / {@code X-User-Roles} / {@code X-User-Primary-Role} 等头，
  *       且剥离了原始 {@code Authorization}。此时直接信任网关头重建轻量 payload
  *       （业务端口不对外，网络隔离是信任前提，§4.4）。</li>
  *   <li><b>原始 Authorization 头</b>：直连业务端口的请求（如本地测试、内部调试），
- *       解析 {@code Bearer &lt;jwt&gt;} 走 {@link JwtCodec#parse}。</li>
+ *       解析 {@code Bearer &lt;jwt&gt;} 走 {@link JwtCodec#parse}。服务身份只接受
+ *       SERVICE JWT，{@code X-Caller-Service} / {@code X-Service-Code} 仅作为调用方元数据，
+ *       不能充当认证凭据。</li>
  *   <li>都没有：视为匿名请求，不写 SecurityContext（由后续 @Permission / SecurityContext.requireUser 拒绝）。</li>
  * </ol>
  *
@@ -50,12 +52,6 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
     private static final String HDR_USER_PHARMACIST_ID = "X-User-Pharmacist-Id";
     private static final String HDR_USER_NO = "X-User-No";
     private static final String HDR_USER_SCOPE = "X-User-Scope";
-    /**
-     * 服务身份头。AuthRelayInterceptor 发的是 X-Caller-Service（架构文档 §2.4），
-     * 早期文档用 X-Service-Code——此处同时兼容两个头名，取先非空者。
-     */
-    private static final String HDR_SERVICE_CODE = "X-Service-Code";
-    private static final String HDR_CALLER_SERVICE = "X-Caller-Service";
     private static final String HDR_AUTHORIZATION = "Authorization";
 
     /**
@@ -76,8 +72,8 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
-            JwtPayload payload = resolveFromGatewayHeaders(request);
-            String source = "gateway-headers";
+            JwtPayload payload = resolveFromGatewayUserHeaders(request);
+            String source = "gateway-user-headers";
             if (payload == null) {
                 payload = resolveFromAuthorization(request);
                 source = "authorization";
@@ -102,36 +98,14 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 策略 1：信任网关注入的 X-User-* 头重建 payload（轻量，无需重新解析 JWT）。
+     * 策略 1：信任网关注入的 X-User-* 头重建用户 payload（轻量，无需重新解析 JWT）。
+     *
+     * <p>注意：这里不读取 {@code X-Caller-Service} / {@code X-Service-Code}。
+     * 服务身份必须来自已验签的 SERVICE JWT，否则直连业务端口时可伪造服务头绕过
+     * {@link SecurityContext#requireService()}。
      */
-    private JwtPayload resolveFromGatewayHeaders(HttpServletRequest request) {
+    private JwtPayload resolveFromGatewayUserHeaders(HttpServletRequest request) {
         String userIdStr = request.getHeader(HDR_USER_ID);
-        // 服务身份头：兼容 X-Caller-Service（AuthRelayInterceptor 发）和 X-Service-Code（早期命名）
-        String serviceCode = request.getHeader(HDR_CALLER_SERVICE);
-        if (serviceCode == null || serviceCode.isBlank()) {
-            serviceCode = request.getHeader(HDR_SERVICE_CODE);
-        }
-
-        // 服务身份（/internal/* 调用方）
-        if (serviceCode != null && !serviceCode.isBlank()) {
-            return new JwtPayload(
-                    JwtPayload.SubjectType.SERVICE,
-                    null,
-                    serviceCode,
-                    serviceCode,
-                    Collections.emptyList(),
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    Collections.emptyList(),
-                    null,
-                    null
-            );
-        }
-
-        // 用户身份（网关解析后的标准透传）
         if (userIdStr != null && !userIdStr.isBlank()) {
             Long userId;
             try {

@@ -24,7 +24,7 @@ import java.util.List;
  * <p>路径变量 {@code patientId} 是 BIGINT 主键（与对外接口用 patient_no 不同）。
  *
  * <p><b>鉴权</b>：每个端点调 {@link SecurityContext#requireService()} 强制服务身份——
- * 只有带有效服务 JWT（X-Service-Code 头，由 AuthRelayInterceptor 注入）的内部调用方才能访问。
+ * 只有带有效 SERVICE JWT（Authorization 头，由 AuthRelayInterceptor 注入）的内部调用方才能访问。
  * 防御纵深：即便网关误配路由把 /internal/* 暴露，无服务身份的请求也会被拒（401）。
  *
  * <p>供 ai-service 做用药/分诊分析（§2.3 patient-service 提供的 2 个接口）：

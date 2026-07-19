@@ -12,6 +12,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -83,6 +84,29 @@ class AuthRelayInterceptorTest {
     }
 
     @Test
+    void internalEndpoint_usesServiceTokenEvenWhenUserContextExists() {
+        SecurityContext.setPayload(new JwtPayload(
+                JwtPayload.SubjectType.USER, 1001L, null, "张医生",
+                List.of("DOCTOR"), "DOCTOR", null, 3001L, null, null,
+                List.of("prescription:write"), "jti-1", 0L));
+        RequestContext.setUserToken("user-jwt-token");
+        RequestContext.setCallerService("medical-record-service");
+        RequestContext.setTraceId("trace-internal");
+
+        RequestTemplate tpl = new RequestTemplate();
+        tpl.method("GET");
+        tpl.uri("/internal/drugs/100/risk-info");
+        interceptor.apply(tpl);
+
+        assertEquals("Bearer svc-jwt-token", header(tpl, "Authorization"));
+        assertNull(header(tpl, "X-User-Id"), "内部接口由 SERVICE JWT 鉴权，不透传 X-User-* 认证头");
+        assertNull(header(tpl, "X-User-Roles"));
+        assertNull(header(tpl, "X-User-Scope"));
+        assertEquals("medical-record-service", header(tpl, "X-Caller-Service"));
+        assertEquals("trace-internal", header(tpl, "X-Trace-Id"));
+    }
+
+    @Test
     void traceIdAlwaysRelayed_evenWithoutIdentity() {
         RequestContext.setTraceId("trace-only");
         RequestTemplate tpl = new RequestTemplate();
@@ -104,6 +128,29 @@ class AuthRelayInterceptorTest {
 
         assertNull(header(tpl, "X-User-Id"), "服务身份不写用户头");
         assertEquals("Bearer svc-jwt-token", header(tpl, "Authorization"));
+    }
+
+    @Test
+    void serviceTokenBootstrapCall_skipsAuthorizationInjection() {
+        AtomicInteger providerCalls = new AtomicInteger();
+        AuthRelayInterceptor bootstrapInterceptor = new AuthRelayInterceptor(() -> {
+            providerCalls.incrementAndGet();
+            return "recursive-token";
+        });
+        RequestContext.setCallerService("ai-service");
+        RequestContext.setTraceId("trace-bootstrap");
+
+        RequestTemplate tpl = new RequestTemplate();
+        tpl.method("POST");
+        tpl.uri("/internal/auth/service-token");
+
+        bootstrapInterceptor.apply(tpl);
+
+        assertEquals(0, providerCalls.get(), "service-token 换发入口不能递归调用 ServiceTokenProvider");
+        assertNull(header(tpl, "Authorization"));
+        assertNull(header(tpl, "X-User-Id"));
+        assertEquals("ai-service", header(tpl, "X-Caller-Service"));
+        assertEquals("trace-bootstrap", header(tpl, "X-Trace-Id"));
     }
 
     private static String header(RequestTemplate tpl, String name) {

@@ -2,6 +2,7 @@ package com.medconsult.patient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -11,6 +12,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -47,6 +50,8 @@ import static org.junit.jupiter.api.Assertions.*;
 })
 @org.springframework.transaction.annotation.Transactional
 class PatientFlowTest {
+
+    private static final String JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef-min32bytes";
 
     @Autowired
     MockMvc mvc;
@@ -161,9 +166,8 @@ class PatientFlowTest {
         Long patientId = jdbc.queryForObject(
                 "SELECT id FROM patient WHERE patient_no = ?", Long.class, patientNo);
 
-        // /internal/patients/{id}/context（需带 X-Caller-Service 头通过 requireService 鉴权）
-        mvc.perform(get("/internal/patients/" + patientId + "/context")
-                        .header("X-Caller-Service", "test-service"))
+        // /internal/patients/{id}/context（需带 SERVICE JWT 通过 requireService 鉴权）
+        mvc.perform(withService(get("/internal/patients/" + patientId + "/context")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.patientId").value(patientId))
@@ -174,21 +178,18 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.data.pastMedicalHistory[0]").value("哮喘"));
 
         // /internal/patients/{id}/allergies
-        mvc.perform(get("/internal/patients/" + patientId + "/allergies")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/patients/" + patientId + "/allergies")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0]").value("青霉素"))
                 .andExpect(jsonPath("$.data[1]").value("阿司匹林"));
 
         // 不存在的主键 → context 降级返回 empty（不抛异常）
-        mvc.perform(get("/internal/patients/9999999999/context")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/patients/9999999999/context")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.patientId").value(9999999999L))
                 .andExpect(jsonPath("$.data.allergies").isArray());
-        mvc.perform(get("/internal/patients/9999999999/allergies")
-                        .header("X-Caller-Service", "test-service"))
+        mvc.perform(withService(get("/internal/patients/9999999999/allergies")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray());
     }
@@ -200,6 +201,15 @@ class PatientFlowTest {
         return builder.header("X-User-Id", "1")
                 .header("X-User-Primary-Role", "HOSPITAL_ADMIN")
                 .header("X-User-Roles", "HOSPITAL_ADMIN");
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {
+        return builder.header("Authorization", "Bearer " + serviceToken("test-service"))
+                .header("X-Caller-Service", "test-service");
+    }
+
+    private String serviceToken(String serviceCode) {
+        return new JwtCodec(JWT_SECRET).signService(serviceCode, serviceCode, List.of("*"), 3600L, "svc-jti-" + serviceCode);
     }
 
     /**

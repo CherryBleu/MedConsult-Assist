@@ -19,7 +19,7 @@ import java.util.List;
  * <p>供 medical-record-service / ai-service 调用 patient-service 的 /internal/patients/* 内部接口。
  * name = {@code "patient-service"} 对应 Nacos 注册的服务名。
  *
- * <p><b>身份透传 / 错误处理</b>：同 {@link DrugFeignClient}，由 common-feign 的
+ * <p><b>身份透传 / 错误处理</b>：/internal/** 固定注入 SERVICE JWT；其余同 {@link DrugFeignClient}，由 common-feign 的
  * {@link com.medconsult.common.feign.AuthRelayInterceptor} 和 {@link com.medconsult.common.feign.FeignErrorDecoder} 处理。
  */
 @FeignClient(name = "patient-service", contextId = "patientFeignClient")
