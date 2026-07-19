@@ -3,20 +3,20 @@
     <div class="card-box">
       <div class="page-header">
         <h2 class="page-title">排班管理</h2>
-        <div>
-          <el-button type="success" @click="openBatchDialog">批量排班</el-button>
-          <el-button type="primary" @click="openAddDialog">新增排班</el-button>
+        <div class="header-actions">
+          <el-button type="success" class="admin-schedule-action" @click="openBatchDialog">批量排班</el-button>
+          <el-button type="primary" class="admin-schedule-action" @click="openAddDialog">新增排班</el-button>
         </div>
       </div>
 
       <el-form :model="queryParams" inline class="search-form">
         <el-form-item label="科室">
-          <el-select v-model="queryParams.departmentId" placeholder="请选择科室" clearable style="width: 160px" @change="handleDeptChange">
+          <el-select v-model="queryParams.departmentId" class="schedule-filter-control" placeholder="请选择科室" clearable @change="handleDeptChange">
             <el-option v-for="dept in deptList" :key="dept.id" :label="dept.name" :value="dept.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="医生">
-          <el-select v-model="queryParams.doctorId" placeholder="请选择医生" clearable style="width: 160px">
+          <el-select v-model="queryParams.doctorId" class="schedule-filter-control" placeholder="请选择医生" clearable>
             <el-option v-for="doc in doctorList" :key="doc.id" :label="doc.name" :value="doc.id" />
           </el-select>
         </el-form-item>
@@ -28,84 +28,189 @@
             start-placeholder="开始日期"
             end-placeholder="结束日期"
             value-format="YYYY-MM-DD"
-            style="width: 260px"
+            class="schedule-date-filter"
           />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="queryParams.status" placeholder="请选择状态" clearable style="width: 120px">
+          <el-select v-model="queryParams.status" class="schedule-status-filter" placeholder="请选择状态" clearable>
             <el-option label="可预约" value="AVAILABLE" />
             <el-option label="已约满" value="FULL" />
             <el-option label="已停诊" value="SUSPENDED" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
-          <el-button @click="handleReset">重置</el-button>
+          <el-button type="primary" class="admin-schedule-action" @click="handleSearch">搜索</el-button>
+          <el-button class="admin-schedule-action" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
 
-      <el-table :data="tableData" v-loading="loading" border stripe>
-        <el-table-column prop="scheduleNo" label="排班编号" width="120" />
-        <el-table-column prop="doctorName" label="医生姓名" width="100" />
-        <el-table-column prop="deptName" label="科室" width="120" />
-        <el-table-column prop="scheduleDate" label="排班日期" width="120" />
-        <el-table-column label="时段" width="80">
-          <template #default="{ row }">{{ row.period === 'MORNING' ? '上午' : '下午' }}</template>
-        </el-table-column>
-        <el-table-column label="起止时间" width="130">
-          <template #default="{ row }">{{ row.startTime }} - {{ row.endTime }}</template>
-        </el-table-column>
-        <el-table-column prop="totalQuota" label="总号源" width="80" align="center" />
-        <el-table-column label="已预约" width="80" align="center">
-          <template #default="{ row }">
-            <span :class="{ 'text-danger': row.bookedQuota >= row.totalQuota }">{{ row.bookedQuota }}</span>
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="tableData.length === 0"
+        loading-text="正在加载排班..."
+        empty-text="暂无排班数据"
+        @retry="getList"
+      >
+        <ResponsiveTable aria-label="排班管理列表">
+          <template #table>
+            <el-table :data="tableData" border stripe>
+              <el-table-column prop="scheduleNo" label="排班编号" width="120" />
+              <el-table-column prop="doctorName" label="医生姓名" width="100" />
+              <el-table-column prop="deptName" label="科室" width="120" />
+              <el-table-column prop="scheduleDate" label="排班日期" width="120" />
+              <el-table-column label="时段" width="80">
+                <template #default="{ row }">{{ periodLabel(row.period) }}</template>
+              </el-table-column>
+              <el-table-column label="起止时间" width="130">
+                <template #default="{ row }">{{ row.startTime }} - {{ row.endTime }}</template>
+              </el-table-column>
+              <el-table-column prop="totalQuota" label="总号源" width="80" align="center" />
+              <el-table-column label="已预约" width="80" align="center">
+                <template #default="{ row }">
+                  <span :class="{ 'text-danger': row.bookedQuota >= row.totalQuota }">{{ row.bookedQuota }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="挂号费" width="90">
+                <template #default="{ row }">¥{{ row.registrationFee }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="scheduleStatusType(row.status)" size="small">
+                    {{ scheduleStatusLabel(row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="200" fixed="right">
+                <template #default="{ row }">
+                  <!-- #17：后端 PUT /schedules/{id} 全量更新已实现，编辑排班字段生效 -->
+                  <el-button
+                    size="small"
+                    type="primary"
+                    link
+                    class="admin-schedule-action"
+                    :aria-label="`编辑 ${row.scheduleDate} ${row.doctorName} 排班`"
+                    @click="handleEdit(row)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    v-if="row.status !== 'SUSPENDED'"
+                    size="small"
+                    type="warning"
+                    link
+                    class="admin-schedule-action"
+                    :aria-label="`停诊 ${row.scheduleDate} ${row.doctorName} 排班`"
+                    @click="handleToggleStatus(row, 'SUSPENDED')"
+                  >
+                    停诊
+                  </el-button>
+                  <el-button
+                    v-else
+                    size="small"
+                    type="success"
+                    link
+                    class="admin-schedule-action"
+                    :aria-label="`恢复 ${row.scheduleDate} ${row.doctorName} 排班`"
+                    @click="handleToggleStatus(row, 'AVAILABLE')"
+                  >
+                    恢复
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </template>
-        </el-table-column>
-        <el-table-column label="挂号费" width="90">
-          <template #default="{ row }">¥{{ row.registrationFee }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag v-if="row.status === 'AVAILABLE'" type="success" size="small">可预约</el-tag>
-            <el-tag v-else-if="row.status === 'FULL'" type="warning" size="small">已约满</el-tag>
-            <el-tag v-else type="danger" size="small">已停诊</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <!-- #17：后端 PUT /schedules/{id} 全量更新已实现，编辑排班字段生效 -->
-            <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button
-              v-if="row.status !== 'SUSPENDED'"
-              size="small"
-              type="warning"
-              link
-              @click="handleToggleStatus(row, 'SUSPENDED')"
-            >停诊</el-button>
-            <el-button
-              v-else
-              size="small"
-              type="success"
-              link
-              @click="handleToggleStatus(row, 'AVAILABLE')"
-            >恢复</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
 
-      <el-pagination
-        v-model:current-page="queryParams.pageNum"
-        v-model:page-size="queryParams.pageSize"
-        :page-sizes="[10, 20, 50]"
-        :total="total"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="getList"
-        @current-change="getList"
-        class="pagination"
-      />
+          <template #card>
+            <article
+              v-for="row in tableData"
+              :key="row.id || row.scheduleNo"
+              class="schedule-card"
+              data-testid="responsive-admin-schedule-card"
+            >
+              <div class="schedule-card__header">
+                <div>
+                  <p class="schedule-card__title">{{ row.doctorName || '-' }}</p>
+                  <p class="schedule-card__meta">{{ row.deptName || '-' }} · {{ row.scheduleNo || '-' }}</p>
+                </div>
+                <el-tag :type="scheduleStatusType(row.status)" size="small">
+                  {{ scheduleStatusLabel(row.status) }}
+                </el-tag>
+              </div>
+
+              <dl class="schedule-card__fields">
+                <div>
+                  <dt>日期</dt>
+                  <dd>{{ row.scheduleDate || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>时段</dt>
+                  <dd>{{ periodLabel(row.period) }} {{ row.startTime }} - {{ row.endTime }}</dd>
+                </div>
+                <div>
+                  <dt>号源</dt>
+                  <dd>
+                    <span :class="{ 'text-danger': row.bookedQuota >= row.totalQuota }">
+                      {{ row.bookedQuota }}/{{ row.totalQuota }}
+                    </span>
+                    <span class="schedule-card__sub">剩余 {{ remainingQuota(row) }}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>挂号费</dt>
+                  <dd>¥{{ row.registrationFee || 0 }}</dd>
+                </div>
+              </dl>
+
+              <div class="schedule-card__actions">
+                <el-button
+                  type="primary"
+                  plain
+                  class="admin-schedule-action"
+                  :aria-label="`编辑 ${row.scheduleDate} ${row.doctorName} 排班`"
+                  @click="handleEdit(row)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  v-if="row.status !== 'SUSPENDED'"
+                  type="warning"
+                  plain
+                  class="admin-schedule-action"
+                  :aria-label="`停诊 ${row.scheduleDate} ${row.doctorName} 排班`"
+                  @click="handleToggleStatus(row, 'SUSPENDED')"
+                >
+                  停诊
+                </el-button>
+                <el-button
+                  v-else
+                  type="success"
+                  plain
+                  class="admin-schedule-action"
+                  :aria-label="`恢复 ${row.scheduleDate} ${row.doctorName} 排班`"
+                  @click="handleToggleStatus(row, 'AVAILABLE')"
+                >
+                  恢复
+                </el-button>
+              </div>
+            </article>
+          </template>
+        </ResponsiveTable>
+
+        <el-pagination
+          v-model:current-page="queryParams.pageNum"
+          v-model:page-size="queryParams.pageSize"
+          :page-sizes="[10, 20, 50]"
+          :total="total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="getList"
+          @current-change="getList"
+          class="pagination"
+        />
+      </PageState>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="560px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="min(560px, calc(100vw - 32px))">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
           <!-- 编辑模式禁用：后端 PUT /schedules/{id} 医生/科室不可变(#17)，改了不落库 -->
@@ -150,13 +255,13 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button class="admin-schedule-action" @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" class="admin-schedule-action" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
 
     <!-- 批量排班弹窗（#16：循环调用 createScheduleApi 生成多天排班，不改后端） -->
-    <el-dialog v-model="batchDialogVisible" title="批量排班" width="560px">
+    <el-dialog v-model="batchDialogVisible" title="批量排班" width="min(560px, calc(100vw - 32px))">
       <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
         选择医生 + 日期范围 + 时段，系统将自动为范围内的每一天生成排班
       </el-alert>
@@ -208,8 +313,8 @@
             进度 {{ batchProgress.done }}/{{ batchProgress.total }}（成功 {{ batchProgress.success }}，失败 {{ batchProgress.fail }}）
           </div>
         </div>
-        <el-button :disabled="batchSubmitting" @click="batchDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="batchSubmitting" @click="submitBatch">
+        <el-button class="admin-schedule-action" :disabled="batchSubmitting" @click="batchDialogVisible = false">取消</el-button>
+        <el-button type="primary" class="admin-schedule-action" :loading="batchSubmitting" @click="submitBatch">
           生成排班
         </el-button>
       </template>
@@ -223,9 +328,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getScheduleManageListApi, createScheduleApi, updateScheduleApi, toggleScheduleStatusApi } from '@/api/appointment'
 import { getDepartmentListApi } from '@/api/department'
 import { getDoctorListApi } from '@/api/doctor'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
+const errorMessage = ref('')
 const dialogVisible = ref(false)
 const submitting = ref(false)
 // 编辑模式标识（#17：后端 PUT /schedules/{id} 全量更新接口落地后，排班字段编辑生效）
@@ -269,8 +377,29 @@ const disabledDate = (time) => {
   return time.getTime() < dayjs().startOf('day').valueOf()
 }
 
+const periodLabel = (period) => {
+  const map = { MORNING: '上午', AFTERNOON: '下午', EVENING: '夜间' }
+  return map[period] || period || '-'
+}
+
+const scheduleStatusLabel = (status) => {
+  const map = { AVAILABLE: '可预约', FULL: '已约满', SUSPENDED: '已停诊', STOPPED: '已停诊' }
+  return map[status] || status || '-'
+}
+
+const scheduleStatusType = (status) => {
+  const map = { AVAILABLE: 'success', FULL: 'warning', SUSPENDED: 'danger', STOPPED: 'danger' }
+  return map[status] || 'info'
+}
+
+const remainingQuota = (row) => {
+  if (Number.isFinite(Number(row.remainingQuota))) return Number(row.remainingQuota)
+  return Number(row.totalQuota || 0) - Number(row.bookedQuota || 0)
+}
+
 const getList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const params = { ...queryParams }
     if (dateRange.value && dateRange.value.length === 2) {
@@ -281,6 +410,10 @@ const getList = async () => {
     const res = await getScheduleManageListApi(params)
     tableData.value = res.data.records
     total.value = res.data.total
+  } catch (e) {
+    tableData.value = []
+    total.value = 0
+    errorMessage.value = e?.response?.data?.message || e?.message || '排班列表加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -523,8 +656,66 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .search-form {
   margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.search-form :deep(.el-form-item) {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
+.search-form :deep(.el-form-item__content) {
+  min-width: 0;
+}
+
+.schedule-filter-control {
+  width: 160px;
+}
+
+.schedule-date-filter {
+  width: 260px;
+}
+
+.schedule-status-filter {
+  width: 120px;
+}
+
+.admin-schedule-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
+}
+
+.header-actions .admin-schedule-action,
+.search-form .admin-schedule-action {
+  min-width: 88px;
 }
 .pagination {
   margin-top: 20px;
@@ -555,5 +746,166 @@ onMounted(() => {
 }
 .batch-progress {
   margin-bottom: 12px;
+}
+
+.schedule-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 12px 28px rgba(15, 35, 95, .06);
+}
+
+.schedule-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedule-card__header > div {
+  min-width: 0;
+}
+
+.schedule-card__title,
+.schedule-card__meta {
+  margin: 0;
+}
+
+.schedule-card__title {
+  overflow-wrap: anywhere;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.schedule-card__meta {
+  margin-top: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.schedule-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.schedule-card__fields div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.schedule-card__fields dt,
+.schedule-card__fields dd {
+  margin: 0;
+}
+
+.schedule-card__fields dt {
+  color: var(--text-secondary);
+}
+
+.schedule-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.schedule-card__sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+}
+
+.schedule-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.schedule-card__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.schedule-card__actions .admin-schedule-action {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .header-actions,
+  .search-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .header-actions .admin-schedule-action,
+  .search-form .admin-schedule-action,
+  .schedule-filter-control,
+  .schedule-date-filter,
+  .schedule-status-filter {
+    width: 100%;
+  }
+
+  .search-form :deep(.el-form-item__label) {
+    justify-content: flex-start;
+    min-width: 68px;
+  }
+
+  .search-form :deep(.el-input__wrapper),
+  .search-form :deep(.el-select__wrapper),
+  .search-form :deep(.el-date-editor) {
+    min-height: var(--touch-target);
+  }
+
+  .pagination {
+    justify-content: center;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .time-range {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-range :deep(.el-date-editor.el-input) {
+    width: 100% !important;
+  }
+
+  .time-sep {
+    display: none;
+  }
+
+  :deep(.el-dialog) {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 48px);
+    margin: 24px auto !important;
+  }
+
+  :deep(.el-dialog__body) {
+    overflow-y: auto;
+  }
+
+  :deep(.el-dialog__footer) {
+    display: grid;
+    gap: 8px;
+  }
+
+  :deep(.el-dialog__footer .el-button) {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 </style>

@@ -252,6 +252,9 @@ export const mockAdminAppointmentList = (params = {}) => {
 }
 
 export const mockScheduleManageList = (params = {}) => {
+  if (consumeFailOnce('mock_admin_schedule_list_fail_once')) {
+    return Promise.reject(new Error('排班列表加载失败，请重试'))
+  }
   let list = [...mockSchedules]
   if (params.departmentId) {
     list = list.filter(s => s.departmentId === Number(params.departmentId))
@@ -262,11 +265,13 @@ export const mockScheduleManageList = (params = {}) => {
   if (params.status) {
     list = list.filter(s => s.status === params.status)
   }
-  if (params.startDate) {
-    list = list.filter(s => s.scheduleDate >= params.startDate)
+  const startDate = params.startDate || params.dateFrom
+  const endDate = params.endDate || params.dateTo
+  if (startDate) {
+    list = list.filter(s => s.scheduleDate >= startDate)
   }
-  if (params.endDate) {
-    list = list.filter(s => s.scheduleDate <= params.endDate)
+  if (endDate) {
+    list = list.filter(s => s.scheduleDate <= endDate)
   }
   list.sort((a, b) => b.scheduleDate.localeCompare(a.scheduleDate) || a.period.localeCompare(b.period))
   const pageNum = params.pageNum || 1
