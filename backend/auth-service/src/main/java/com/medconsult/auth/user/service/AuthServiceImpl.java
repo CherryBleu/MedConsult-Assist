@@ -61,6 +61,7 @@ public class AuthServiceImpl implements AuthService {
     private final org.springframework.data.redis.core.StringRedisTemplate redis;
     /** 注册即建档：PATIENT 角色注册时调 patient-service 自动建档案 */
     private final PatientFeignClient patientClient;
+    private final RbacQueryService rbacQueryService;
     /** 划定 sys_user 写入事务边界（Feign 建档在事务外，参照 medical-record 模式 A） */
     private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
@@ -212,9 +213,8 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
         }
 
-        // 签发双 token。冒烟期角色暂从注册时存（实际 RBAC 五表阶段查 sys_user_role）。
-        // 从 Redis 读回注册时写入的角色；读失败或缺失兜底为 PATIENT。
-        String primaryRole = resolveRole(u.getId());
+        AccessFacts accessFacts = resolveAccess(u.getId());
+        String primaryRole = accessFacts.primaryRole();
 
         // 入口↔身份一致性校验（防止患者从工作人员入口登录等越权，根因 A 修复）。
         // 医院管理员无 doctor/pharmacist 关联档案，需结合角色判断其工作人员入口资格。
@@ -243,8 +243,8 @@ public class AuthServiceImpl implements AuthService {
         u.setLastLoginAt(LocalDateTime.now());
         userMapper.updateById(u);
 
-        List<String> roles = List.of(primaryRole);
-        List<String> scope = resolveScope(primaryRole);
+        List<String> roles = accessFacts.roles();
+        List<String> scope = accessFacts.scope();
 
         String access = jwtCodec.signUser(u.getId(), u.getName(), roles, primaryRole,
                 u.getPatientId(), u.getDoctorId(), u.getPharmacistId(), u.getUserNo(), scope, accessTtl, null);
@@ -275,10 +275,10 @@ public class AuthServiceImpl implements AuthService {
         if (!isRefreshValid(p.jti())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "refreshToken 已失效（已登出或过期）");
         }
-        // 重签 access。旧 refresh token 可能仍携带 scope=*，刷新时必须按当前角色策略收口。
-        List<String> scope = normalizeUserScope(p.primaryRole(), p.scope());
-        String access = jwtCodec.signUser(p.userId(), p.name(), p.roles(), p.primaryRole(),
-                p.patientId(), p.doctorId(), p.pharmacistId(), p.userNo(), scope, accessTtl, null);
+        // 重签 access。RBAC 行存在时按当前授权事实源收口；否则保持旧 refresh 行为。
+        AccessFacts accessFacts = resolveRefreshAccess(p);
+        String access = jwtCodec.signUser(p.userId(), p.name(), accessFacts.roles(), accessFacts.primaryRole(),
+                p.patientId(), p.doctorId(), p.pharmacistId(), p.userNo(), accessFacts.scope(), accessTtl, null);
         return new AuthDTO.RefreshResponse(access, "Bearer", accessTtl);
     }
 
@@ -568,6 +568,31 @@ public class AuthServiceImpl implements AuthService {
         return "PATIENT";
     }
 
+    private AccessFacts resolveAccess(Long userId) {
+        return rbacQueryService.findUserAccess(userId)
+                .map(this::requireUsableRbacAccess)
+                .orElseGet(() -> {
+                    String primaryRole = resolveRole(userId);
+                    return new AccessFacts(List.of(primaryRole), primaryRole, resolveScope(primaryRole));
+                });
+    }
+
+    private AccessFacts resolveRefreshAccess(JwtPayload payload) {
+        return rbacQueryService.findUserAccess(payload.userId())
+                .map(this::requireUsableRbacAccess)
+                .orElseGet(() -> new AccessFacts(
+                        payload.roles(),
+                        payload.primaryRole(),
+                        normalizeUserScope(payload.primaryRole(), payload.scope())));
+    }
+
+    private AccessFacts requireUsableRbacAccess(RbacQueryService.RbacAccess access) {
+        if (!access.hasUsableRole()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "账号未授予可用角色");
+        }
+        return new AccessFacts(access.roles(), access.primaryRole(), access.scope());
+    }
+
     private static List<String> resolveScope(String primaryRole) {
         if (primaryRole == null || primaryRole.isBlank()) {
             return List.of();
@@ -624,6 +649,9 @@ public class AuthServiceImpl implements AuthService {
             return resolveScope(primaryRole);
         }
         return existingScope;
+    }
+
+    private record AccessFacts(List<String> roles, String primaryRole, List<String> scope) {
     }
 
     // ===== 私有助手 =====

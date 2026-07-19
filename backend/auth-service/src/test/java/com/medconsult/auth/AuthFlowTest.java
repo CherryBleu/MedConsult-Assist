@@ -262,6 +262,41 @@ class AuthFlowTest {
     }
 
     @Test
+    void login_usesRbacPermissionScopeWhenUserRoleRowsExist() throws Exception {
+        seedRbacRole(1L, 81001L, "DOCTOR", 1, 82001L, "rbac:login-scope");
+
+        TokenPair tokens = login("admin", "123456");
+        JwtPayload payload = jwtCodec.parse(tokens.accessToken());
+
+        assertEquals("DOCTOR", payload.primaryRole());
+        assertEquals(List.of("DOCTOR"), payload.roles());
+        assertEquals(List.of("rbac:login-scope"), payload.scope());
+        assertFalse(payload.scope().contains("user:manage"));
+        assertFalse(payload.scope().contains("ai:summary:confirm"));
+    }
+
+    @Test
+    void login_fallsBackToRedisRoleScopeWhenRbacRowsMissing() throws Exception {
+        JwtPayload payload = assertTokenScope(login("yaofang", "123456").accessToken(),
+                "PHARMACY_ADMIN", "drug:write");
+
+        assertTrue(payload.roles().contains("PHARMACY_ADMIN"));
+        assertFalse(payload.scope().contains("rbac:login-scope"));
+    }
+
+    @Test
+    void login_doesNotFallBackToRedisWhenRbacRowsOnlyContainDisabledRoles() throws Exception {
+        seedRbacRole(1L, 87001L, "DOCTOR", 1, 88001L, "rbac:disabled-role-scope", 0);
+
+        mvc.perform(post("/api/v1/auth/login")
+                        .contentType("application/json")
+                        .content("""
+                                {"account":"admin","password":"123456"}"""))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
     void refresh_preservesNarrowScopeFromRefreshToken() throws Exception {
         TokenPair tokens = login("patient", "123456");
         JwtPayload refreshPayload = assertTokenScope(tokens.refreshToken(), "PATIENT", "ai:symptom-chat");
@@ -279,6 +314,28 @@ class AuthFlowTest {
                 .at("/data/accessToken").asText();
         JwtPayload accessPayload = assertTokenScope(newAccessToken, "PATIENT", "ai:symptom-chat");
         assertEquals(refreshPayload.scope(), accessPayload.scope());
+    }
+
+    @Test
+    void refresh_usesCurrentRbacPermissionScopeWhenUserRoleRowsExist() throws Exception {
+        TokenPair tokens = login("admin", "123456");
+        seedRbacRole(1L, 85001L, "DOCTOR", 1, 86001L, "rbac:refresh-scope");
+
+        String refreshBody = "{\"refreshToken\":\"" + tokens.refreshToken() + "\"}";
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(refreshBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andReturn();
+
+        String newAccessToken = om.readTree(refreshResult.getResponse().getContentAsString())
+                .at("/data/accessToken").asText();
+        JwtPayload payload = jwtCodec.parse(newAccessToken);
+        assertEquals("DOCTOR", payload.primaryRole());
+        assertEquals(List.of("DOCTOR"), payload.roles());
+        assertEquals(List.of("rbac:refresh-scope"), payload.scope());
     }
 
     @Test
@@ -459,6 +516,20 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.code").value(401001));
     }
 
+    @Test
+    void internalUserRoles_readsRbacRolesBeforeRedisFallback() throws Exception {
+        seedRbacRole(1L, 83001L, "DOCTOR", 0, 84001L, "rbac:doctor-read");
+        seedRbacRole(1L, 83002L, "PHARMACY_ADMIN", 1, 84002L, "rbac:pharmacy-read");
+
+        mvc.perform(get("/internal/auth/users/{userId}/roles", 1L)
+                        .header("Authorization", "Bearer " + serviceToken("patient:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.primaryRole").value("PHARMACY_ADMIN"))
+                .andExpect(jsonPath("$.data.roles",
+                        org.hamcrest.Matchers.contains("PHARMACY_ADMIN", "DOCTOR")));
+    }
+
     private TokenPair login(String account, String password) throws Exception {
         String loginBody = """
                 {"account":"%s","password":"%s"}""".formatted(account, password);
@@ -517,6 +588,32 @@ class AuthFlowTest {
         user.setName("无角色患者");
         user.setStatus("ACTIVE");
         userMapper.insert(user);
+    }
+
+    private void seedRbacRole(Long userId, Long roleId, String roleCode, Integer isPrimary,
+                              Long permissionId, String permissionCode) {
+        seedRbacRole(userId, roleId, roleCode, isPrimary, permissionId, permissionCode, 1);
+    }
+
+    private void seedRbacRole(Long userId, Long roleId, String roleCode, Integer isPrimary,
+                              Long permissionId, String permissionCode, Integer roleEnabled) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.update("""
+                INSERT INTO sys_role (id, role_code, role_name, enabled)
+                VALUES (?, ?, ?, ?)
+                """, roleId, roleCode, roleCode, roleEnabled);
+        jdbc.update("""
+                INSERT INTO sys_permission (id, permission_code, permission_name)
+                VALUES (?, ?, ?)
+                """, permissionId, permissionCode, permissionCode);
+        jdbc.update("""
+                INSERT INTO sys_role_permission (id, role_id, permission_id, data_scope)
+                VALUES (?, ?, ?, 'ALL')
+                """, permissionId + 1000, roleId, permissionId);
+        jdbc.update("""
+                INSERT INTO sys_user_role (id, user_id, role_id, is_primary)
+                VALUES (?, ?, ?, ?)
+                """, roleId + 1000, userId, roleId, isPrimary);
     }
 
     private record TokenPair(String accessToken, String refreshToken) {

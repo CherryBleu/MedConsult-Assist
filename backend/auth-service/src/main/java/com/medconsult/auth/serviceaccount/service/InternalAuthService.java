@@ -6,6 +6,7 @@ import com.medconsult.auth.serviceaccount.entity.SysServiceAccount;
 import com.medconsult.auth.serviceaccount.mapper.SysServiceAccountMapper;
 import com.medconsult.auth.user.entity.SysUser;
 import com.medconsult.auth.user.mapper.SysUserMapper;
+import com.medconsult.auth.user.service.RbacQueryService;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.security.JwtCodec;
@@ -28,6 +29,7 @@ public class InternalAuthService {
     private final SysServiceAccountMapper serviceAccountMapper;
     private final SysUserMapper userMapper;
     private final StringRedisTemplate redis;
+    private final RbacQueryService rbacQueryService;
 
     public ServiceAccountDTO.UserTokenVerifyResponse verifyUserToken(String token) {
         JwtPayload payload = jwtCodec.parse(token);
@@ -75,8 +77,12 @@ public class InternalAuthService {
         if (user == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
-        String primaryRole = resolveRole(userId);
-        return new ServiceAccountDTO.UserRolesResponse(List.of(primaryRole), primaryRole);
+        return rbacQueryService.findUserAccess(userId)
+                .map(access -> new ServiceAccountDTO.UserRolesResponse(access.roles(), access.primaryRole()))
+                .orElseGet(() -> {
+                    String primaryRole = resolveRole(userId);
+                    return new ServiceAccountDTO.UserRolesResponse(List.of(primaryRole), primaryRole);
+                });
     }
 
     private String resolveRole(Long userId) {
