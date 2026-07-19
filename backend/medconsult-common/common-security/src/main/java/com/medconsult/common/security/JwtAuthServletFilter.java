@@ -22,7 +22,9 @@ import java.util.List;
  *
  * <p>解析策略（按优先级）：
  * <ol>
- *   <li><b>Gateway 用户透传头</b>：经网关的请求，网关已用 JwtAuthFilter 解析过 JWT 并注入
+ *   <li><b>内部接口</b>：{@code /internal/**} 只解析 {@code Authorization: Bearer <SERVICE JWT>}，
+ *       不接受 {@code X-User-*} 或 {@code X-Caller-Service} 建立身份。</li>
+ *   <li><b>Gateway 用户透传头</b>：经网关的非内部请求，网关已用 JwtAuthFilter 解析过 JWT 并注入
  *       {@code X-User-Id} / {@code X-User-Roles} / {@code X-User-Primary-Role} 等头，
  *       且剥离了原始 {@code Authorization}。此时直接信任网关头重建轻量 payload
  *       （业务端口不对外，网络隔离是信任前提，§4.4）。</li>
@@ -72,11 +74,18 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
-            JwtPayload payload = resolveFromGatewayUserHeaders(request);
-            String source = "gateway-user-headers";
-            if (payload == null) {
+            JwtPayload payload;
+            String source;
+            if (isInternalPath(request)) {
                 payload = resolveFromAuthorization(request);
                 source = "authorization";
+            } else {
+                payload = resolveFromGatewayUserHeaders(request);
+                source = "gateway-user-headers";
+                if (payload == null) {
+                    payload = resolveFromAuthorization(request);
+                    source = "authorization";
+                }
             }
             if (payload != null) {
                 // 直接写 request attribute（不能用 SecurityContext.setPayload——它依赖
@@ -155,6 +164,11 @@ public class JwtAuthServletFilter extends OncePerRequestFilter {
             return null;
         }
         return jwtCodec.parse(token);
+    }
+
+    private static boolean isInternalPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        return uri != null && uri.startsWith("/internal/");
     }
 
     private static List<String> parseCsvHeader(String csv) {

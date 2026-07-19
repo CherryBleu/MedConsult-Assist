@@ -63,6 +63,21 @@ class JwtAuthServletFilterTest {
     }
 
     @Test
+    void internalPathIgnoresGatewayUserHeadersAndUsesServiceJwt() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/patients/1/context");
+        request.addHeader("X-User-Id", "42");
+        request.addHeader("X-User-Roles", "DOCTOR");
+        request.addHeader("X-User-Primary-Role", "DOCTOR");
+        request.addHeader("Authorization", "Bearer " + serviceToken("patient-service"));
+
+        JwtPayload payload = runFilter(request);
+
+        assertNotNull(payload);
+        assertTrue(payload.isService(), "/internal/** 只能用 SERVICE JWT 建立服务身份");
+        assertEquals("patient-service", payload.serviceCode());
+    }
+
+    @Test
     void userFeignHeadersWithCallerServiceRemainUserIdentity() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/downstream");
         request.addHeader("X-User-Id", "42");
