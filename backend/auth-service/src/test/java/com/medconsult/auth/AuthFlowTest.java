@@ -392,6 +392,73 @@ class AuthFlowTest {
         assertEquals(accessPayload.scope(), refreshPayload.scope());
     }
 
+    @Test
+    void internalAuthVerify_acceptsUserTokenAndRejectsServiceToken() throws Exception {
+        String patientToken = login("patient", "123456").accessToken();
+
+        mvc.perform(get("/internal/auth/verify")
+                        .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.userId").value(3))
+                .andExpect(jsonPath("$.data.primaryRole").value("PATIENT"))
+                .andExpect(jsonPath("$.data.roles[0]").value("PATIENT"))
+                .andExpect(jsonPath("$.data.scope",
+                        org.hamcrest.Matchers.hasItem("ai:symptom-chat")))
+                .andExpect(jsonPath("$.data.exp").isNumber());
+
+        mvc.perform(get("/internal/auth/verify")
+                        .header("Authorization", "Bearer " + serviceToken("patient:read")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401001));
+    }
+
+    @Test
+    void internalServiceVerify_acceptsActiveServiceTokenAndRejectsUserOrExcessScope() throws Exception {
+        mvc.perform(get("/internal/auth/service-verify")
+                        .header("Authorization", "Bearer " + serviceToken("patient:read", "drug:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.serviceCode").value("ai-service"))
+                .andExpect(jsonPath("$.data.scope",
+                        org.hamcrest.Matchers.hasItems("patient:read", "drug:read")))
+                .andExpect(jsonPath("$.data.exp").isNumber());
+
+        mvc.perform(get("/internal/auth/service-verify")
+                        .header("Authorization", "Bearer " + login("patient", "123456").accessToken()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401001));
+
+        mvc.perform(get("/internal/auth/service-verify")
+                        .header("Authorization", "Bearer " + serviceToken("patient:read", "patient:write")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void internalUserRoles_requiresServiceTokenAndReturnsRedisFallbackRole() throws Exception {
+        seedRolelessUser();
+
+        mvc.perform(get("/internal/auth/users/{userId}/roles", 1L)
+                        .header("Authorization", "Bearer " + serviceToken("patient:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.primaryRole").value("HOSPITAL_ADMIN"))
+                .andExpect(jsonPath("$.data.roles[0]").value("HOSPITAL_ADMIN"));
+
+        mvc.perform(get("/internal/auth/users/{userId}/roles", 19002L)
+                        .header("Authorization", "Bearer " + serviceToken("patient:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.primaryRole").value("PATIENT"))
+                .andExpect(jsonPath("$.data.roles[0]").value("PATIENT"));
+
+        mvc.perform(get("/internal/auth/users/{userId}/roles", 1L)
+                        .header("Authorization", "Bearer " + login("patient", "123456").accessToken()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401001));
+    }
+
     private TokenPair login(String account, String password) throws Exception {
         String loginBody = """
                 {"account":"%s","password":"%s"}""".formatted(account, password);
@@ -409,6 +476,10 @@ class AuthFlowTest {
                 om.readTree(response).at("/data/refreshToken").asText());
         redisKeysToDelete.add(refreshKey(jwtCodec.parse(tokens.refreshToken()).jti()));
         return tokens;
+    }
+
+    private String serviceToken(String... scopes) {
+        return jwtCodec.signService("ai-service", "AI 辅助问诊服务", List.of(scopes), 3600, null);
     }
 
     private JwtPayload assertTokenScope(String token, String expectedRole, String... expectedScopes) {
@@ -434,6 +505,18 @@ class AuthFlowTest {
         user.setStatus("ACTIVE");
         userMapper.insert(user);
         redis.opsForValue().set(LEGACY_PATIENT_ROLE_KEY, "PATIENT", Duration.ofDays(1));
+    }
+
+    private void seedRolelessUser() {
+        SysUser user = new SysUser();
+        user.setId(19002L);
+        user.setUserNo("UTESTNOROLE001");
+        user.setAccount("roleless_patient");
+        user.setPhone("13900000667");
+        user.setPasswordHash(new BCryptPasswordEncoder(10).encode("P@ssw0rd"));
+        user.setName("无角色患者");
+        user.setStatus("ACTIVE");
+        userMapper.insert(user);
     }
 
     private record TokenPair(String accessToken, String refreshToken) {

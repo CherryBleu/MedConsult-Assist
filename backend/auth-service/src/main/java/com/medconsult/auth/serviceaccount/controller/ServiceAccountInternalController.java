@@ -1,13 +1,21 @@
 package com.medconsult.auth.serviceaccount.controller;
 
 import com.medconsult.auth.serviceaccount.dto.ServiceAccountDTO;
+import com.medconsult.auth.serviceaccount.service.InternalAuthService;
 import com.medconsult.auth.serviceaccount.service.ServiceAccountService;
+import com.medconsult.common.core.BusinessException;
+import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.SecurityContext;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ServiceAccountInternalController {
 
     private final ServiceAccountService serviceAccountService;
+    private final InternalAuthService internalAuthService;
 
     /**
      * 服务 token 换发：serviceCode + apiKey → SERVICE 类型 JWT。
@@ -40,5 +49,38 @@ public class ServiceAccountInternalController {
     public Result<ServiceAccountDTO.ServiceTokenResponse> issueToken(
             @Valid @RequestBody ServiceAccountDTO.ServiceTokenRequest req) {
         return Result.ok(serviceAccountService.issueToken(req));
+    }
+
+    @Operation(summary = "校验用户 Token")
+    @GetMapping("/verify")
+    public Result<ServiceAccountDTO.UserTokenVerifyResponse> verify(
+            @RequestHeader(name = "Authorization", required = false) String authorization) {
+        return Result.ok(internalAuthService.verifyUserToken(bearerToken(authorization)));
+    }
+
+    @Operation(summary = "校验服务 Token")
+    @GetMapping("/service-verify")
+    public Result<ServiceAccountDTO.ServiceTokenVerifyResponse> serviceVerify(
+            @RequestHeader(name = "Authorization", required = false) String authorization) {
+        return Result.ok(internalAuthService.verifyServiceToken(bearerToken(authorization)));
+    }
+
+    @Operation(summary = "查询用户角色")
+    @GetMapping("/users/{userId}/roles")
+    public Result<ServiceAccountDTO.UserRolesResponse> userRoles(@PathVariable Long userId) {
+        JwtPayload servicePayload = SecurityContext.requireService();
+        internalAuthService.verifyServicePayload(servicePayload);
+        return Result.ok(internalAuthService.userRoles(userId));
+    }
+
+    private static String bearerToken(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少 Bearer Token");
+        }
+        String token = authorization.substring(7).trim();
+        if (token.isEmpty()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少 Bearer Token");
+        }
+        return token;
     }
 }
