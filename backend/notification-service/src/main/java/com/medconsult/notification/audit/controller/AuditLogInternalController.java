@@ -27,7 +27,7 @@ public class AuditLogInternalController {
     /** 同步写审计（架构文档 §2.3，兜底用，优先 MQ） */
     @PostMapping
     public Result<AuditLogDTO.WriteResponse> write(@Valid @RequestBody AuditLogDTO.WriteRequest req) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("audit:write");
         return Result.ok(auditLogService.write(req));
     }
 }

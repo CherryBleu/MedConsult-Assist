@@ -166,7 +166,7 @@ class PatientFlowTest {
         Long patientId = jdbc.queryForObject(
                 "SELECT id FROM patient WHERE patient_no = ?", Long.class, patientNo);
 
-        // /internal/patients/{id}/context（需带 SERVICE JWT 通过 requireService 鉴权）
+        // /internal/patients/{id}/context（需带 SERVICE JWT + patient:read scope）
         mvc.perform(withService(get("/internal/patients/" + patientId + "/context")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -176,6 +176,10 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.data.allergies[0]").value("青霉素"))
                 .andExpect(jsonPath("$.data.allergies[1]").value("阿司匹林"))
                 .andExpect(jsonPath("$.data.pastMedicalHistory[0]").value("哮喘"));
+
+        mvc.perform(withService(get("/internal/patients/" + patientId + "/context"), "drug:read"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
 
         // /internal/patients/{id}/allergies
         mvc.perform(withService(get("/internal/patients/" + patientId + "/allergies")))
@@ -204,12 +208,16 @@ class PatientFlowTest {
     }
 
     private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {
-        return builder.header("Authorization", "Bearer " + serviceToken("test-service"))
+        return withService(builder, "*");
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder, String scope) {
+        return builder.header("Authorization", "Bearer " + serviceToken("test-service", scope))
                 .header("X-Caller-Service", "test-service");
     }
 
-    private String serviceToken(String serviceCode) {
-        return new JwtCodec(JWT_SECRET).signService(serviceCode, serviceCode, List.of("*"), 3600L, "svc-jti-" + serviceCode);
+    private String serviceToken(String serviceCode, String scope) {
+        return new JwtCodec(JWT_SECRET).signService(serviceCode, serviceCode, List.of(scope), 3600L, "svc-jti-" + serviceCode);
     }
 
     /**

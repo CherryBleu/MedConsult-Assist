@@ -28,7 +28,7 @@ public class NotificationInternalController {
     /** 同步发单条通知（架构文档 §2.3，兜底用，优先 MQ） */
     @PostMapping
     public Result<NotificationDTO.CreateResponse> create(@Valid @RequestBody NotificationDTO.CreateRequest req) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("notification:write");
         return Result.ok(notificationService.create(req));
     }
 }

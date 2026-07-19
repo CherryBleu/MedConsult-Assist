@@ -43,14 +43,14 @@ public class PatientInternalController {
     /** 架构文档 §2.3：查患者上下文（供 ai-service） */
     @GetMapping("/{patientId}/context")
     public Result<PatientContextDTO> context(@PathVariable Long patientId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("patient:read");
         return Result.ok(patientService.internalContext(patientId));
     }
 
     /** 架构文档 §2.3：查患者过敏史（供 ai-service / drug-service 用药分析） */
     @GetMapping("/{patientId}/allergies")
     public Result<List<String>> allergies(@PathVariable Long patientId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("patient:read");
         return Result.ok(patientService.internalAllergies(patientId));
     }
 
@@ -60,7 +60,7 @@ public class PatientInternalController {
      */
     @GetMapping("/no/{patientNo}/id")
     public Result<EntityIdDTO> resolveId(@PathVariable String patientNo) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("patient:read");
         return Result.ok(patientService.internalResolveId(patientNo));
     }
 
@@ -73,7 +73,7 @@ public class PatientInternalController {
      */
     @PostMapping("/register")
     public Result<EntityIdDTO> createForRegister(@RequestBody PatientRegisterRequest req) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("patient:write");
         return Result.ok(patientService.internalCreate(req.name(), req.idNo(), req.phone(), req.idType()));
     }
 
@@ -83,7 +83,7 @@ public class PatientInternalController {
      */
     @GetMapping("/names")
     public Result<java.util.Map<Long, String>> namesByIds(@RequestParam("ids") List<Long> ids) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("patient:read");
         return Result.ok(patientService.internalNamesByIds(ids));
     }
 }

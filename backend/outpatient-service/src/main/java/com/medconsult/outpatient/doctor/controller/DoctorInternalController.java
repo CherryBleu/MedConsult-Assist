@@ -35,14 +35,14 @@ public class DoctorInternalController {
     /** 按 doctor_no 反查 BIGINT 主键。未找到返回 404。 */
     @GetMapping("/doctors/no/{doctorNo}/id")
     public Result<EntityIdDTO> resolveDoctorId(@PathVariable String doctorNo) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("doctor:read");
         return Result.ok(doctorService.internalResolveId(doctorNo));
     }
 
     /** 按 department_no 反查 BIGINT 主键。未找到返回 404。 */
     @GetMapping("/departments/no/{departmentNo}/id")
     public Result<EntityIdDTO> resolveDepartmentId(@PathVariable String departmentNo) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("department:read");
         return Result.ok(departmentService.internalResolveId(departmentNo));
     }
 
@@ -52,7 +52,7 @@ public class DoctorInternalController {
      */
     @GetMapping("/departments/with-doctors")
     public Result<List<String>> departmentNosWithDoctors() {
-        SecurityContext.requireService();
+        SecurityContext.requireService("department:read");
         return Result.ok(doctorService.internalDepartmentNosWithDoctors());
     }
 }

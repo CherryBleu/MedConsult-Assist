@@ -44,14 +44,14 @@ public class DrugInternalController {
     /** 用药风险信息（禁忌 / 相互作用，DrugRiskInfoDTO） */
     @GetMapping("/{drugId}/risk-info")
     public Result<DrugRiskInfoDTO> getRiskInfo(@PathVariable Long drugId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:read");
         return Result.ok(drugService.getRiskInfo(drugId));
     }
 
     /** 批量用药风险信息，供 ai-service 用药分析一次性查询处方药品风险 */
     @PostMapping("/risk-info/batch")
     public Result<DrugRiskBatchResponse> getRiskInfoBatch(@RequestBody DrugRiskBatchRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:read");
         return Result.ok(drugService.getRiskInfoBatch(request == null ? null : request.drugIds()));
     }
 
@@ -60,14 +60,14 @@ public class DrugInternalController {
     public Result<List<DrugDTO.BatchInfo>> ffeoBatches(
             @RequestParam Long drugId,
             @RequestParam(defaultValue = "1") int quantity) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:read");
         return Result.ok(drugService.ffeoBatches(drugId, quantity));
     }
 
     /** 当前总库存（drug.current_stock） */
     @GetMapping("/{drugId}/current-stock")
     public Result<Integer> getCurrentStock(@PathVariable Long drugId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:read");
         return Result.ok(drugService.getCurrentStock(drugId));
     }
 
@@ -85,7 +85,7 @@ public class DrugInternalController {
     public Result<DrugDTO.OutboundResponse> outbound(
             @PathVariable String drugNo,
             @Valid @RequestBody DrugDTO.OutboundRequest req) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:write");
         return Result.ok(drugService.outbound(drugNo, req));
     }
 
@@ -98,7 +98,7 @@ public class DrugInternalController {
     public Result<Integer> rollbackOutbound(
             @PathVariable String drugNo,
             @RequestParam Long prescriptionItemId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("drug:write");
         return Result.ok(drugService.rollbackOutboundByItem(drugNo, prescriptionItemId));
     }
 }

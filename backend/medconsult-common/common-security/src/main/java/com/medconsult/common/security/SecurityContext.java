@@ -71,6 +71,18 @@ public final class SecurityContext {
     }
 
     /**
+     * 取当前服务身份并校验服务权限点，无服务身份抛 UNAUTHORIZED，scope 不足抛 FORBIDDEN。
+     */
+    public static JwtPayload requireService(String permissionCode) {
+        JwtPayload p = requireService();
+        if (permissionCode != null && !permissionCode.isBlank() && !p.hasPermission(permissionCode)) {
+            throw new com.medconsult.common.core.BusinessException(
+                    com.medconsult.common.core.ErrorCode.FORBIDDEN, "无服务访问权限: " + permissionCode);
+        }
+        return p;
+    }
+
+    /**
      * 当前用户 ID（便捷）。非用户身份返回 null。
      */
     public static Long currentUserId() {

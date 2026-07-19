@@ -32,7 +32,7 @@ public class MedicalRecordInternalController {
     /** 病历全文（架构文档 §2.3，供 ai-service 病历摘要） */
     @GetMapping("/{id}/full")
     public Result<MedicalRecordDTO.FullRecordResponse> getByIdFull(@PathVariable Long id) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("medical-record:read");
         return Result.ok(medicalRecordService.getByIdFull(id));
     }
 
@@ -45,7 +45,7 @@ public class MedicalRecordInternalController {
      */
     @GetMapping("/no/{recordNo}/id")
     public Result<EntityIdDTO> resolveId(@PathVariable("recordNo") String recordNo) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("medical-record:read");
         MedicalRecord r = medicalRecordService.requireByNo(recordNo);
         return Result.ok(EntityIdDTO.of(r.getId()));
     }

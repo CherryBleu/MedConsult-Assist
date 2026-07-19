@@ -326,55 +326,55 @@ public class AiController {
 
     @PostMapping("/internal/ai/medication-analysis")
     public Result<MedicationAnalysisResponse> internalMedicationAnalysis(@Valid @RequestBody MedicationAnalysisRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return Result.ok(medicationAnalysisService.analyze(request));
     }
 
     @PostMapping("/internal/ai/triage")
     public Result<TriageResponse> internalTriage(@Valid @RequestBody TriageRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return Result.ok(triageService.triage(request));
     }
 
     @PostMapping(value = "/internal/ai/triage/stream", produces = "text/event-stream")
     public SseEmitter internalTriageStream(@Valid @RequestBody TriageRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return aiSseService.streamTriage(request);
     }
 
     @PostMapping("/internal/ai/medical-record-summary")
     public Result<MedicalRecordSummaryResponse> internalSummary(@Valid @RequestBody MedicalRecordSummaryRequest request) {
-        JwtPayload actor = SecurityContext.requireService();
+        JwtPayload actor = SecurityContext.requireService("ai:write");
         return Result.ok(summaryService.summarizeRecord(request, actor));
     }
 
     @PostMapping(value = "/internal/ai/medical-record-summary/stream", produces = "text/event-stream")
     public SseEmitter internalSummaryStream(@Valid @RequestBody MedicalRecordSummaryRequest request) {
-        JwtPayload actor = SecurityContext.requireService();
+        JwtPayload actor = SecurityContext.requireService("ai:write");
         return aiSseService.streamInternalSummary(request, actor);
     }
 
     @PostMapping("/internal/ai/report-analysis")
     public Result<ReportAnalysisResponse> internalReportAnalysis(@Valid @RequestBody ReportAnalysisRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return Result.ok(imagingDetectionService.analyzeReport(request));
     }
 
     @PostMapping("/internal/ai/imaging-detection")
     public Result<ImageDetectionResponse> internalImageDetection(@Valid @RequestBody ImageDetectionRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return Result.ok(imagingDetectionService.submitImageDetection(request));
     }
 
     @GetMapping("/internal/ai/imaging-detection/{detectionId}")
     public Result<ImageDetectionResponse> internalImageDetectionDetail(@PathVariable("detectionId") String detectionId) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:read");
         return Result.ok(imagingDetectionService.getImageDetection(detectionId));
     }
 
     @PostMapping(value = "/internal/ai/medication-analysis/stream", produces = "text/event-stream")
     public SseEmitter internalMedicationAnalysisStream(@Valid @RequestBody MedicationAnalysisRequest request) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("ai:write");
         return aiSseService.streamMedication(request);
     }
 
@@ -384,7 +384,7 @@ public class AiController {
             @RequestParam(name = "patientId", required = false) String patientId,
             @RequestParam(name = "recordId", required = false) String recordId
     ) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("file:write");
         return Result.ok(fileUploadService.upload(file, patientId, recordId));
     }
 
@@ -398,7 +398,7 @@ public class AiController {
             @RequestParam(name = "patientId", required = false) String patientId,
             @RequestParam(name = "recordId", required = false) String recordId
     ) {
-        SecurityContext.requireService();
+        SecurityContext.requireService("file:write");
         return Result.ok(fileUploadService.uploadChunk(file, uploadId, chunkIndex, totalChunks, filename, patientId, recordId));
     }
 }
