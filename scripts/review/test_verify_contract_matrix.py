@@ -71,6 +71,28 @@ class ContractMatrixVerifierTest(unittest.TestCase):
 
         self.assertEqual([], errors)
 
+    def test_reports_aligned_status_without_test_evidence(self):
+        matrix = """| Domain | Method | Public Path | Docs Needle | Frontend | Frontend Needle | Backend | Controller Prefix | Method Suffix | Permission | Table | Test | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| auth | POST | /api/v1/auth/login | /auth/login | frontend/src/api/user.js | /auth/login | backend/AuthController.java | /api/v1/auth | /login | clientType | login_log | — | aligned |
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "docs").mkdir()
+            (root / "frontend/src/api").mkdir(parents=True)
+            (root / "backend").mkdir()
+            (root / "docs/接口文档.md").write_text("POST /auth/login", encoding="utf-8")
+            (root / "docs/数据库设计文档.md").write_text("login_log", encoding="utf-8")
+            (root / "frontend/src/api/user.js").write_text("axios.post('/auth/login')", encoding="utf-8")
+            (root / "backend/AuthController.java").write_text(
+                '@RequestMapping("/api/v1/auth")\n@PostMapping("/login")\nString clientType;',
+                encoding="utf-8",
+            )
+
+            errors = verify_rows(root, parse_matrix(matrix))
+
+        self.assertTrue(any("测试" in error for error in errors), errors)
+
 
 if __name__ == "__main__":
     unittest.main()

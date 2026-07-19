@@ -14,6 +14,7 @@ METHOD_MAPPING = {
     "PATCH": "PatchMapping",
     "DELETE": "DeleteMapping",
 }
+TEST_REQUIRED_STATUSES = {"aligned", "aligned-service-test"}
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,10 @@ def verify_rows(root: Path, rows: list[ContractRow]) -> list[str]:
             if table not in table_corpus:
                 errors.append(f"{label}: 数据表未命中 {table}")
 
-        for test_path in _split_multi(row.test):
+        test_paths = _split_multi(row.test)
+        if row.status in TEST_REQUIRED_STATUSES and not test_paths:
+            errors.append(f"{label}: 状态 {row.status} 必须提供测试文件")
+        for test_path in test_paths:
             if not (root / test_path).exists():
                 errors.append(f"{label}: 测试文件不存在 {test_path}")
 
