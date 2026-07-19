@@ -52,7 +52,7 @@
         empty-text="暂无排班数据"
         @retry="getList"
       >
-        <ResponsiveTable aria-label="排班管理列表">
+        <ResponsiveTable class="schedule-table-shell" aria-label="排班管理列表">
           <template #table>
             <el-table :data="tableData" border stripe>
               <el-table-column prop="scheduleNo" label="排班编号" width="120" />
@@ -210,7 +210,7 @@
       </PageState>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="min(560px, calc(100vw - 32px))">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑排班' : '新增排班'" width="min(560px, calc(100vw - 32px))" class="schedule-manage-dialog">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="医生" prop="doctorId">
           <!-- 编辑模式禁用：后端 PUT /schedules/{id} 医生/科室不可变(#17)，改了不落库 -->
@@ -261,7 +261,7 @@
     </el-dialog>
 
     <!-- 批量排班弹窗（#16：循环调用 createScheduleApi 生成多天排班，不改后端） -->
-    <el-dialog v-model="batchDialogVisible" title="批量排班" width="min(560px, calc(100vw - 32px))">
+    <el-dialog v-model="batchDialogVisible" title="批量排班" width="min(560px, calc(100vw - 32px))" class="schedule-manage-dialog">
       <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
         选择医生 + 日期范围 + 时段，系统将自动为范围内的每一天生成排班
       </el-alert>
@@ -664,6 +664,16 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+.page-container,
+.card-box {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.card-box {
+  overflow: hidden;
+}
+
 .page-title {
   font-size: 18px;
   font-weight: 600;
@@ -684,6 +694,7 @@ onMounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+  max-width: 100%;
 }
 
 .search-form :deep(.el-form-item) {
@@ -707,6 +718,29 @@ onMounted(() => {
   width: 120px;
 }
 
+.schedule-filter-control,
+.schedule-date-filter,
+.schedule-status-filter {
+  max-width: 100%;
+}
+
+.schedule-table-shell {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.schedule-table-shell :deep(.responsive-table__desktop) {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+
+.schedule-table-shell :deep(.el-table) {
+  min-width: 1220px;
+}
+
 .admin-schedule-action {
   min-width: var(--touch-target);
   min-height: var(--touch-target);
@@ -721,6 +755,27 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.pagination :deep(.btn-prev),
+.pagination :deep(.btn-next),
+.pagination :deep(.el-pager li) {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
+.pagination :deep(.el-pagination__sizes),
+.pagination :deep(.el-pagination__jump),
+.pagination :deep(.el-pagination__sizes .el-select),
+.pagination :deep(.el-pagination__jump .el-input),
+.pagination :deep(.el-pagination__sizes .el-select__wrapper),
+.pagination :deep(.el-pagination__jump .el-input__wrapper) {
+  min-height: var(--touch-target);
 }
 .text-danger {
   color: var(--el-color-danger);
@@ -746,6 +801,37 @@ onMounted(() => {
 }
 .batch-progress {
   margin-bottom: 12px;
+}
+
+:deep(.schedule-manage-dialog.el-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  max-width: calc(100vw - 32px);
+  margin: 24px auto !important;
+}
+
+:deep(.schedule-manage-dialog .el-dialog__header),
+:deep(.schedule-manage-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+}
+
+:deep(.schedule-manage-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:deep(.schedule-manage-dialog .el-dialog__footer) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+:deep(.schedule-manage-dialog .el-dialog__footer .el-button + .el-button) {
+  margin-left: 0;
 }
 
 .schedule-card {
@@ -887,23 +973,12 @@ onMounted(() => {
     display: none;
   }
 
-  :deep(.el-dialog) {
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 48px);
-    margin: 24px auto !important;
-  }
-
-  :deep(.el-dialog__body) {
-    overflow-y: auto;
-  }
-
-  :deep(.el-dialog__footer) {
+  :deep(.schedule-manage-dialog .el-dialog__footer) {
     display: grid;
     gap: 8px;
   }
 
-  :deep(.el-dialog__footer .el-button) {
+  :deep(.schedule-manage-dialog .el-dialog__footer .el-button) {
     width: 100%;
     margin-left: 0;
   }
