@@ -1,62 +1,117 @@
 <template>
   <div class="page-container">
-    <div class="card-box">
+    <div class="card-box admin-drug-page">
       <div class="page-header">
-        <h2 class="page-title">库存预警</h2>
-        <div class="warn-count">
-          <el-tag type="danger" effect="dark">共 {{ warningList.length }} 条预警</el-tag>
+        <div class="page-heading">
+          <h2 class="page-title">库存预警</h2>
+          <p class="page-subtitle">共 {{ filteredList.length }} 条预警记录</p>
+        </div>
+        <div class="header-actions">
+          <el-radio-group
+            v-model="warningTypeFilter"
+            aria-label="库存预警类型筛选"
+            data-testid="admin-stock-warning-type-filter"
+          >
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="LOW_STOCK" data-testid="admin-stock-warning-filter-low">库存不足</el-radio-button>
+            <el-radio-button value="EXPIRED_WARNING">临期预警</el-radio-button>
+          </el-radio-group>
+          <el-button
+            class="warning-action"
+            type="primary"
+            plain
+            :icon="Refresh"
+            :loading="loading"
+            :disabled="loading"
+            aria-label="刷新库存预警"
+            @click="getWarningList"
+          >
+            刷新
+          </el-button>
+          <el-tag type="danger" effect="dark">预警 {{ filteredList.length }}</el-tag>
         </div>
       </div>
 
       <PageState
         :loading="loading"
         :error="errorMessage"
-        :empty="warningList.length === 0"
+        :empty="filteredList.length === 0"
+        loading-text="正在加载库存预警..."
         empty-text="暂无库存预警"
         @retry="getWarningList"
       >
         <ResponsiveTable aria-label="库存预警列表">
           <template #table>
-            <el-table :data="warningList" border stripe>
-              <el-table-column prop="drugName" label="药品名称" width="200" />
-              <el-table-column prop="specification" label="规格" width="160" />
-              <el-table-column prop="batchNo" label="批号" width="120" />
-              <el-table-column label="预警类型" width="120">
-                <template #default="{ row }">
-                  <el-tag :type="warningTypeTag(row.warningType)" size="small">
-                    {{ warningTypeLabel(row.warningType) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="当前库存" width="120">
-                <template #default="{ row }">
-                  <span :class="{ 'text-danger': row.warningType === 'LOW_STOCK' }">
-                    {{ row.stockQuantity }} {{ row.unit }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column label="预警值" width="100" align="center">
-                <template #default="{ row }">{{ row.warningQuantity }}</template>
-              </el-table-column>
-              <el-table-column prop="expireDate" label="有效期" width="120" />
-              <el-table-column label="剩余天数" width="100" align="center">
-                <template #default="{ row }">
-                  <span :class="{ 'text-danger': row.daysLeft < 30 }">{{ daysLeftText(row) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row }">
-                  <el-button size="small" type="primary" link @click="goStockIn(row)">
-                    立即入库
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <section
+              class="admin-table-scroll"
+              data-testid="admin-stock-warning-table-scroll"
+              aria-label="库存预警横向滚动区域"
+            >
+              <el-table class="admin-stock-warning-table" :data="filteredList" border stripe>
+                <el-table-column type="index" label="#" width="56" align="center" />
+                <el-table-column prop="drugName" label="药品名称" min-width="190" />
+                <el-table-column prop="specification" label="规格" width="160" />
+                <el-table-column prop="batchNo" label="批号" width="130">
+                  <template #default="{ row }">{{ row.batchNo || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="预警类型" width="120" align="center">
+                  <template #default="{ row }">
+                    <el-tag :type="warningTypeTag(row.warningType)" size="small">
+                      {{ warningTypeLabel(row.warningType) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="当前库存" width="120" align="center">
+                  <template #default="{ row }">
+                    <span :class="{ 'text-danger': row.warningType === 'LOW_STOCK' }">
+                      {{ row.stockQuantity }} {{ row.unit }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="预警阈值" width="110" align="center">
+                  <template #default="{ row }">{{ row.warningQuantity }} {{ row.unit }}</template>
+                </el-table-column>
+                <el-table-column prop="expireDate" label="有效期至" width="130" align="center">
+                  <template #default="{ row }">{{ row.expireDate || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="剩余天数" width="110" align="center">
+                  <template #default="{ row }">
+                    <span :class="{ 'text-danger': row.daysLeft < 30 }">{{ daysLeftText(row) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="176" fixed="right" align="center">
+                  <template #default="{ row }">
+                    <div class="table-actions">
+                      <el-button
+                        class="table-action"
+                        size="small"
+                        type="success"
+                        link
+                        :aria-label="`处理${row.drugName || '药品'}库存预警`"
+                        @click="goStockIn(row)"
+                      >
+                        立即入库
+                      </el-button>
+                      <el-button
+                        class="table-action"
+                        size="small"
+                        type="primary"
+                        link
+                        :aria-label="`查看${row.drugName || '药品'}库存流水`"
+                        @click="viewFlow(row)"
+                      >
+                        查看流水
+                      </el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </section>
           </template>
 
           <template #card>
             <article
-              v-for="row in warningList"
+              v-for="row in filteredList"
               :key="row.id || row.drugId || row.batchNo"
               class="warning-card"
               data-testid="responsive-stock-warning-card"
@@ -79,11 +134,11 @@
                   </dd>
                 </div>
                 <div>
-                  <dt>预警值</dt>
+                  <dt>预警阈值</dt>
                   <dd>{{ row.warningQuantity }} {{ row.unit }}</dd>
                 </div>
                 <div>
-                  <dt>有效期</dt>
+                  <dt>有效期至</dt>
                   <dd>{{ row.expireDate || '-' }}</dd>
                 </div>
                 <div>
@@ -93,7 +148,8 @@
               </dl>
 
               <div class="warning-card__actions">
-                <el-button type="primary" plain @click="goStockIn(row)">立即入库</el-button>
+                <el-button type="success" plain @click="goStockIn(row)">立即入库</el-button>
+                <el-button type="primary" plain @click="viewFlow(row)">查看流水</el-button>
               </div>
             </article>
           </template>
@@ -104,8 +160,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Refresh } from '@element-plus/icons-vue'
 import { getStockWarningApi } from '@/api/drug'
 import PageState from '@/components/common/PageState.vue'
 import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
@@ -114,21 +171,34 @@ const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const warningList = ref([])
+const warningTypeFilter = ref('')
+
+const filteredList = computed(() => {
+  if (!warningTypeFilter.value) return warningList.value
+  return warningList.value.filter((item) => item.warningType === warningTypeFilter.value)
+})
+
+const getErrorMessage = (error, fallback) => error?.response?.data?.message || error?.message || fallback
 
 const getWarningList = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
     const res = await getStockWarningApi()
-    warningList.value = res.data
+    warningList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   } catch (error) {
-    errorMessage.value = error?.message || '库存预警加载失败，请重试'
+    warningList.value = []
+    errorMessage.value = getErrorMessage(error, '库存预警加载失败，请重试')
   } finally {
     loading.value = false
   }
 }
 
-const goStockIn = (row) => {
+const goStockIn = () => {
+  router.push('/admin/stock')
+}
+
+const viewFlow = () => {
   router.push('/admin/stock')
 }
 
@@ -144,21 +214,105 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.admin-drug-page.card-box {
+  min-width: 0;
+  padding: 18px;
+  border-radius: var(--radius-sm);
+}
+
 .page-header {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.page-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-title,
+.page-subtitle {
   margin: 0;
 }
+
+.page-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.page-subtitle {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.warning-action {
+  min-width: 76px;
+  min-height: var(--touch-target);
+  transition: border-color var(--motion-base) ease, box-shadow var(--motion-base) ease, transform var(--motion-fast) ease;
+}
+
+.warning-action:focus-visible,
+.table-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.admin-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  scrollbar-gutter: stable;
+}
+
+.admin-stock-warning-table {
+  min-width: 1120px;
+}
+
+.admin-stock-warning-table :deep(.el-table__header th) {
+  background: #f8fafc;
+  color: var(--text-regular);
+  font-weight: 700;
+}
+
+.admin-stock-warning-table :deep(.el-table__row) {
+  transition: background-color var(--motion-fast) ease;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.table-actions .el-button {
+  margin-left: 0;
+}
+
+.table-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
 .text-danger {
   color: var(--danger-color);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .warning-card {
@@ -166,10 +320,9 @@ onMounted(() => {
   gap: 14px;
   padding: 16px;
   border: 1px solid rgba(220, 38, 38, .18);
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(145deg, rgba(255, 247, 237, .9), rgba(255, 255, 255, .96));
-  box-shadow: 0 14px 32px rgba(180, 83, 9, .08);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 10px 24px rgba(180, 83, 9, .08);
 }
 
 .warning-card__header {
@@ -231,6 +384,8 @@ onMounted(() => {
 
 .warning-card__actions {
   display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .warning-card__actions .el-button {
@@ -239,14 +394,30 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
-  .page-header {
+  .page-header,
+  .header-actions {
     align-items: stretch;
     flex-direction: column;
-    gap: 12px;
   }
 
-  .warn-count {
-    display: flex;
+  :deep(.header-actions .el-radio-group) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  :deep(.header-actions .el-radio-button__inner) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--touch-target);
+    border-left: 1px solid var(--el-border-color);
+    border-radius: var(--radius-sm);
+  }
+
+  .header-actions .warning-action {
+    width: 100%;
   }
 }
 </style>

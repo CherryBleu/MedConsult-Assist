@@ -5,11 +5,24 @@ const consumeFailOnce = (key) => {
   return true
 }
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const delayOnce = async (key, ms = 650) => {
+  if (consumeFailOnce(key)) {
+    await delay(ms)
+  }
+}
+
 // 药品列表
 export const mockDrugList = () => {
-  const isDrugCatalogPage = typeof window !== 'undefined' && window.location.pathname === '/pharmacy/drug'
+  const path = typeof window !== 'undefined' ? window.location.pathname : ''
+  const isDrugCatalogPage = path === '/pharmacy/drug'
+  const isAdminDrugPage = path === '/admin/drug'
   if (isDrugCatalogPage && consumeFailOnce('mock_drug_list_fail_once')) {
     return Promise.reject(new Error('药品目录加载失败，请重试'))
+  }
+  if (isAdminDrugPage && consumeFailOnce('mock_admin_drug_list_fail_once')) {
+    return Promise.reject(new Error('药品列表加载失败，请重试'))
   }
   return {
     code: 0,
@@ -86,10 +99,11 @@ export const mockStockWarningList = () => {
 }
 
 // 库存流水列表
-export const mockStockFlowList = () => {
+export const mockStockFlowList = async () => {
   if (consumeFailOnce('mock_stock_flow_fail_once')) {
     return Promise.reject(new Error('库存流水加载失败，请重试'))
   }
+  await delayOnce('mock_stock_flow_delay_once')
   return {
     code: 0,
     message: 'success',
