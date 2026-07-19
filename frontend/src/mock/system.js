@@ -1,5 +1,12 @@
 import dayjs from 'dayjs'
 
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 // 用户列表
 export const mockUserList = () => {
   return {
@@ -92,6 +99,9 @@ export const mockDeleteDept = (id) => {
 
 // 医生列表
 export const mockDoctorList = () => {
+  if (consumeFailOnce('mock_admin_doctor_list_fail_once')) {
+    return Promise.reject(new Error('医生列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',

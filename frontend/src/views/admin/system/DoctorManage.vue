@@ -3,40 +3,96 @@
     <div class="card-box">
       <div class="page-header">
         <h2 class="page-title">医生管理</h2>
-        <el-button type="primary" @click="openAddDialog">新增医生</el-button>
+        <el-button type="primary" class="doctor-manage-action" @click="openAddDialog">新增医生</el-button>
       </div>
 
-      <el-table :data="doctorList" v-loading="loading" border stripe>
-        <el-table-column prop="doctorNo" label="工号" width="120" />
-        <el-table-column prop="name" label="姓名" width="100" />
-        <el-table-column label="性别" width="80">
-          <template #default="{ row }">{{ row.gender === 'MALE' ? '男' : '女' }}</template>
-        </el-table-column>
-        <el-table-column prop="title" label="职称" width="100" />
-        <el-table-column prop="departmentName" label="所属科室" width="140" />
-        <el-table-column prop="specialties" label="擅长" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="phone" label="联系电话" width="130" />
-        <el-table-column label="挂号费" width="100">
-          <template #default="{ row }">¥{{ row.registrationFee }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
-              {{ row.status === 'ACTIVE' ? '在职' : '停用' }}
-            </el-tag>
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="doctorList.length === 0"
+        loading-text="正在加载医生列表..."
+        empty-text="暂无医生数据"
+        @retry="getDoctorList"
+      >
+        <ResponsiveTable aria-label="医生管理列表">
+          <template #table>
+            <el-table :data="doctorList" border stripe>
+              <el-table-column prop="doctorNo" label="工号" width="120" />
+              <el-table-column prop="name" label="姓名" width="100" />
+              <el-table-column label="性别" width="80">
+                <template #default="{ row }">{{ row.gender === 'MALE' ? '男' : '女' }}</template>
+              </el-table-column>
+              <el-table-column prop="title" label="职称" width="100" />
+              <el-table-column prop="departmentName" label="所属科室" width="140" />
+              <el-table-column prop="specialties" label="擅长" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="phone" label="联系电话" width="130" />
+              <el-table-column label="挂号费" width="100">
+                <template #default="{ row }">¥{{ row.registrationFee }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+                    {{ row.status === 'ACTIVE' ? '在职' : '停用' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" type="primary" link class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
+                  <el-button size="small" type="danger" link class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
+
+          <template #card>
+            <article
+              v-for="row in doctorList"
+              :key="row.id || row.doctorNo"
+              class="doctor-card"
+              data-testid="responsive-admin-doctor-card"
+            >
+              <div class="doctor-card__header">
+                <div>
+                  <p class="doctor-card__name">{{ row.name }}</p>
+                  <p class="doctor-card__meta">{{ row.doctorNo || '-' }} · {{ row.title || '-' }}</p>
+                </div>
+                <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+                  {{ row.status === 'ACTIVE' ? '在职' : '停用' }}
+                </el-tag>
+              </div>
+
+              <dl class="doctor-card__fields">
+                <div>
+                  <dt>科室</dt>
+                  <dd>{{ row.departmentName || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>擅长</dt>
+                  <dd>{{ row.specialties || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>电话</dt>
+                  <dd>{{ row.phone || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>挂号费</dt>
+                  <dd>¥{{ row.registrationFee || 0 }}</dd>
+                </div>
+              </dl>
+
+              <div class="doctor-card__actions">
+                <el-button type="primary" plain class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
+                <el-button type="danger" plain class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
+              </div>
+            </article>
           </template>
-        </el-table-column>
-      </el-table>
+        </ResponsiveTable>
+      </PageState>
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑医生' : '新增医生'" width="520px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑医生' : '新增医生'" width="min(520px, calc(100vw - 32px))">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="工号" prop="doctorNo">
           <el-input v-model="form.doctorNo" placeholder="请输入医生工号" :disabled="isEdit" />
@@ -93,8 +149,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitForm">确定</el-button>
+        <el-button class="doctor-manage-action" @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" class="doctor-manage-action" :loading="submitting" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -105,8 +161,11 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDoctorListApi, addDoctorApi, updateDoctorApi, deleteDoctorApi } from '@/api/system'
 import { getDepartmentListApi } from '@/api/department'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
 const loading = ref(false)
+const errorMessage = ref('')
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const submitting = ref(false)
@@ -143,9 +202,13 @@ const rules = {
 
 const getDoctorList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const res = await getDoctorListApi()
     doctorList.value = res.data
+  } catch (e) {
+    doctorList.value = []
+    errorMessage.value = e?.message || '医生列表加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -236,6 +299,108 @@ onMounted(() => {
   color: var(--text-primary);
   margin: 0;
 }
+
+.doctor-manage-action {
+  min-height: var(--touch-target);
+  min-width: 88px;
+  touch-action: manipulation;
+}
+
+.doctor-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base);
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 12px 28px rgba(15, 35, 95, .06);
+}
+
+.doctor-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.doctor-card__header > div {
+  min-width: 0;
+}
+
+.doctor-card__name,
+.doctor-card__meta {
+  margin: 0;
+}
+
+.doctor-card__name {
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.doctor-card__meta {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.doctor-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.doctor-card__fields div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.doctor-card__fields dt,
+.doctor-card__fields dd {
+  margin: 0;
+}
+
+.doctor-card__fields dt {
+  color: var(--text-secondary);
+}
+
+.doctor-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.doctor-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.doctor-card__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.doctor-card__actions .doctor-manage-action {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .page-header .doctor-manage-action {
+    width: 100%;
+  }
+}
+
 .form-tip {
   margin-top: 8px;
 }
