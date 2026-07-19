@@ -322,6 +322,41 @@ export const mockMedicationAnalysis = (recordId) => {
   }
 }
 
+export const mockMedicationAnalysisStream = async (payload, handlers = {}) => {
+  if (consumeFailOnce('mock_medication_analysis_stream_fail_once')) {
+    await delay(120)
+    const error = new Error('用药分析流式服务暂时不可用，请稍后重试')
+    handlers.onError?.({ status: 'FAILED', message: error.message })
+    throw error
+  }
+
+  const result = mockMedicationAnalysis(payload.recordId).data
+  const drugNames = (payload.prescriptions || [])
+    .map(item => item.drugName)
+    .filter(Boolean)
+    .join('、') || '已选药品'
+  const tokens = [
+    `已接收 ${drugNames}，正在校验禁忌风险。`,
+    '阿莫西林风险校验完成，正在分析药物相互作用。',
+    '用药提醒生成中：饭后服用、避免饮酒。'
+  ]
+
+  handlers.onStart?.({ status: 'PROCESSING', stage: '正在连接 AI 用药分析服务' })
+  for (const token of tokens) {
+    await delay(120)
+    handlers.onDelta?.({ token })
+  }
+  await delay(80)
+  handlers.onResult?.(result)
+  handlers.onDone?.({ status: 'COMPLETED' })
+
+  return {
+    code: 0,
+    message: 'success',
+    data: result
+  }
+}
+
 
 // 智能分诊结果（对齐 ai_triage_result 表字段）
 export const mockTriageResult = (symptoms) => {

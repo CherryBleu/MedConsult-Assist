@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 import { getToken } from '@/utils/auth'
 import { mockTriageResult, mockCreateSession, mockSendMessage, mockSessionHistory } from '@/mock/ai'
-import { mockRecordSummary, mockRecordSummaryStream, mockRecordSummaryByText, mockMedicationAnalysis, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
+import { mockRecordSummary, mockRecordSummaryStream, mockRecordSummaryByText, mockMedicationAnalysis, mockMedicationAnalysisStream, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 const parseSsePayload = (raw) => {
@@ -310,6 +310,42 @@ export const medicationAnalysisApi = (data) => {
     method: 'post',
     data: payload
   })
+}
+
+// 用药分析（SSE 流式）
+// 后端流式接口是 POST + text/event-stream，路径对齐网关实际 /api/v1/ai/medication-analysis/stream。
+export const medicationAnalysisStreamApi = async (data, callbacks = {}) => {
+  const payload = normalizeMedicationAnalysisPayload(data)
+  if (USE_MOCK) {
+    return mockMedicationAnalysisStream(payload, callbacks)
+  }
+
+  const token = getToken()
+  const headers = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/medication-analysis/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(parseErrorText(errorText) || `AI 流式请求失败（HTTP ${response.status}）`)
+  }
+
+  const streamData = await readSseResponse(response, callbacks)
+  return {
+    code: 0,
+    message: 'success',
+    data: streamData
+  }
 }
 
 // 提交影像异常检测

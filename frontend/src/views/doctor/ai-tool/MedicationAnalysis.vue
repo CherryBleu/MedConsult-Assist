@@ -111,6 +111,25 @@
             <span class="result-meta">药品 {{ selectedPrescriptions.length }} 项</span>
           </div>
 
+          <section
+            v-if="analyzing"
+            class="stream-section"
+            role="status"
+            aria-live="polite"
+            aria-atomic="false"
+          >
+            <div class="stream-header">
+              <span class="stream-dot" aria-hidden="true"></span>
+              <div class="stream-copy">
+                <div class="stream-title">正在接收流式用药分析</div>
+                <div class="stream-stage">{{ streamStage }}</div>
+              </div>
+            </div>
+            <p class="stream-preview">
+              {{ streamText || '正在建立 AI 流式连接，请稍候...' }}
+            </p>
+          </section>
+
           <PageState
             :loading="analyzing"
             :error="analysisError"
@@ -210,7 +229,7 @@ import { CircleCheck } from '@element-plus/icons-vue'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
 import { getDrugListApi } from '@/api/drug'
-import { medicationAnalysisApi } from '@/api/ai'
+import { medicationAnalysisStreamApi } from '@/api/ai'
 import PageState from '@/components/common/PageState.vue'
 
 const selectedRecord = ref('')
@@ -224,6 +243,8 @@ const analysisResult = ref(null)
 const formError = ref('')
 const loadError = ref('')
 const analysisError = ref('')
+const streamText = ref('')
+const streamStage = ref('准备连接')
 
 const riskLabel = computed(() => {
   const map = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险' }
@@ -293,6 +314,17 @@ const selectedPrescriptions = computed(() => {
     .filter(item => item.drugName)
 })
 
+const getStreamToken = (payload) => {
+  if (payload == null) return ''
+  if (typeof payload === 'string') return payload
+  return String(payload.token ?? payload.delta ?? payload.content ?? payload.text ?? payload.message ?? '')
+}
+
+const getStreamStage = (payload, fallback) => {
+  if (!payload || typeof payload === 'string') return fallback
+  return payload.stage || payload.message || fallback
+}
+
 const doAnalysis = async () => {
   formError.value = ''
   analysisError.value = ''
@@ -307,14 +339,38 @@ const doAnalysis = async () => {
     return
   }
   analyzing.value = true
+  streamText.value = ''
+  streamStage.value = '正在连接 AI 用药分析服务'
   try {
-    const res = await medicationAnalysisApi({
+    const res = await medicationAnalysisStreamApi({
       recordId: selectedRecord.value,
       patientId: selectedRecordItem.value?.patientId ? String(selectedRecordItem.value.patientId) : undefined,
       prescriptions: selectedPrescriptions.value,
       patientContext: null
+    }, {
+      onStart: (payload) => {
+        streamStage.value = getStreamStage(payload, 'AI 已开始分析用药风险')
+      },
+      onDelta: (payload) => {
+        const token = getStreamToken(payload)
+        if (token) streamText.value += token
+      },
+      onResult: (payload) => {
+        analysisResult.value = payload
+      },
+      onDone: (payload) => {
+        streamStage.value = getStreamStage(payload, '用药分析完成')
+      },
+      onError: (payload) => {
+        analysisError.value = payload?.message || '用药分析失败'
+      }
     })
-    analysisResult.value = res.data
+    if (!analysisResult.value && res?.data) {
+      analysisResult.value = res.data
+    }
+    if (!analysisResult.value) {
+      throw new Error('AI 流未返回用药分析结果')
+    }
     ElMessage.success('分析完成')
   } catch (e) {
     analysisResult.value = null
@@ -499,6 +555,57 @@ onMounted(() => {
 .result-meta {
   color: var(--text-secondary);
   font-size: var(--font-sm);
+}
+
+.stream-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(2, 132, 199, .18);
+  border-radius: var(--radius-base);
+  background: rgba(240, 249, 255, .78);
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stream-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 6px rgba(2, 132, 199, .12);
+  animation: stream-pulse 1.2s ease-in-out infinite;
+}
+
+.stream-copy {
+  min-width: 0;
+}
+
+.stream-title {
+  color: var(--text-primary);
+  font-size: var(--font-base);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.stream-stage,
+.stream-preview {
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.stream-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .risk-overview {
@@ -702,6 +809,24 @@ onMounted(() => {
   .risk-stats {
     display: grid;
     grid-template-columns: 1fr;
+  }
+}
+
+@keyframes stream-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: .72;
+    transform: scale(.86);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-dot {
+    animation: none;
   }
 }
 </style>
