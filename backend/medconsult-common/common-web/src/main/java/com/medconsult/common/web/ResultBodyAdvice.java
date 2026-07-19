@@ -57,6 +57,9 @@ public class ResultBodyAdvice implements ResponseBodyAdvice<Object> {
     public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType selectedContentType,
                                   Class<? extends HttpMessageConverter<?>> selectedConverterType,
                                   ServerHttpRequest request, ServerHttpResponse response) {
+        if (isActuatorEndpoint(request)) {
+            return body;
+        }
 
         // 跳过非 JSON 响应（SSE / 文件下载 / 纯文本）
         if (!MediaType.APPLICATION_JSON.includes(selectedContentType)
@@ -99,5 +102,13 @@ public class ResultBodyAdvice implements ResponseBodyAdvice<Object> {
             }
         }
         return null;
+    }
+
+    private boolean isActuatorEndpoint(ServerHttpRequest request) {
+        if (!(request instanceof ServletServerHttpRequest servlet)) {
+            return false;
+        }
+        String requestUri = servlet.getServletRequest().getRequestURI();
+        return "/actuator".equals(requestUri) || requestUri.startsWith("/actuator/");
     }
 }

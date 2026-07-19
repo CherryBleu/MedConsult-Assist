@@ -3,9 +3,12 @@ package com.medconsult.common.web;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 /**
  * GlobalWebFlowTest 的被测 Controller 桩。放顶层确保被 component scan 扫到。
@@ -36,6 +39,11 @@ public class TestController {
     @GetMapping("/test/boom")
     public String boom() {
         throw new IllegalStateException("DB connection lost");
+    }
+
+    @GetMapping(value = "/actuator/health", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Map<String, Object> actuatorHealth() {
+        return Map.of("status", "UP");
     }
 
     @GetMapping("/test/required-param")

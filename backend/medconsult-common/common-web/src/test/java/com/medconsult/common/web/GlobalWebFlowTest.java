@@ -75,6 +75,18 @@ class GlobalWebFlowTest {
     }
 
     @Test
+    void actuatorHealth_isNotWrappedByBusinessResultAdvice() throws Exception {
+        mvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"status":"UP"}
+                        """))
+                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.message").doesNotExist())
+                .andExpect(jsonPath("$.traceId").doesNotExist());
+    }
+
+    @Test
     void unknownException_mapsTo500AndHidesDetail() throws Exception {
         mvc.perform(get("/test/boom"))
                 .andExpect(status().is5xxServerError())
