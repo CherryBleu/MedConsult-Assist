@@ -322,6 +322,66 @@ class DiseaseSearchServiceTest {
     }
 
     @Test
+    void symptomSearchShouldPreferEvidenceMatchingOriginalComplaintWhenTruncating() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("待鉴别", List.of("咳嗽", "胸闷"), "纯症状输入")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(mongoDiseaseRepository.findBySymptom(List.of("咳嗽", "胸闷"), 2)).thenReturn(List.of(
+                knowledge("mongo-cold", "普通感冒", 1.0, MatchSource.MONGODB_NAME_EXACT,
+                        "symptom", "症状：咳嗽、流涕")
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(2))).thenReturn(List.of(
+                knowledge("milvus-rhinitis", "过敏性鼻炎", 0.95, MatchSource.MILVUS_SEMANTIC,
+                        "symptom", "症状：打喷嚏、流涕、咳嗽"),
+                knowledge("milvus-bronchitis", "急性支气管炎", 0.90, MatchSource.MILVUS_SEMANTIC,
+                        "symptom", "症状：咳嗽、咳痰、胸闷")
+        ));
+
+        List<DiseaseKnowledge> results = service.search("咳嗽伴咳痰和胸闷", intent, 2);
+
+        assertEquals(2, results.size());
+        assertEquals("急性支气管炎", results.getFirst().diseaseName());
+    }
+
+    @Test
+    void symptomSearchShouldKeepExistingRankingForSingleGenericKeywordWhenTruncating() {
+        OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
+        MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);
+        MilvusRestClient milvusRestClient = mock(MilvusRestClient.class);
+        DiseaseCacheService cacheService = mock(DiseaseCacheService.class);
+        DiseaseSearchService service = new DiseaseSearchService(
+                llmClient, mongoDiseaseRepository, milvusRestClient, cacheService);
+        DiseaseIntent intent = new DiseaseIntent(
+                List.of(new DiseaseCandidate("待鉴别", List.of("咳嗽"), "纯症状输入")),
+                new MetadataQuery(List.of(), Map.of())
+        );
+        when(mongoDiseaseRepository.findBySymptom(List.of("咳嗽"), 2)).thenReturn(List.of(
+                knowledge("mongo-cold", "普通感冒", 0.50, MatchSource.MONGODB_NAME_EXACT,
+                        "symptom", "症状：咳嗽、鼻塞")
+        ));
+        when(llmClient.embedOne(anyString())).thenReturn(Optional.of(List.of(0.1f, 0.2f, 0.3f)));
+        when(milvusRestClient.search(anyList(), eq(2))).thenReturn(List.of(
+                knowledge("milvus-pneumonia", "肺炎", 0.95, MatchSource.MILVUS_SEMANTIC,
+                        "symptom", "症状：咳嗽、发热"),
+                knowledge("milvus-bronchitis", "急性支气管炎", 0.94, MatchSource.MILVUS_SEMANTIC,
+                        "symptom", "症状：咳嗽、咳痰")
+        ));
+
+        List<DiseaseKnowledge> results = service.search("咳嗽三天", intent, 2);
+
+        assertEquals(List.of("普通感冒", "肺炎"),
+                results.stream().map(DiseaseKnowledge::diseaseName).toList());
+    }
+
+    @Test
     void symptomSearchShouldMergeMongoAndSemanticMatchesUntilTopK() {
         OpenAiCompatibleClient llmClient = mock(OpenAiCompatibleClient.class);
         MongoDiseaseRepository mongoDiseaseRepository = mock(MongoDiseaseRepository.class);

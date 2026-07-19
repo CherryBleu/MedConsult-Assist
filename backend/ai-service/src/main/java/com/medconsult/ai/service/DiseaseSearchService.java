@@ -40,6 +40,17 @@ public class DiseaseSearchService {
     private static final String PERTUSSIS = "百日咳";
     private static final String ACUTE_MYOCARDIAL_INFARCTION = "急性心肌梗死";
     private static final String ACUTE_CORONARY_SYNDROME = "急性冠脉综合征";
+    private static final List<String> COMPLAINT_KEYWORDS = List.of(
+            "鸡鸣样吸气声", "阵发性痉挛性咳嗽", "呼吸困难", "咳后呕吐",
+            "喘不上气", "胸口痛", "心口痛", "持续胸痛", "打喷嚏",
+            "胸痛", "胸闷", "心慌", "心悸", "大汗", "冷汗",
+            "咳嗽", "咳痰", "发热", "发烧", "呕吐", "恶心",
+            "腹痛", "头痛", "头晕", "鼻塞", "流涕", "咽痛", "腹泻"
+    );
+    private static final List<String> SPECIFIC_COMPLAINT_KEYWORDS = List.of(
+            "鸡鸣样吸气声", "阵发性痉挛性咳嗽", "呼吸困难", "咳后呕吐",
+            "喘不上气", "胸口痛", "心口痛", "持续胸痛"
+    );
 
     private final OpenAiCompatibleClient llmClient;
     private final MongoDiseaseRepository mongoDiseaseRepository;
@@ -438,7 +449,7 @@ public class DiseaseSearchService {
                                                            List<DiseaseKnowledge> results,
                                                            int limit) {
         List<DiseaseKnowledge> aggregated = aggregateEvidence(results);
-        if (aggregated.size() <= limit || !hasHighSpecificitySignals(userText, intent)) {
+        if (aggregated.size() <= limit || !hasRankingSignals(userText, intent, aggregated)) {
             return aggregated.stream().limit(limit).toList();
         }
         return aggregated.stream()
@@ -446,6 +457,33 @@ public class DiseaseSearchService {
                         (DiseaseKnowledge item) -> relevanceScore(userText, intent, item)).reversed())
                 .limit(limit)
                 .toList();
+    }
+
+    private static boolean hasRankingSignals(String userText, DiseaseIntent intent, List<DiseaseKnowledge> results) {
+        if (hasHighSpecificitySignals(userText, intent)) {
+            return true;
+        }
+        List<String> keywords = complaintKeywords(userText, intent);
+        return !keywords.isEmpty() && results.stream()
+                .map(DiseaseSearchService::evidenceText)
+                .anyMatch(text -> hasReliableComplaintMatch(keywords, text));
+    }
+
+    private static boolean hasReliableComplaintMatch(List<String> keywords, String text) {
+        int matches = 0;
+        for (String keyword : keywords) {
+            if (keyword.isBlank() || !text.contains(keyword)) {
+                continue;
+            }
+            if (SPECIFIC_COMPLAINT_KEYWORDS.contains(keyword)) {
+                return true;
+            }
+            matches++;
+            if (matches >= 2) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasHighSpecificitySignals(String userText, DiseaseIntent intent) {
@@ -463,12 +501,8 @@ public class DiseaseSearchService {
                 .distinct()
                 .toList();
         List<String> hints = inferredDiseaseNames(userText, symptoms);
-        String haystack = joinText(
-                item.diseaseName(),
-                item.desc(),
-                item.chunkText(),
-                item.symptoms() == null ? "" : String.join(" ", item.symptoms())
-        );
+        List<String> keywords = complaintKeywords(userText, intent);
+        String haystack = evidenceText(item);
 
         double score = item.score();
         for (String hint : hints) {
@@ -483,6 +517,11 @@ public class DiseaseSearchService {
                 score += 0.75;
             }
         }
+        for (String keyword : keywords) {
+            if (!keyword.isBlank() && haystack.contains(keyword)) {
+                score += keyword.length() >= 4 ? 1.2 : 0.8;
+            }
+        }
         if (item.metadata() != null && item.metadata().containsKey("cure_department")) {
             score += 0.2;
         }
@@ -490,6 +529,31 @@ public class DiseaseSearchService {
             score += 0.1;
         }
         return score;
+    }
+
+    private static String evidenceText(DiseaseKnowledge item) {
+        return joinText(
+                item.diseaseName(),
+                item.desc(),
+                item.chunkText(),
+                item.symptoms() == null ? "" : String.join(" ", item.symptoms())
+        );
+    }
+
+    private static List<String> complaintKeywords(String userText, DiseaseIntent intent) {
+        LinkedHashSet<String> keywords = new LinkedHashSet<>();
+        intent.candidates().stream()
+                .flatMap(candidate -> candidate.symptoms().stream())
+                .filter(symptom -> symptom != null && !symptom.isBlank() && symptom.length() >= 2)
+                .forEach(keywords::add);
+
+        String text = userText == null ? "" : userText;
+        for (String keyword : COMPLAINT_KEYWORDS) {
+            if (text.contains(keyword)) {
+                keywords.add(keyword);
+            }
+        }
+        return new ArrayList<>(keywords);
     }
 
     private static boolean containsNormalized(String left, String right) {
