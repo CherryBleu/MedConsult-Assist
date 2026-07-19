@@ -34,7 +34,12 @@
           @retry="getWarningList"
         >
           <div class="warning-list">
-            <div v-for="item in warningList" :key="item.id" class="warning-item">
+            <article
+              v-for="item in warningList"
+              :key="item.id"
+              class="warning-item"
+              data-testid="pharmacy-workbench-warning-item"
+            >
               <div class="warning-info">
                 <div class="warning-header">
                   <span class="drug-name">{{ item.drugName }}</span>
@@ -47,8 +52,15 @@
                   <span v-else>有效期至：{{ item.expireDate }}，剩余 {{ item.daysLeft }} 天</span>
                 </div>
               </div>
-              <el-button type="primary" class="warning-action" @click="goStockIn(item)">立即处理</el-button>
-            </div>
+              <el-button
+                type="primary"
+                class="warning-action"
+                :aria-label="`处理${item.drugName || '药品'}库存预警`"
+                @click="goStockIn(item)"
+              >
+                立即处理
+              </el-button>
+            </article>
           </div>
         </PageState>
       </div>
@@ -213,6 +225,8 @@ onMounted(() => {
   margin-bottom: 6px;
 }
 .drug-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
@@ -221,13 +235,21 @@ onMounted(() => {
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .warning-action {
   min-height: var(--touch-target);
   flex: 0 0 auto;
+  touch-action: manipulation;
 }
 .workbench-action {
   min-height: var(--touch-target);
+  touch-action: manipulation;
+}
+.warning-action:focus-visible,
+.workbench-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .quick-grid {
