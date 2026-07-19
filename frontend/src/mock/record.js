@@ -1,5 +1,12 @@
 import dayjs from 'dayjs'
 
+const consumeFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
 
 
 // 创建病历（草稿）
@@ -41,8 +48,7 @@ export const mockArchiveRecord = (id) => {
 
 // 我的病历列表（对齐 medical_record 表字段）
 export const mockRecordList = () => {
-  if (typeof localStorage !== 'undefined' && localStorage.getItem('mock_patient_record_list_fail_once') === '1') {
-    localStorage.removeItem('mock_patient_record_list_fail_once')
+  if (consumeFailOnce('mock_patient_record_list_fail_once') || consumeFailOnce('mock_doctor_record_list_fail_once')) {
     return Promise.reject(new Error('病历列表加载失败，请重试'))
   }
   return {
