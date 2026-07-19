@@ -132,7 +132,11 @@ const pageResult = (records, params = {}) => {
 
 export const mockPrescriptionList = (params = {}) => {
   const isPatientPage = typeof window !== 'undefined' && window.location.pathname === '/patient/prescriptions'
+  const isPharmacyReviewPage = typeof window !== 'undefined' && window.location.pathname === '/pharmacy/prescription-review'
   if (isPatientPage && consumeFailOnce('mock_patient_prescription_list_fail_once', 'mock_prescription_list_fail_once')) {
+    return Promise.reject(new Error('处方列表加载失败，请重试'))
+  }
+  if (isPharmacyReviewPage && consumeFailOnce('mock_pharmacy_prescription_list_fail_once')) {
     return Promise.reject(new Error('处方列表加载失败，请重试'))
   }
 

@@ -8,185 +8,194 @@
         </div>
       </div>
 
-      <div class="select-section">
-        <el-form class="medication-form" label-position="top">
-          <div class="form-grid">
-            <el-form-item label="选择病历">
-              <el-select
-                v-model="selectedRecord"
-                class="field-control medication-record-select"
-                placeholder="请选择要分析的病历"
-                filterable
-                :loading="recordLoading"
-                aria-label="选择病历"
-              >
-                <el-option
-                  v-for="item in recordList"
-                  :key="item.id"
-                  :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
-                  :value="item.id"
-                >
-                  <div class="record-option">
-                    <div class="option-main">
-                      <span class="option-no">{{ item.recordNo }}</span>
-                      <span class="option-patient">{{ item.patientName || '未知患者' }}</span>
-                      <el-tag v-if="item.deptName" size="small" type="info">{{ item.deptName }}</el-tag>
-                      <el-tag :type="getStatusType(MEDICAL_RECORD_STATUS, item.status)" size="small">
-                        {{ getStatusLabel(MEDICAL_RECORD_STATUS, item.status) }}
-                      </el-tag>
-                    </div>
-                    <div class="option-complaint">{{ item.chiefComplaint || '无主诉' }}</div>
-                  </div>
-                </el-option>
-              </el-select>
-            </el-form-item>
-
-            <el-form-item label="选择药品">
-              <el-select
-                v-model="selectedDrugIds"
-                class="field-control medication-drug-select"
-                placeholder="请选择本次分析涉及的真实药品"
-                filterable
-                multiple
-                collapse-tags
-                collapse-tags-tooltip
-                :loading="drugLoading"
-                aria-label="选择药品"
-              >
-                <el-option
-                  v-for="item in drugOptions"
-                  :key="item.drugId"
-                  :label="`${item.drugName || item.name} | ${item.specification || '无规格'}`"
-                  :value="item.drugId"
-                />
-              </el-select>
-            </el-form-item>
+      <div class="medication-workflow" data-testid="medication-analysis-workflow">
+        <section class="select-section" aria-labelledby="medication-input-title">
+          <div class="panel-header">
+            <h3 id="medication-input-title">分析条件</h3>
+            <span>实时校验</span>
           </div>
 
-          <el-alert
-            v-if="loadError"
-            class="load-error"
-            role="alert"
-            type="error"
-            :closable="false"
-            show-icon
-            title="基础数据加载失败"
-          >
-            <div class="load-error__content">
-              <span>{{ loadError }}</span>
-              <el-button size="small" type="primary" plain class="medication-action" @click="reloadReferenceData">
-                重试
+          <el-form class="medication-form" label-position="top">
+            <div class="form-grid">
+              <el-form-item label="选择病历">
+                <el-select
+                  v-model="selectedRecord"
+                  class="field-control medication-record-select"
+                  placeholder="请选择要分析的病历"
+                  filterable
+                  :loading="recordLoading"
+                  aria-label="选择病历"
+                >
+                  <el-option
+                    v-for="item in recordList"
+                    :key="item.id"
+                    :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
+                    :value="item.id"
+                  >
+                    <div class="record-option">
+                      <div class="option-main">
+                        <span class="option-no">{{ item.recordNo }}</span>
+                        <span class="option-patient">{{ item.patientName || '未知患者' }}</span>
+                        <el-tag v-if="item.deptName" size="small" type="info">{{ item.deptName }}</el-tag>
+                        <el-tag :type="getStatusType(MEDICAL_RECORD_STATUS, item.status)" size="small">
+                          {{ getStatusLabel(MEDICAL_RECORD_STATUS, item.status) }}
+                        </el-tag>
+                      </div>
+                      <div class="option-complaint">{{ item.chiefComplaint || '无主诉' }}</div>
+                    </div>
+                  </el-option>
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="选择药品">
+                <el-select
+                  v-model="selectedDrugIds"
+                  class="field-control medication-drug-select"
+                  placeholder="请选择本次分析涉及的真实药品"
+                  filterable
+                  multiple
+                  collapse-tags
+                  collapse-tags-tooltip
+                  :loading="drugLoading"
+                  aria-label="选择药品"
+                >
+                  <el-option
+                    v-for="item in drugOptions"
+                    :key="item.drugId"
+                    :label="`${item.drugName || item.name} | ${item.specification || '无规格'}`"
+                    :value="item.drugId"
+                  />
+                </el-select>
+              </el-form-item>
+            </div>
+
+            <el-alert
+              v-if="loadError"
+              class="load-error"
+              role="alert"
+              type="error"
+              :closable="false"
+              show-icon
+              title="基础数据加载失败"
+            >
+              <div class="load-error__content">
+                <span>{{ loadError }}</span>
+                <el-button size="small" type="primary" plain class="medication-action" @click="reloadReferenceData">
+                  重试
+                </el-button>
+              </div>
+            </el-alert>
+
+            <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
+
+            <div class="form-footer">
+              <div class="form-helper" role="status" aria-live="polite">
+                已选择 {{ selectedPrescriptions.length }} 个药品；缺少真实药品时不会提交占位分析。
+              </div>
+              <el-button
+                type="primary"
+                class="medication-action medication-analysis-action"
+                :loading="analyzing"
+                :disabled="!canAnalyze"
+                @click="doAnalysis"
+              >
+                开始分析
               </el-button>
             </div>
-          </el-alert>
+          </el-form>
+        </section>
 
-          <div v-if="formError" class="form-error" role="alert">{{ formError }}</div>
-
-          <div class="form-footer">
-            <div class="form-helper" role="status" aria-live="polite">
-              已选择 {{ selectedPrescriptions.length }} 个药品；缺少真实药品时不会提交占位分析。
-            </div>
-            <el-button
-              type="primary"
-              class="medication-action medication-analysis-action"
-              :loading="analyzing"
-              :disabled="!canAnalyze"
-              @click="doAnalysis"
-            >
-              开始分析
-            </el-button>
-          </div>
-        </el-form>
-      </div>
-
-      <PageState
-        :loading="analyzing"
-        :error="analysisError"
-        :empty="!analysisResult"
-        loading-text="正在分析用药风险..."
-        error-title="用药分析失败"
-        empty-text="选择病历和药品后开始分析"
-        @retry="doAnalysis"
-      >
-        <section
-          v-if="analysisResult"
-          class="result-section"
-          data-testid="medication-analysis-result"
-          aria-labelledby="medication-result-title"
-        >
-          <div class="result-header">
+        <section class="result-panel" aria-labelledby="medication-result-title">
+          <div class="result-header" data-testid="medication-analysis-result-header">
             <h3 id="medication-result-title">分析结果</h3>
             <span class="result-meta">药品 {{ selectedPrescriptions.length }} 项</span>
           </div>
 
-          <!-- 整体风险 -->
-          <div
-            class="risk-overview"
-            :class="riskClass"
-            role="status"
-            aria-live="polite"
+          <PageState
+            :loading="analyzing"
+            :error="analysisError"
+            :empty="!analysisResult"
+            loading-text="正在分析用药风险..."
+            error-title="用药分析失败"
+            empty-text="选择病历和药品后开始分析"
+            @retry="doAnalysis"
           >
-            <div>
-              <div class="risk-label">整体风险等级</div>
-              <div class="risk-value">{{ riskLabel }}</div>
-            </div>
-            <div class="risk-stats" aria-label="风险统计">
-              <span>禁忌 {{ contraindicationCount }}</span>
-              <span>相互作用 {{ interactionCount }}</span>
-              <span>提醒 {{ reminderCount }}</span>
-            </div>
-          </div>
-
-          <!-- 禁忌风险（后端 contraindicationRisks） -->
-          <div class="analysis-block">
-            <h4 class="block-title">禁忌风险</h4>
-            <div v-if="contraindicationCount === 0" class="safe-tip" role="status">
-              <el-icon><CircleCheck /></el-icon>
-              <span>未检测到禁忌风险</span>
-            </div>
-            <div v-else class="risk-list">
-              <div v-for="(item, index) in analysisResult.contraindicationRisks" :key="index" class="risk-item danger">
-                {{ typeof item === 'string' ? item : (item.description || item.risk || '—') }}
-              </div>
-            </div>
-          </div>
-
-          <!-- 药物相互作用（后端 interactionRisks: List<Map>） -->
-          <div class="analysis-block">
-            <h4 class="block-title">药物相互作用</h4>
-            <div v-if="interactionCount === 0" class="safe-tip" role="status">
-              <el-icon><CircleCheck /></el-icon>
-              <span>未检测到相互作用风险</span>
-            </div>
-            <div v-else class="interaction-list">
+            <section
+              v-if="analysisResult"
+              class="result-section"
+              data-testid="medication-analysis-result"
+              aria-label="用药分析结果明细"
+            >
+              <!-- 整体风险 -->
               <div
-                v-for="(item, index) in analysisResult.interactionRisks"
-                :key="index"
-                class="interaction-item"
-                :class="normalizeRiskLevel(item.level).toLowerCase()"
+                class="risk-overview"
+                :class="riskClass"
+                role="status"
+                aria-live="polite"
               >
-                <div class="drug-pair">{{ item.drugA || item.drug_a || '?' }} + {{ item.drugB || item.drug_b || '?' }}</div>
-                <div class="risk-level">风险等级：{{ getLevelLabel(item.level) }}</div>
-                <div class="risk-desc">{{ item.desc || item.description || item.effect || '' }}</div>
+                <div>
+                  <div class="risk-label">整体风险等级</div>
+                  <div class="risk-value">{{ riskLabel }}</div>
+                </div>
+                <div class="risk-stats" aria-label="风险统计">
+                  <span>禁忌 {{ contraindicationCount }}</span>
+                  <span>相互作用 {{ interactionCount }}</span>
+                  <span>提醒 {{ reminderCount }}</span>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <!-- 用药提醒（后端 reminders: List<Map>） -->
-          <div class="analysis-block">
-            <h4 class="block-title">用药提醒</h4>
-            <div v-if="reminderCount === 0" class="safe-tip" role="status">
-              <el-icon><CircleCheck /></el-icon>
-              <span>暂无用药提醒</span>
-            </div>
-            <ul v-else class="reminder-list">
-              <li v-for="(item, index) in analysisResult.reminders" :key="index">
-                {{ typeof item === 'string' ? item : ((item.drugName ? item.drugName + '：' : '') + (item.reminder || item.content || item.message || '—')) }}
-              </li>
-            </ul>
-          </div>
+              <!-- 禁忌风险（后端 contraindicationRisks） -->
+              <div class="analysis-block">
+                <h4 class="block-title">禁忌风险</h4>
+                <div v-if="contraindicationCount === 0" class="safe-tip" role="status">
+                  <el-icon><CircleCheck /></el-icon>
+                  <span>未检测到禁忌风险</span>
+                </div>
+                <div v-else class="risk-list">
+                  <div v-for="(item, index) in analysisResult.contraindicationRisks" :key="index" class="risk-item danger">
+                    {{ typeof item === 'string' ? item : (item.description || item.risk || '—') }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- 药物相互作用（后端 interactionRisks: List<Map>） -->
+              <div class="analysis-block">
+                <h4 class="block-title">药物相互作用</h4>
+                <div v-if="interactionCount === 0" class="safe-tip" role="status">
+                  <el-icon><CircleCheck /></el-icon>
+                  <span>未检测到相互作用风险</span>
+                </div>
+                <div v-else class="interaction-list">
+                  <div
+                    v-for="(item, index) in analysisResult.interactionRisks"
+                    :key="index"
+                    class="interaction-item"
+                    :class="normalizeRiskLevel(item.level).toLowerCase()"
+                  >
+                    <div class="drug-pair">{{ item.drugA || item.drug_a || '?' }} + {{ item.drugB || item.drug_b || '?' }}</div>
+                    <div class="risk-level">风险等级：{{ getLevelLabel(item.level) }}</div>
+                    <div class="risk-desc">{{ item.desc || item.description || item.effect || '' }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 用药提醒（后端 reminders: List<Map>） -->
+              <div class="analysis-block">
+                <h4 class="block-title">用药提醒</h4>
+                <div v-if="reminderCount === 0" class="safe-tip" role="status">
+                  <el-icon><CircleCheck /></el-icon>
+                  <span>暂无用药提醒</span>
+                </div>
+                <ul v-else class="reminder-list">
+                  <li v-for="(item, index) in analysisResult.reminders" :key="index">
+                    {{ typeof item === 'string' ? item : ((item.drugName ? item.drugName + '：' : '') + (item.reminder || item.content || item.message || '—')) }}
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </PageState>
         </section>
-      </PageState>
+      </div>
     </div>
   </div>
 </template>
@@ -359,12 +368,43 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.medication-workflow {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
 .select-section {
-  padding: 20px;
-  background: var(--bg-page);
-  border-radius: var(--radius-base);
-  margin-bottom: 24px;
-  border: 1px solid rgba(2, 132, 199, .1);
+  min-width: 0;
+  padding-right: 24px;
+  border-right: 1px solid var(--border-lighter);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-header h3,
+.result-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.panel-header span {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(22, 163, 74, .1);
+  color: #15803d;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .medication-form :deep(.el-form-item) {
@@ -379,8 +419,8 @@ onMounted(() => {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 14px;
 }
 
 .field-control {
@@ -413,9 +453,9 @@ onMounted(() => {
 
 .form-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid rgba(2, 132, 199, .1);
@@ -431,15 +471,21 @@ onMounted(() => {
   min-height: var(--touch-target);
   min-width: 96px;
   touch-action: manipulation;
+  transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
 }
 .medication-action:focus-visible {
   outline: 2px solid var(--primary-color);
   outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+.result-panel {
+  min-width: 0;
 }
 
 .result-section {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .result-header {
@@ -447,13 +493,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.result-header h3 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
+  margin-bottom: 14px;
 }
 
 .result-meta {
@@ -462,7 +502,7 @@ onMounted(() => {
 }
 
 .risk-overview {
-  padding: 20px;
+  padding: 16px;
   border-radius: var(--radius-base);
   display: flex;
   justify-content: space-between;
@@ -505,10 +545,11 @@ onMounted(() => {
 }
 
 .analysis-block {
-  padding: 16px;
+  padding: 14px 16px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-base);
-  background: rgba(255, 255, 255, .76);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .64);
+  transition: border-color var(--motion-base) ease, box-shadow var(--motion-base) ease;
 }
 
 .block-title {
@@ -618,17 +659,25 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+@media (max-width: 960px) {
+  .medication-workflow {
+    grid-template-columns: 1fr;
+  }
+
+  .select-section {
+    padding-right: 0;
+    padding-bottom: 18px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-lighter);
+  }
+}
+
 @media (max-width: 768px) {
   .page-header,
-  .form-footer,
   .risk-overview,
   .result-header {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
   }
 
   .medication-action {
@@ -645,7 +694,6 @@ onMounted(() => {
 }
 
 @media (max-width: 480px) {
-  .select-section,
   .analysis-block,
   .risk-overview {
     padding: 14px;

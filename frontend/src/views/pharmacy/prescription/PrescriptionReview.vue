@@ -1,10 +1,20 @@
 <template>
   <div class="page-container">
-    <div class="card-box">
+    <div class="card-box prescription-review-page">
       <div class="page-header">
-        <h2 class="page-title">处方审核</h2>
+        <div>
+          <h2 class="page-title">处方审核</h2>
+          <p class="page-subtitle">药师审方、发药和完成状态在同一桌面工作区内处理。</p>
+        </div>
         <div class="header-actions">
-          <el-select v-model="statusFilter" class="status-filter" placeholder="状态筛选" clearable @change="handleFilterChange">
+          <el-select
+            v-model="statusFilter"
+            class="status-filter"
+            placeholder="状态筛选"
+            clearable
+            aria-label="处方状态筛选"
+            @change="handleFilterChange"
+          >
             <el-option label="待审方" value="PENDING_REVIEW" />
             <el-option label="已通过" value="APPROVED" />
             <el-option label="已驳回" value="REJECTED" />
@@ -13,7 +23,7 @@
             <el-option label="已完成" value="COMPLETED" />
             <el-option label="已取消" value="CANCELLED" />
           </el-select>
-          <el-button type="primary" @click="fetchList">刷新</el-button>
+          <el-button type="primary" class="prescription-toolbar-action" @click="fetchList">刷新</el-button>
         </div>
       </div>
 
@@ -24,9 +34,10 @@
         empty-text="暂无处方记录"
         @retry="fetchList"
       >
-        <ResponsiveTable aria-label="处方审核列表">
-          <template #table>
-            <el-table :data="prescriptionList" border stripe>
+        <div class="prescription-table-shell">
+          <ResponsiveTable aria-label="处方审核列表">
+            <template #table>
+              <el-table :data="prescriptionList" class="prescription-table" border stripe>
               <el-table-column prop="prescriptionId" label="处方编号" width="170" />
               <el-table-column label="状态" width="110">
                 <template #default="{ row }">
@@ -59,48 +70,49 @@
                   </div>
                 </template>
               </el-table-column>
-            </el-table>
-          </template>
+              </el-table>
+            </template>
 
-          <template #card>
-            <article
-              v-for="row in prescriptionList"
-              :key="row.id || row.prescriptionId"
-              class="prescription-card"
-              data-testid="responsive-prescription-card"
-            >
-              <div class="prescription-card__header">
-                <div>
-                  <p class="prescription-card__title">{{ row.prescriptionId }}</p>
-                  <p class="prescription-card__meta">{{ row.createdAt || '-' }}</p>
+            <template #card>
+              <article
+                v-for="row in prescriptionList"
+                :key="row.id || row.prescriptionId"
+                class="prescription-card"
+                data-testid="responsive-prescription-card"
+              >
+                <div class="prescription-card__header">
+                  <div>
+                    <p class="prescription-card__title">{{ row.prescriptionId }}</p>
+                    <p class="prescription-card__meta">{{ row.createdAt || '-' }}</p>
+                  </div>
+                  <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
                 </div>
-                <el-tag :type="getStatusType(row.status)">{{ getStatusLabel(row.status) }}</el-tag>
-              </div>
-              <dl class="prescription-card__fields">
-                <div>
-                  <dt>总金额</dt>
-                  <dd>{{ row.totalFee != null ? `¥ ${Number(row.totalFee).toFixed(2)}` : '-' }}</dd>
+                <dl class="prescription-card__fields">
+                  <div>
+                    <dt>总金额</dt>
+                    <dd>{{ row.totalFee != null ? `¥ ${Number(row.totalFee).toFixed(2)}` : '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>支付状态</dt>
+                    <dd>
+                      <el-tag v-if="row.paymentStatus" size="small" effect="plain" :type="getPayType(row.paymentStatus)">
+                        {{ getPayLabel(row.paymentStatus) }}
+                      </el-tag>
+                      <span v-else>-</span>
+                    </dd>
+                  </div>
+                </dl>
+                <div class="prescription-card__actions">
+                  <el-button class="prescription-review-action" plain :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
+                  <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
+                  <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" type="primary" plain :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
                 </div>
-                <div>
-                  <dt>支付状态</dt>
-                  <dd>
-                    <el-tag v-if="row.paymentStatus" size="small" effect="plain" :type="getPayType(row.paymentStatus)">
-                      {{ getPayLabel(row.paymentStatus) }}
-                    </el-tag>
-                    <span v-else>-</span>
-                  </dd>
-                </div>
-              </dl>
-              <div class="prescription-card__actions">
-                <el-button class="prescription-review-action" plain :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
-                <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
-                <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
-                <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
-                <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" type="primary" plain :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
-              </div>
-            </article>
-          </template>
-        </ResponsiveTable>
+              </article>
+            </template>
+          </ResponsiveTable>
+        </div>
       </PageState>
 
       <div class="pagination-wrapper" v-if="total > 0">
@@ -117,7 +129,7 @@
     </div>
 
     <!-- 处方详情 -->
-    <el-dialog v-model="detailVisible" title="处方详情" width="min(720px, calc(100vw - 32px))" class="prescription-detail-dialog">
+    <el-dialog v-model="detailVisible" title="处方详情" width="min(720px, calc(100vw - 32px))" top="24px" class="prescription-detail-dialog">
       <div v-loading="detailLoading">
         <div v-if="detailError" class="inline-error" role="alert">
           <span>{{ detailError }}</span>
@@ -191,7 +203,7 @@
     </el-dialog>
 
     <!-- 审方对话框 -->
-    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '审方通过' : '审方驳回'" width="min(480px, calc(100vw - 32px))" class="prescription-workflow-dialog">
+    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '审方通过' : '审方驳回'" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
       <el-form :model="reviewForm" label-width="90px">
         <el-form-item label="处方编号">
           <span>{{ currentPrescription?.prescriptionId }}</span>
@@ -211,7 +223,7 @@
     </el-dialog>
 
     <!-- 调剂发药对话框 -->
-    <el-dialog v-model="dispenseDialogVisible" title="调剂发药" width="min(480px, calc(100vw - 32px))" class="prescription-workflow-dialog">
+    <el-dialog v-model="dispenseDialogVisible" title="调剂发药" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
       <el-alert title="发药将触发药品库存 FEFO 出库，请确认处方明细无误。" type="warning" :closable="false" style="margin-bottom: 12px" />
       <el-form label-width="90px">
         <el-form-item label="处方编号">
@@ -432,8 +444,11 @@ onMounted(() => {
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-lighter);
 }
 .page-title {
   font-size: 18px;
@@ -441,12 +456,41 @@ onMounted(() => {
   color: var(--text-primary);
   margin: 0;
 }
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
 .header-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .status-filter {
   width: 160px;
+}
+.prescription-review-page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+.prescription-toolbar-action {
+  min-height: var(--touch-target);
+}
+.prescription-table-shell {
+  min-width: 0;
+  max-width: 100%;
+}
+.prescription-table-shell :deep(.responsive-table__desktop) {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
+}
+.prescription-table-shell :deep(.el-table) {
+  min-width: 954px;
 }
 .table-actions {
   display: flex;
@@ -462,6 +506,14 @@ onMounted(() => {
   min-width: var(--touch-target);
   min-height: var(--touch-target);
   touch-action: manipulation;
+  transition: background-color var(--motion-base) ease, color var(--motion-base) ease, box-shadow var(--motion-base) ease;
+}
+.prescription-review-action:focus-visible,
+.prescription-dialog-action:focus-visible,
+.prescription-toolbar-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 .pagination-wrapper {
   display: flex;
@@ -607,6 +659,17 @@ onMounted(() => {
 }
 .inline-error__action {
   min-height: var(--touch-target);
+}
+:global(.prescription-detail-dialog),
+:global(.prescription-workflow-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  margin: 24px auto !important;
+}
+:global(.prescription-detail-dialog .el-dialog__body),
+:global(.prescription-workflow-dialog .el-dialog__body) {
+  overflow-y: auto;
 }
 @media (max-width: 640px) {
   .page-header {
