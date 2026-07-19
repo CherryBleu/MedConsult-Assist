@@ -79,6 +79,38 @@ DOMAINS = [
     },
 ]
 
+REQUIRED_SEED_IDENTITIES = [
+    {
+        "role": "HOSPITAL_ADMIN",
+        "user_id": 1,
+        "user_no": "U0000001",
+        "account": "admin",
+        "phone": "13800000000",
+    },
+    {
+        "role": "DOCTOR",
+        "user_id": 2,
+        "user_no": "U0000002",
+        "account": "doctor",
+        "phone": "13800000002",
+    },
+    {
+        "role": "PATIENT",
+        "user_id": 3,
+        "user_no": "U0000003",
+        "account": "patient",
+        "phone": "13800000001",
+        "patient_id": 3001,
+    },
+    {
+        "role": "PHARMACY_ADMIN",
+        "user_id": 4,
+        "user_no": "U0000004",
+        "account": "yaofang",
+        "phone": "13800000003",
+    },
+]
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -178,7 +210,41 @@ def load_config(path: pathlib.Path, overrides: dict[str, list[Any]] | None = Non
         )
 
     config["protected_identities"] = identities
+    validate_required_seed_identities(config)
     return config
+
+
+def identity_matches_required(identity: dict[str, Any], required: dict[str, Any]) -> bool:
+    for key, expected in required.items():
+        actual = identity.get(key)
+        if expected is None:
+            if actual is not None:
+                return False
+        elif isinstance(expected, int):
+            try:
+                actual_int = int(actual)
+            except (TypeError, ValueError):
+                return False
+            if actual_int != expected:
+                return False
+        elif str(actual or "") != str(expected):
+            return False
+    return True
+
+
+def validate_required_seed_identities(config: dict[str, Any]) -> None:
+    identities = config.get("protected_identities", [])
+    missing = [
+        f"{required['role']}/{required['account']}"
+        for required in REQUIRED_SEED_IDENTITIES
+        if not any(identity_matches_required(identity, required) for identity in identities)
+    ]
+    if missing:
+        raise ValueError(
+            "whitelist config missing required protected seed identities: "
+            f"{', '.join(missing)}. Restore admin, doctor, patient, and yaofang entries; "
+            "extend the whitelist without removing built-in seed protections."
+        )
 
 
 def protected_identity_sets(config: dict[str, Any]) -> dict[str, set[Any]]:
@@ -542,6 +608,11 @@ def build_plan(config: dict[str, Any], snapshot: dict[str, Any] | None) -> dict[
             "默认只输出计划、只读盘点命令、候选识别规则和离线快照候选。",
             "真实删除需要未来单独确认，并应另建经过审批的 runbook。",
         ],
+        "whitelist_validation": {
+            "status": "PASS",
+            "required_seed_identities": REQUIRED_SEED_IDENTITIES,
+            "message": "默认 seed 账号 admin、doctor、patient、yaofang 已受保护。",
+        },
         "whitelist": config.get("protected_identities", []),
         "domains": DOMAINS,
         "operations": build_operations(snapshot is not None),
@@ -593,6 +664,22 @@ def render_markdown(plan: dict[str, Any]) -> str:
                 user_no=identity.get("user_no") or "",
                 patient_id=identity.get("patient_id") if identity.get("patient_id") is not None else "",
                 source=identity.get("source") or "",
+            )
+        )
+    lines.append("")
+    lines.append("## 白名单校验")
+    validation = plan["whitelist_validation"]
+    lines.append(f"- 状态：{validation['status']}")
+    lines.append(f"- 说明：{validation['message']}")
+    for identity in validation["required_seed_identities"]:
+        lines.append(
+            "- 必保：{role}/{account} user_id={user_id}{patient_id}".format(
+                role=identity["role"],
+                account=identity["account"],
+                user_id=identity["user_id"],
+                patient_id=(
+                    f" patient_id={identity['patient_id']}" if identity.get("patient_id") is not None else ""
+                ),
             )
         )
     lines.append("")

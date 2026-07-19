@@ -4,8 +4,8 @@
 
 ## 文件
 
-- `data_cleanup_dry_run.py`：生成 dry-run 计划、只读盘点命令、离线快照候选摘要和安全自检。
-- `default-whitelist.json`：显式保护白名单，覆盖 `DataSeeder` 中的 `admin`、`doctor`、`patient`、`yaofang` 四类账号。
+- `data_cleanup_dry_run.py`：生成 dry-run 计划、只读盘点命令、离线快照候选摘要、默认白名单校验和安全自检。
+- `default-whitelist.json`：显式保护白名单，覆盖 `DataSeeder` 中的 `admin`、`doctor`、`patient`、`yaofang` 四类账号。脚本会拒绝缺失这些内置 seed 身份的配置。
 - `test_data_cleanup_dry_run.py`：`unittest` 自检，验证默认无执行模式、危险操作被拦截、快照候选不包含白名单账号。
 
 ## 基本用法
@@ -21,6 +21,8 @@ python -m unittest scripts/data-cleanup/test_data_cleanup_dry_run.py
 ```powershell
 python scripts/data-cleanup/data_cleanup_dry_run.py --dry-run --allow-account demo_admin --allow-user-id 10001
 ```
+
+`--allow-*` 只能追加保护身份，不能替代内置 seed 白名单。若自定义 `--config` 漏掉 `admin`、`doctor`、`patient` 或 `yaofang`，脚本会在生成 dry-run 前失败。
 
 使用离线快照识别候选：
 
@@ -68,6 +70,7 @@ python scripts/data-cleanup/data_cleanup_dry_run.py --dry-run --snapshot scripts
 
 - 备份步骤：MySQL `mysqldump`、Redis key 清单、Mongo 知识库备份、Milvus/MinIO inventory。
 - 停写步骤：真实清理前暂停公网写入、后台导入、MQ dispatch、上传 worker。
+- 白名单校验：确认 `admin`、`doctor`、`patient`、`yaofang` 四类内置账号仍在保护清单中。
 - 计数步骤：清理前业务表和缓存 key 计数。
 - 候选识别：账号/患者只读查询，以及离线快照中命中的候选。
 - 验证步骤：未来真实清理后必须复查默认白名单账号仍存在，并按域复核业务数据、知识库和对象存储边界。

@@ -37,6 +37,50 @@ class DataCleanupDryRunTest(unittest.TestCase):
             {identity["role"] for identity in config["protected_identities"]},
         )
 
+    def test_config_must_include_required_seed_whitelist_identities(self):
+        module = load_module()
+        incomplete_config = {
+            "version": 1,
+            "protected_identities": [
+                {
+                    "source": "test",
+                    "role": "HOSPITAL_ADMIN",
+                    "user_id": 1,
+                    "user_no": "U0000001",
+                    "account": "admin",
+                    "phone": "13800000000",
+                    "patient_id": None,
+                },
+                {
+                    "source": "test",
+                    "role": "DOCTOR",
+                    "user_id": 2,
+                    "user_no": "U0000002",
+                    "account": "doctor",
+                    "phone": "13800000002",
+                    "patient_id": None,
+                },
+                {
+                    "source": "test",
+                    "role": "PATIENT",
+                    "user_id": 3,
+                    "user_no": "U0000003",
+                    "account": "patient",
+                    "phone": "13800000001",
+                    "patient_id": 3001,
+                },
+            ],
+        }
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as tmp:
+            json.dump(incomplete_config, tmp, ensure_ascii=False)
+            tmp_path = pathlib.Path(tmp.name)
+
+        try:
+            with self.assertRaisesRegex(ValueError, "PHARMACY_ADMIN.*yaofang"):
+                module.load_config(tmp_path, overrides={})
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
     def test_default_plan_lists_all_data_domains(self):
         module = load_module()
         config = module.load_config(DEFAULT_CONFIG, overrides={})
