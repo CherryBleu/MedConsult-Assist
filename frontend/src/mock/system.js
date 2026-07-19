@@ -9,6 +9,9 @@ const consumeFailOnce = (key) => {
 
 // 用户列表
 export const mockUserList = () => {
+  if (consumeFailOnce('mock_admin_pharmacy_admin_list_fail_once')) {
+    return Promise.reject(new Error('药房管理员列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
