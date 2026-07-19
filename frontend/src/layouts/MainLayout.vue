@@ -253,6 +253,7 @@ const allMenuList = {
     { path: '/patient/home', title: '首页', icon: 'House' },
     { path: '/patient/appointment', title: '预约挂号', icon: 'Calendar' },
     { path: '/patient/records', title: '我的病历', icon: 'Document' },
+    { path: '/patient/prescriptions', title: '我的处方', icon: 'Wallet' },
     {
       path: '/ai-service',
       title: 'AI服务',

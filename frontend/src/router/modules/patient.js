@@ -19,6 +19,12 @@ const patientRoutes = [
         component: () => import('@/views/patient/appointment/MyAppointment.vue'),
         meta: { title: '我的预约' }
       },
+      {
+        path: 'prescriptions',
+        name: 'PatientPrescriptionList',
+        component: () => import('@/views/patient/prescription/PrescriptionList.vue'),
+        meta: { title: '我的处方' }
+      },
 	  {
 	    path: 'appointment/department',
 	    name: 'DepartmentList',
