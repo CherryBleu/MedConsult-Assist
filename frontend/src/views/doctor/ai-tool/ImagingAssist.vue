@@ -14,57 +14,112 @@
       <el-tabs v-model="activeTab" class="main-tabs">
         <el-tab-pane label="检测任务列表" name="list">
           <div class="filter-bar">
-            <el-radio-group v-model="filterStatus" @change="getTaskList">
+            <el-radio-group v-model="filterStatus" class="status-filter" @change="getTaskList" aria-label="审核状态筛选">
               <el-radio-button value="all">全部</el-radio-button>
               <el-radio-button value="PENDING">待审核</el-radio-button>
               <el-radio-button value="REVIEWED">已审核</el-radio-button>
             </el-radio-group>
-            <el-button type="primary" @click="activeTab = 'detect'">
+            <el-button type="primary" class="imaging-action" @click="activeTab = 'detect'">
               <el-icon><Plus /></el-icon>新建检测
             </el-button>
           </div>
 
-          <el-table :data="filteredList" v-loading="listLoading" stripe @row-click="viewTask">
-            <el-table-column prop="taskNo" label="检测编号" width="170" />
-            <el-table-column prop="patientName" label="患者姓名" width="100" />
-            <el-table-column prop="imagingType" label="影像类型" width="90" />
-            <el-table-column prop="bodyPart" label="检查部位" width="90" />
-            <el-table-column label="AI检测结果" width="120">
-              <template #default="{ row }">
-                <el-tag :type="row.hasAbnormal ? 'danger' : 'success'" size="small">
-                  {{ row.hasAbnormal ? '检出异常' : '未见异常' }}
-                </el-tag>
+          <PageState
+            :loading="listLoading"
+            :error="listError"
+            :empty="filteredList.length === 0"
+            loading-text="正在加载影像检测任务..."
+            empty-text="暂无影像检测任务"
+            @retry="getTaskList"
+          >
+            <ResponsiveTable aria-label="影像检测任务列表">
+              <template #table>
+                <el-table :data="filteredList" stripe @row-click="viewTask">
+                  <el-table-column prop="taskNo" label="检测编号" width="170" />
+                  <el-table-column prop="patientName" label="患者姓名" width="100" />
+                  <el-table-column prop="imagingType" label="影像类型" width="90" />
+                  <el-table-column prop="bodyPart" label="检查部位" width="90" />
+                  <el-table-column label="AI检测结果" width="120">
+                    <template #default="{ row }">
+                      <el-tag :type="row.hasAbnormal ? 'danger' : 'success'" size="small">
+                        {{ row.hasAbnormal ? '检出异常' : '未见异常' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="置信度" width="120">
+                    <template #default="{ row }">
+                      <el-progress :percentage="Number(row.confidence || 0)" :stroke-width="6" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="审核状态" width="100">
+                    <template #default="{ row }">
+                      <el-tag :type="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'" size="small">
+                        {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="createdAt" label="提交时间" min-width="170" />
+                  <el-table-column label="操作" width="120" fixed="right">
+                    <template #default="{ row }">
+                      <el-button type="primary" link size="small" @click.stop="viewTask(row)">查看详情</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </template>
-            </el-table-column>
-            <el-table-column label="置信度" width="120">
-              <template #default="{ row }">
-                <el-progress :percentage="row.confidence" :stroke-width="6" />
+
+              <template #card>
+                <article
+                  v-for="row in filteredList"
+                  :key="row.detectionId || row.taskId || row.taskNo"
+                  class="imaging-card"
+                  data-testid="responsive-imaging-card"
+                >
+                  <div class="imaging-card__header">
+                    <div>
+                      <p class="imaging-card__title">{{ row.taskNo || row.taskId }}</p>
+                      <p class="imaging-card__meta">{{ row.createdAt || '-' }}</p>
+                    </div>
+                    <span class="status-chip" :class="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'">
+                      {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
+                    </span>
+                  </div>
+                  <dl class="imaging-card__fields">
+                    <div>
+                      <dt>患者</dt>
+                      <dd>{{ row.patientName || '未知' }}</dd>
+                    </div>
+                    <div>
+                      <dt>类型</dt>
+                      <dd>{{ row.imagingType || '-' }} {{ row.bodyPart || '' }}</dd>
+                    </div>
+                    <div>
+                      <dt>AI结果</dt>
+                      <dd>
+                        <span class="status-chip" :class="row.hasAbnormal ? 'danger' : 'success'">
+                          {{ row.hasAbnormal ? '检出异常' : '未见异常' }}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>置信度</dt>
+                      <dd>{{ Number(row.confidence || 0) }}%</dd>
+                    </div>
+                  </dl>
+                  <el-button type="primary" plain class="imaging-action" @click="viewTask(row)">查看详情</el-button>
+                </article>
               </template>
-            </el-table-column>
-            <el-table-column label="审核状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'" size="small">
-                  {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="createdAt" label="提交时间" width="170" />
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="{ row }">
-                <el-button type="primary" link size="small" @click.stop="viewTask(row)">查看详情</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+            </ResponsiveTable>
+          </PageState>
         </el-tab-pane>
 
         <el-tab-pane label="新建检测" name="detect">
           <div class="upload-section">
-            <el-form label-width="100px">
+            <el-form class="imaging-form" label-position="top">
               <el-form-item label="患者姓名">
-                <el-input v-model="imagingForm.patientName" placeholder="请输入患者姓名" style="width: 200px" />
+                <el-input v-model="imagingForm.patientName" class="field-control" placeholder="请输入患者姓名" aria-label="患者姓名" />
               </el-form-item>
               <el-form-item label="影像类型">
-                <el-select v-model="imagingForm.imagingType" placeholder="请选择影像类型" style="width: 200px">
+                <el-select v-model="imagingForm.imagingType" class="field-control" placeholder="请选择影像类型" aria-label="影像类型">
                   <el-option label="CT" value="CT" />
                   <el-option label="X线" value="X线" />
                   <el-option label="MRI" value="MRI" />
@@ -72,7 +127,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="检查部位">
-                <el-select v-model="imagingForm.bodyPart" placeholder="请选择检查部位" style="width: 200px">
+                <el-select v-model="imagingForm.bodyPart" class="field-control" placeholder="请选择检查部位" aria-label="检查部位">
                   <el-option label="胸部" value="胸部" />
                   <el-option label="腹部" value="腹部" />
                   <el-option label="头颅" value="头颅" />
@@ -97,10 +152,10 @@
                 <div class="upload-tip">支持 JPG、PNG、DICOM 格式，单张不超过 10MB</div>
               </div>
               <div v-else class="image-preview-wrapper">
-                <img ref="previewImg" :src="imageUrl" class="preview-image" @load="onImageLoad" />
+                <img ref="previewImg" :src="imageUrl" class="preview-image" alt="待提交的医学影像预览" @load="onImageLoad" />
                 <canvas ref="annotationCanvas" class="annotation-canvas"></canvas>
                 <div class="image-overlay">
-                  <el-button type="danger" size="small" circle @click.stop="removeImage">
+                  <el-button type="danger" size="small" circle aria-label="移除影像" @click.stop="removeImage">
                     <el-icon><Close /></el-icon>
                   </el-button>
                 </div>
@@ -108,10 +163,11 @@
             </el-upload>
 
             <div class="submit-section">
-              <el-button @click="activeTab = 'list'">返回列表</el-button>
+              <el-button class="imaging-action" @click="activeTab = 'list'">返回列表</el-button>
               <el-button
                 type="primary"
                 size="large"
+                class="imaging-action"
                 :loading="submitting"
                 :disabled="!imageUrl || !imagingForm.imagingType || !imagingForm.bodyPart"
                 @click="submitDetection"
@@ -120,7 +176,9 @@
               </el-button>
             </div>
 
-            <div v-if="detecting" class="progress-section">
+            <div v-if="submitError" class="inline-error" role="alert">{{ submitError }}</div>
+
+            <div v-if="detecting" class="progress-section" role="status" aria-live="polite">
               <el-progress :percentage="progress" :status="progressStatus" />
               <p class="progress-text">{{ progressText }}</p>
             </div>
@@ -133,13 +191,13 @@
               <h3>检测详情 - {{ currentTask.taskNo }}</h3>
               <p class="detail-meta">患者：{{ currentTask.patientName || '未知' }} | {{ currentTask.imagingType }} {{ currentTask.bodyPart }} | 提交时间：{{ currentTask.createdAt }}</p>
             </div>
-            <el-button @click="activeTab = 'list'">返回列表</el-button>
+            <el-button class="imaging-action" @click="activeTab = 'list'">返回列表</el-button>
           </div>
 
           <div class="detail-content">
             <div class="detail-image-section">
               <div class="image-wrapper">
-                <img :src="imageUrl" class="detail-image" @load="drawDetailAnnotations" />
+                <img :src="imageUrl" class="detail-image" alt="影像检测原图与异常区域标注" @load="drawDetailAnnotations" />
                 <canvas ref="detailCanvas" class="detail-canvas"></canvas>
                 <div v-if="currentTask.regions && currentTask.regions.length" class="legend">
                   <div v-for="(region, idx) in currentTask.regions" :key="idx" class="legend-item">
@@ -196,9 +254,9 @@
 
               <div v-else class="review-section">
                 <h4>医生审核</h4>
-                <el-form label-width="100px">
+                <el-form class="review-form" label-position="top">
                   <el-form-item label="审核结果">
-                    <el-radio-group v-model="reviewForm.reviewResult">
+                    <el-radio-group v-model="reviewForm.reviewResult" class="review-options">
                       <el-radio value="CONFIRMED">
                         <el-tag type="success" size="small">确认</el-tag>
                         同意AI检测结果
@@ -233,10 +291,11 @@
                   </el-form-item>
 
                   <el-form-item>
-                    <el-button type="primary" :loading="reviewing" @click="submitReview">
+                    <div v-if="reviewError" class="inline-error review-error" role="alert">{{ reviewError }}</div>
+                    <el-button type="primary" class="imaging-action" :loading="reviewing" @click="submitReview">
                       提交审核
                     </el-button>
-                    <el-button @click="resetReviewForm">重置</el-button>
+                    <el-button class="imaging-action" @click="resetReviewForm">重置</el-button>
                   </el-form-item>
                 </el-form>
               </div>
@@ -255,6 +314,8 @@ import { Monitor, UploadFilled, Close, Plus } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, reviewImagingDetectionApi, getImagingHistoryListApi, uploadImageFileApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 import { getToken } from '@/utils/auth'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
 const userStore = useUserStore()
 
@@ -262,7 +323,10 @@ const activeTab = ref('list')
 const filterStatus = ref('all')
 const taskList = ref([])
 const listLoading = ref(false)
+const listError = ref('')
 const currentTask = ref(null)
+const submitError = ref('')
+const reviewError = ref('')
 
 const imageUrl = ref('')
 const imageFile = ref(null)
@@ -302,24 +366,31 @@ const filteredList = computed(() => {
 
 const getTaskList = async () => {
   listLoading.value = true
+  listError.value = ''
   try {
     // 后端 GET /ai/imaging-detection/list?patientId=xxx（不传 patientId 返回全部）
     const res = await getImagingHistoryListApi(null)
     taskList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
+  } catch (e) {
+    taskList.value = []
+    listError.value = e?.response?.data?.message || e?.message || '影像检测任务加载失败'
   } finally {
     listLoading.value = false
   }
 }
 
 const handleFileChange = (file) => {
+  submitError.value = ''
   const isImage = file.raw.type.startsWith('image/')
   const isLt10M = file.raw.size / 1024 / 1024 < 10
 
   if (!isImage) {
+    submitError.value = '请上传图片文件'
     ElMessage.error('请上传图片文件')
     return
   }
   if (!isLt10M) {
+    submitError.value = '图片大小不能超过 10MB'
     ElMessage.error('图片大小不能超过 10MB')
     return
   }
@@ -391,7 +462,9 @@ const drawDetailAnnotations = () => {
 }
 
 const submitDetection = async () => {
+  submitError.value = ''
   if (!imageFile.value) {
+    submitError.value = '请先上传影像图片'
     ElMessage.warning('请先上传影像图片')
     return
   }
@@ -423,7 +496,8 @@ const submitDetection = async () => {
     ElMessage.success('检测任务已提交，正在处理中...')
     startPolling()
   } catch (e) {
-    ElMessage.error('提交失败，请重试')
+    submitError.value = e?.response?.data?.message || e?.message || '提交失败，请重试'
+    ElMessage.error(submitError.value)
     detecting.value = false
   } finally {
     submitting.value = false
@@ -453,6 +527,7 @@ const startPolling = () => {
       detecting.value = false
       progressStatus.value = 'exception'
       progressText.value = '检测超时，请稍后在历史记录中查看结果'
+      submitError.value = progressText.value
       ElMessage.warning('检测超时，请稍后在历史记录中查看结果')
       getTaskList()
       return
@@ -488,6 +563,7 @@ const startPolling = () => {
         detecting.value = false
         progressStatus.value = 'exception'
         progressText.value = '检测失败：' + (data.failReason || 'AI 服务异常，请重试')
+        submitError.value = progressText.value
         ElMessage.error('检测失败，请重试或联系管理员')
         getTaskList()
       }
@@ -495,7 +571,8 @@ const startPolling = () => {
       clearInterval(pollTimer.value)
       pollTimer.value = null
       detecting.value = false
-      ElMessage.error('获取检测结果失败')
+      submitError.value = e?.response?.data?.message || e?.message || '获取检测结果失败'
+      ElMessage.error(submitError.value)
     }
   }, 1500)
 }
@@ -524,17 +601,21 @@ const viewTask = async (row) => {
 }
 
 const resetReviewForm = () => {
+  reviewError.value = ''
   reviewForm.reviewResult = 'CONFIRMED'
   reviewForm.correctedDiagnosis = ''
   reviewForm.doctorOpinion = ''
 }
 
 const submitReview = async () => {
+  reviewError.value = ''
   if (!reviewForm.doctorOpinion.trim()) {
+    reviewError.value = '请填写医生意见'
     ElMessage.warning('请填写医生意见')
     return
   }
   if (reviewForm.reviewResult === 'CORRECTED' && !reviewForm.correctedDiagnosis.trim()) {
+    reviewError.value = '请填写修正后的诊断'
     ElMessage.warning('请填写修正后的诊断')
     return
   }
@@ -560,7 +641,8 @@ const submitReview = async () => {
     getTaskList()
   } catch (e) {
     if (e !== 'cancel') {
-      ElMessage.error('审核提交失败')
+      reviewError.value = e?.response?.data?.message || e?.message || '审核提交失败'
+      ElMessage.error(reviewError.value)
     }
   } finally {
     reviewing.value = false
@@ -628,11 +710,152 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 20px;
 }
 
+.status-filter {
+  min-width: 0;
+}
+
+.imaging-action {
+  min-height: var(--touch-target);
+  min-width: 88px;
+}
+
+.imaging-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, .84);
+  box-shadow: 0 12px 30px rgba(15, 35, 95, .06);
+}
+
+.imaging-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.imaging-card__header > div {
+  min-width: 0;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.status-chip.success {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.status-chip.warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.status-chip.danger {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.imaging-card__header .status-chip,
+.imaging-card__fields .status-chip {
+  flex: 0 0 auto;
+}
+
+.imaging-card__title,
+.imaging-card__meta {
+  margin: 0;
+}
+
+.imaging-card__title {
+  overflow-wrap: anywhere;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.imaging-card__meta {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.imaging-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.imaging-card__fields div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.imaging-card__fields dt,
+.imaging-card__fields dd {
+  margin: 0;
+}
+
+.imaging-card__fields dt {
+  color: var(--text-secondary);
+}
+
+.imaging-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  text-align: right;
+}
+
 .upload-section {
-  max-width: 700px;
+  max-width: 760px;
+}
+
+.imaging-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(2, 132, 199, .1);
+  border-radius: var(--radius-base);
+  background: var(--bg-page);
+}
+
+.imaging-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.imaging-form :deep(.el-form-item__label),
+.review-form :deep(.el-form-item__label) {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.field-control {
+  width: 100%;
 }
 
 .image-uploader {
@@ -640,7 +863,7 @@ onUnmounted(() => {
 }
 .image-uploader :deep(.el-upload-dragger) {
   width: 100%;
-  height: 320px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -692,6 +915,27 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.submit-section :deep(.el-button + .el-button),
+.review-section :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.inline-error {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(185, 28, 28, .22);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--el-color-danger);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
+.review-error {
+  width: 100%;
+  margin: 0 0 12px;
+}
+
 .progress-section {
   margin-top: 24px;
   padding: 20px;
@@ -722,6 +966,7 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--text-secondary);
   margin: 0;
+  line-height: 1.6;
 }
 
 .detail-content {
@@ -734,7 +979,7 @@ onUnmounted(() => {
   background: #000;
   border-radius: var(--radius-base);
   overflow: hidden;
-  min-height: 400px;
+  min-height: 360px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -820,6 +1065,25 @@ onUnmounted(() => {
 .review-section {
   background: #e6f7ff;
 }
+
+.review-form :deep(.el-form-item:last-child .el-form-item__content) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.review-options {
+  display: grid;
+  gap: 10px;
+}
+
+.review-options :deep(.el-radio) {
+  min-height: var(--touch-target);
+  align-items: center;
+  margin-right: 0;
+  white-space: normal;
+}
+
 .reviewed-box {
   background: #f6ffed;
 }
@@ -827,5 +1091,85 @@ onUnmounted(() => {
   font-size: 12px !important;
   color: var(--text-secondary) !important;
   margin-top: 8px !important;
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .header-left,
+  .filter-bar,
+  .detail-header,
+  .submit-section {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .header-left {
+    gap: 10px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .status-filter,
+  .status-filter :deep(.el-radio-button),
+  .status-filter :deep(.el-radio-button__inner),
+  .filter-bar .imaging-action,
+  .submit-section .imaging-action,
+  .detail-header .imaging-action,
+  .review-form .imaging-action {
+    width: 100%;
+  }
+
+  .status-filter {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .status-filter :deep(.el-radio-button__inner) {
+    min-height: var(--touch-target);
+    line-height: 28px;
+  }
+
+  .imaging-form,
+  .detail-content {
+    grid-template-columns: 1fr;
+  }
+
+  .image-uploader :deep(.el-upload-dragger),
+  .image-preview-wrapper {
+    min-height: 240px;
+    height: auto;
+  }
+
+  .detail-image-section .image-wrapper {
+    min-height: 240px;
+  }
+
+  .detail-info-section :deep(.el-descriptions__body) {
+    overflow-x: auto;
+  }
+
+  .legend {
+    right: 12px;
+    max-width: calc(100% - 24px);
+  }
+}
+
+@media (max-width: 480px) {
+  .image-uploader :deep(.el-upload-dragger),
+  .image-preview-wrapper,
+  .detail-image-section .image-wrapper {
+    min-height: 210px;
+  }
+
+  .imaging-form,
+  .findings-box,
+  .diagnosis-box,
+  .suggestions-box,
+  .review-section,
+  .reviewed-box {
+    padding: 14px;
+  }
 }
 </style>
