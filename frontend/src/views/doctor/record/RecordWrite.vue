@@ -62,14 +62,100 @@
           />
         </el-form-item>
 
-        <el-form-item label="处方信息">
-          <el-input
-            v-model="form.prescriptionsText"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入处方药品及用法"
-          />
-        </el-form-item>
+        <section class="structured-prescription" aria-labelledby="structured-prescription-title">
+          <div class="section-heading">
+            <div>
+              <h3 id="structured-prescription-title" class="section-title">结构化处方</h3>
+              <p class="section-subtitle">处方独立提交到审方流转，病历只保留诊疗记录。</p>
+            </div>
+            <el-button type="primary" plain class="record-action" @click="addPrescriptionItem">新增药品</el-button>
+          </div>
+
+          <article
+            v-for="(item, index) in prescriptionItems"
+            :key="item.key"
+            class="prescription-item"
+            data-testid="structured-prescription-item"
+          >
+            <div class="prescription-item__header">
+              <strong>药品 {{ index + 1 }}</strong>
+              <el-button
+                type="danger"
+                plain
+                class="record-action"
+                :disabled="prescriptionItems.length === 1"
+                :aria-label="`删除第${index + 1}个药品`"
+                @click="removePrescriptionItem(index)"
+              >
+                删除
+              </el-button>
+            </div>
+
+            <div class="prescription-grid">
+              <label class="field-control" :for="`rx-drug-name-${index}`">
+                <span>药品名称</span>
+                <el-input :input-id="`rx-drug-name-${index}`" v-model="item.drugName" placeholder="药品名称" />
+              </label>
+              <label class="field-control" :for="`rx-spec-${index}`">
+                <span>规格</span>
+                <el-input :input-id="`rx-spec-${index}`" v-model="item.specification" placeholder="规格" />
+              </label>
+              <label class="field-control" :for="`rx-dosage-${index}`">
+                <span>单次剂量</span>
+                <el-input :input-id="`rx-dosage-${index}`" v-model="item.dosage" placeholder="单次剂量" />
+              </label>
+              <label class="field-control" :for="`rx-frequency-${index}`">
+                <span>频次</span>
+                <el-input :input-id="`rx-frequency-${index}`" v-model="item.frequency" placeholder="频次" />
+              </label>
+              <label class="field-control" :for="`rx-route-${index}`">
+                <span>给药途径</span>
+                <el-input :input-id="`rx-route-${index}`" v-model="item.route" placeholder="给药途径" />
+              </label>
+              <label class="field-control" :for="`rx-days-${index}`">
+                <span>用药天数</span>
+                <el-input
+                  :input-id="`rx-days-${index}`"
+                  v-model="item.days"
+                  aria-label="用药天数"
+                  inputmode="numeric"
+                  placeholder="天数"
+                />
+              </label>
+              <label class="field-control" :for="`rx-quantity-${index}`">
+                <span>数量</span>
+                <el-input
+                  :input-id="`rx-quantity-${index}`"
+                  v-model="item.quantity"
+                  aria-label="数量"
+                  inputmode="decimal"
+                  placeholder="数量"
+                />
+              </label>
+              <label class="field-control" :for="`rx-unit-${index}`">
+                <span>单位</span>
+                <el-input :input-id="`rx-unit-${index}`" v-model="item.unit" placeholder="单位" />
+              </label>
+              <label class="field-control" :for="`rx-unit-price-${index}`">
+                <span>单价</span>
+                <el-input
+                  :input-id="`rx-unit-price-${index}`"
+                  v-model="item.unitPrice"
+                  aria-label="单价"
+                  inputmode="decimal"
+                  placeholder="单价"
+                />
+              </label>
+            </div>
+          </article>
+
+          <div class="prescription-summary" aria-label="处方费用汇总">
+            <span>处方合计</span>
+            <strong data-testid="structured-prescription-total">¥{{ structuredPrescriptionTotal.toFixed(2) }}</strong>
+          </div>
+
+          <div v-if="prescriptionError" class="inline-error" role="alert">{{ prescriptionError }}</div>
+        </section>
 
         <el-form-item label="医嘱">
           <el-input
@@ -87,10 +173,13 @@
         <el-button type="primary" :loading="archiving" @click="archiveRecord">
           确认归档
         </el-button>
+        <el-button type="primary" class="record-action" :loading="prescriptionSubmitting" @click="submitPrescriptionForReview">
+          开方并提交审方
+        </el-button>
         <el-button type="success" :loading="aiLoading" @click="generateSummary">
           AI生成摘要
         </el-button>
-        <el-button type="warning" :loading="medAnalysisLoading" @click="openMedAnalysis">
+        <el-button type="warning" class="record-action" :loading="medAnalysisLoading" @click="openMedAnalysis">
           AI用药分析
         </el-button>
       </div>
@@ -172,6 +261,7 @@ import { ArrowLeft, CircleCheck } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { createRecordApi, updateRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
+import { createPrescriptionApi, submitPrescriptionApi } from '@/api/prescription'
 import { generateSummaryByTextApi, medicationAnalysisApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 
@@ -192,6 +282,25 @@ const currentDate = ref(dayjs().format('YYYY-MM-DD HH:mm'))
 const medAnalysisVisible = ref(false)
 const medAnalysisLoading = ref(false)
 const medAnalysisResult = ref(null)
+const prescriptionSubmitting = ref(false)
+const prescriptionError = ref('')
+const submittedPrescriptionId = ref('')
+
+const newPrescriptionItem = () => ({
+  key: Date.now() + Math.random(),
+  drugNo: '',
+  drugName: '',
+  specification: '',
+  dosage: '',
+  frequency: '',
+  route: '口服',
+  days: '',
+  quantity: '',
+  unit: '盒',
+  unitPrice: ''
+})
+
+const prescriptionItems = ref([newPrescriptionItem()])
 
 const medRiskLevel = computed(() => {
   return medAnalysisResult.value?.overallRiskLevel || 'LOW'
@@ -208,10 +317,86 @@ const form = reactive({
   pastHistory: '',
   physicalExam: '',
   initialDiagnosis: '',
-  prescriptionsText: '',
   doctorAdvice: '',
   status: 'DRAFT'
 })
+
+const numericValue = (value) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+const structuredPrescriptionTotal = computed(() => prescriptionItems.value.reduce((sum, item) => {
+  return sum + numericValue(item.quantity) * numericValue(item.unitPrice)
+}, 0))
+
+const addPrescriptionItem = () => {
+  prescriptionItems.value.push(newPrescriptionItem())
+}
+
+const removePrescriptionItem = (index) => {
+  if (prescriptionItems.value.length === 1) return
+  prescriptionItems.value.splice(index, 1)
+}
+
+const getPrescriptionDraftItems = () => prescriptionItems.value
+  .filter(item => item.drugName?.trim())
+  .map(item => ({
+    drugNo: item.drugNo || undefined,
+    drugName: item.drugName.trim(),
+    specification: item.specification || undefined,
+    dosage: item.dosage || undefined,
+    frequency: item.frequency || undefined,
+    route: item.route || undefined,
+    days: Number(item.days),
+    quantity: Number(item.quantity),
+    unit: item.unit || undefined,
+    unitPrice: item.unitPrice === '' ? undefined : Number(item.unitPrice)
+  }))
+
+const validatePrescriptionItems = () => {
+  const items = getPrescriptionDraftItems()
+  if (items.length === 0) return '请至少填写一条处方药品'
+  const invalid = items.find(item => !item.drugName || !Number.isFinite(item.days) || item.days < 1 || !Number.isFinite(item.quantity) || item.quantity <= 0)
+  if (invalid) return '请完善药品名称、用药天数和数量'
+  return ''
+}
+
+const buildPrescriptionSnapshot = () => getPrescriptionDraftItems()
+  .map(item => `${item.drugName}${item.specification ? `（${item.specification}）` : ''} ${[item.route, item.dosage, item.frequency].filter(Boolean).join(' ')} ${item.days}天 ${item.quantity}${item.unit || ''}`)
+  .join('\n')
+
+const applyPrescriptionDetail = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return
+  prescriptionItems.value = list.map(item => ({
+    ...newPrescriptionItem(),
+    drugName: item.drugName || item.name || '',
+    specification: item.specification || '',
+    dosage: item.dosage || '',
+    frequency: item.frequency || '',
+    route: item.route || '口服',
+    days: item.days || '',
+    quantity: item.quantity || '',
+    unit: item.unit || '盒',
+    unitPrice: item.unitPrice || ''
+  }))
+}
+
+const extractRecordId = (response) => response?.data?.recordId || response?.data?.recordNo || response?.data?.id
+
+const ensureRecordDraft = async () => {
+  if (currentRecordId.value) {
+    await updateRecordApi(currentRecordId.value, buildPayload())
+    return currentRecordId.value
+  }
+  const created = await createRecordApi(buildPayload())
+  const newId = extractRecordId(created)
+  if (newId) {
+    currentRecordId.value = newId
+    return newId
+  }
+  throw new Error('保存病历失败，无法创建处方')
+}
 
 // 组装后端 CreateRequest 期望的载荷：patientId/doctorId 必填，initialDiagnosis 是数组
 const buildPayload = () => {
@@ -230,7 +415,6 @@ const buildPayload = () => {
     initialDiagnosis: form.initialDiagnosis?.trim()
       ? form.initialDiagnosis.split(/[,，；;\n]/).map(s => s.trim()).filter(Boolean)
       : undefined,
-    prescriptionsText: form.prescriptionsText || undefined,
     doctorAdvice: form.doctorAdvice || undefined
   }
 }
@@ -247,7 +431,7 @@ const saveDraft = async () => {
       await updateRecordApi(currentRecordId.value, buildPayload())
     } else {
       const created = await createRecordApi(buildPayload())
-      const newId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
+      const newId = extractRecordId(created)
       if (newId) currentRecordId.value = newId
     }
     ElMessage.success('草稿已保存')
@@ -273,7 +457,7 @@ const archiveRecord = async () => {
     let recordId = currentRecordId.value
     if (!recordId) {
       const created = await createRecordApi(buildPayload())
-      recordId = created?.data?.id || created?.data?.recordId || created?.data?.recordNo
+      recordId = extractRecordId(created)
       if (!recordId) {
         ElMessage.error('保存病历失败，无法归档')
         return
@@ -292,6 +476,40 @@ const archiveRecord = async () => {
     if (err !== 'cancel') console.error(err)
   } finally {
     archiving.value = false
+  }
+}
+
+const submitPrescriptionForReview = async () => {
+  prescriptionError.value = ''
+  if (!form.chiefComplaint.trim() || !form.initialDiagnosis.trim()) {
+    prescriptionError.value = '请先完善主诉和初步诊断'
+    return
+  }
+  const itemError = validatePrescriptionItems()
+  if (itemError) {
+    prescriptionError.value = itemError
+    return
+  }
+  prescriptionSubmitting.value = true
+  try {
+    const recordId = await ensureRecordDraft()
+    const res = await createPrescriptionApi({
+      recordId: String(recordId),
+      patientId: String(route.query.patientId || userStore.userInfo?.patientId || ''),
+      doctorId: String(route.query.doctorId || userStore.userInfo?.doctorId || ''),
+      departmentId: String(route.query.departmentId || userStore.userInfo?.departmentId || ''),
+      source: 'OUTPATIENT',
+      items: getPrescriptionDraftItems()
+    })
+    const prescriptionId = res.data?.prescriptionId
+    if (!prescriptionId) throw new Error('处方创建失败，请重试')
+    await submitPrescriptionApi(prescriptionId)
+    submittedPrescriptionId.value = prescriptionId
+    ElMessage.success('处方已提交审方')
+  } catch (e) {
+    prescriptionError.value = e?.response?.data?.message || e?.message || '处方提交失败，请重试'
+  } finally {
+    prescriptionSubmitting.value = false
   }
 }
 
@@ -316,23 +534,18 @@ const generateSummary = async () => {
 }
 
 const openMedAnalysis = async () => {
-  if (!form.prescriptionsText?.trim()) {
-    ElMessage.warning('请先填写处方信息（药品名称及用法）')
+  const prescriptionDraftItems = getPrescriptionDraftItems()
+  if (prescriptionDraftItems.length === 0) {
+    ElMessage.warning('请先填写结构化处方药品')
     return
   }
   medAnalysisVisible.value = true
   medAnalysisResult.value = null
   medAnalysisLoading.value = true
   try {
-    // 从处方文本中解析药品列表，或者直接发文本让后端处理
-    const drugs = form.prescriptionsText
-      .split(/[，,；;\n]/)
-      .map(s => s.trim())
-      .filter(s => s.length > 1)
-      .map(name => ({ drugName: name }))
     const payload = {
       recordId: currentRecordId.value || null,
-      prescriptions: drugs.length ? drugs : [{ drugName: form.prescriptionsText }],
+      prescriptions: prescriptionDraftItems.length ? prescriptionDraftItems : [{ drugName: buildPrescriptionSnapshot() }],
       patientContext: null
     }
     const res = await medicationAnalysisApi(payload)
@@ -360,6 +573,7 @@ onMounted(async () => {
         form.physicalExam = d.physicalExam || ''
         form.initialDiagnosis = Array.isArray(d.initialDiagnosis) ? d.initialDiagnosis.join('；') : (d.initialDiagnosis || '')
         form.doctorAdvice = d.doctorAdvice || ''
+        applyPrescriptionDetail(d.prescriptions)
       }
     } catch (e) {
       // 加载失败不阻塞新建流程
@@ -402,13 +616,120 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
+.structured-prescription {
+  display: grid;
+  gap: 14px;
+  max-width: 900px;
+  margin: 0 auto 18px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base);
+  background: rgba(248, 250, 252, .7);
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-title,
+.section-subtitle {
+  margin: 0;
+}
+
+.section-title {
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.prescription-item {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-lighter);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.prescription-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+}
+
+.prescription-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-control span {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.field-control :deep(.el-input__wrapper) {
+  min-height: var(--touch-target);
+}
+
+.prescription-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px;
+  border-top: 1px solid var(--border-lighter);
+  color: var(--text-regular);
+}
+
+.prescription-summary strong {
+  font-size: var(--font-lg);
+  color: var(--text-primary);
+}
+
+.inline-error {
+  padding: 12px;
+  border: 1px solid rgba(185, 28, 28, .22);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--el-color-danger);
+  font-size: var(--font-sm);
+  line-height: 1.6;
+}
+
 .form-footer {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
   padding-top: 20px;
   border-top: 1px solid var(--border-light);
   margin-top: 20px;
+}
+
+.record-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
 }
 
 /* 用药分析抽屉 */
@@ -507,5 +828,71 @@ onMounted(async () => {
   line-height: 2;
   font-size: 14px;
   color: var(--text-regular);
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .patient-bar,
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-header .el-button,
+  .section-heading .record-action {
+    width: 100%;
+  }
+
+  .patient-bar {
+    gap: 8px;
+  }
+
+  .record-form {
+    max-width: 100%;
+  }
+
+  .record-form :deep(.el-form-item) {
+    display: block;
+  }
+
+  .record-form :deep(.el-form-item__label) {
+    display: block;
+    width: auto !important;
+    margin-bottom: 6px;
+    text-align: left;
+    line-height: 1.5;
+  }
+
+  .record-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  .prescription-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prescription-item__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prescription-item__header .record-action {
+    width: 100%;
+  }
+
+  .prescription-summary {
+    justify-content: space-between;
+  }
+
+  .form-footer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .form-footer .el-button {
+    width: 100%;
+    margin-left: 0;
+    min-height: var(--touch-target);
+  }
 }
 </style>

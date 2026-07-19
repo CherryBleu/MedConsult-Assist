@@ -158,6 +158,9 @@ export const mockPrescriptionDetail = (id) => {
 }
 
 export const mockCreatePrescription = (data = {}) => {
+  if (consumeFailOnce('mock_prescription_create_fail_once')) {
+    return Promise.reject(new Error('处方提交失败，请重试'))
+  }
   const prescription = {
     prescriptionId: 'RX' + Date.now(),
     recordId: data.recordId,
@@ -179,6 +182,9 @@ export const mockCreatePrescription = (data = {}) => {
 }
 
 export const mockSubmitPrescription = (id) => {
+  if (consumeFailOnce('mock_prescription_submit_fail_once')) {
+    return Promise.reject(new Error('处方提交审方失败，请重试'))
+  }
   const prescription = findPrescription(id)
   if (!prescription) return Promise.reject(new Error('处方不存在'))
   prescription.status = 'PENDING_REVIEW'
