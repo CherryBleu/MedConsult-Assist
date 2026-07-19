@@ -110,6 +110,23 @@ class MedicalRecordFlowTest {
                 .header("X-User-Roles", "DOCTOR")
                 .header("X-User-Doctor-Id", "2001");
     }
+    /** 其他医生身份（doctorId=2999，与 createRecord stub 的归属医生不一致 → 越权） */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder otherDoctorAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "5002")
+                .header("X-User-Primary-Role", "DOCTOR")
+                .header("X-User-Roles", "DOCTOR")
+                .header("X-User-Doctor-Id", "2999");
+    }
+    /** 多角色账号当前以 DOCTOR 为主角色时，应按医生接诊范围判定，不被 PATIENT 角色污染 */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder doctorPrimaryMultiRoleAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "5003")
+                .header("X-User-Primary-Role", "DOCTOR")
+                .header("X-User-Roles", "PATIENT,DOCTOR")
+                .header("X-User-Patient-Id", "9999")
+                .header("X-User-Doctor-Id", "2001");
+    }
     /** 患者本人身份（patientId=1001，与 createRecord stub 的归属主键一致） */
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder selfPatientAuth(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
@@ -260,6 +277,21 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void recordDetail_otherDoctorForbidden() throws Exception {
+        String recordNo = createRecord(); // 归属 doctorId=2001
+        mvc.perform(otherDoctorAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void recordDetail_doctorPrimaryMultiRoleAllowed() throws Exception {
+        String recordNo = createRecord(); // 归属 doctorId=2001，patientId=1001
+        mvc.perform(doctorPrimaryMultiRoleAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
     void recordDetail_selfPatientAllowed() throws Exception {
         String recordNo = createRecord(); // 归属 patientId=1001
         // 患者本人（patientId=1001）查自己病历 → 放行
@@ -279,11 +311,41 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void recordList_doctorScopedToAssigned() throws Exception {
+        createRecord(); // 归属 doctorId=2001
+        insertMedicalRecord("MR_OTHER_DOCTOR", 1001L, 2999L, "其他医生接诊病历");
+
+        mvc.perform(otherDoctorAuth(get("/api/v1/medical-records")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].chiefComplaint").value("其他医生接诊病历"));
+    }
+
+    @Test
     void updateDraft_otherPatientForbidden() throws Exception {
         String recordNo = createRecord(); // 归属 patientId=1001
         mvc.perform(otherPatientAuth(put("/api/v1/medical-records/" + recordNo))
                         .contentType("application/json")
                         .content("{\"doctorAdvice\":\"尝试改他人病历\"}"))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void updateDraft_otherDoctorForbidden() throws Exception {
+        String recordNo = createRecord(); // 归属 doctorId=2001
+        mvc.perform(otherDoctorAuth(put("/api/v1/medical-records/" + recordNo))
+                        .contentType("application/json")
+                        .content("{\"doctorAdvice\":\"尝试改其他医生病历\"}"))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void archive_otherDoctorForbidden() throws Exception {
+        String recordNo = createRecord(); // 归属 doctorId=2001
+        mvc.perform(otherDoctorAuth(post("/api/v1/medical-records/" + recordNo + "/archive"))
+                        .contentType("application/json")
+                        .content("{\"confirmBy\":\"D2999\",\"confirmNote\":\"尝试归档其他医生病历\"}"))
                 .andExpect(jsonPath("$.code").value(403001));
     }
 
@@ -785,6 +847,16 @@ class MedicalRecordFlowTest {
         // 因测试类注入 DataSource 较重，此处用一个轻量手段：record_no 是 MR + base36 雪花，
         // 但我们存的是 IdWorker.getId() 的无符号 base36，无法逆推。改为通过 jdbc 查。
         return resolveIdViaJdbc("medical_record", "record_no", recordNo);
+    }
+
+    private void insertMedicalRecord(String recordNo, Long patientId, Long doctorId, String chiefComplaint) {
+        new JdbcTemplate(dataSource).update("""
+                INSERT INTO medical_record
+                (id, record_no, patient_id, doctor_id, chief_complaint, initial_diagnosis,
+                 status, created_at, updated_at, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, 'DRAFT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+                """,
+                System.nanoTime(), recordNo, patientId, doctorId, chiefComplaint, "[\"测试诊断\"]");
     }
 
     @Autowired

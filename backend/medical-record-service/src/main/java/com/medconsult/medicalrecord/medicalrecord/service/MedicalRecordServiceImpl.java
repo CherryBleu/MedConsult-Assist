@@ -113,10 +113,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     @Override
     public MedicalRecordDTO.DetailResponse detail(String recordNo) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 只能查自己的病历（架构 §4.3 SELF 数据范围）。
+        // 越权防护（IDOR）：PATIENT 只能查自己的病历；DOCTOR 只能查自己接诊的病历。
         // medical_record.patient_id 落库已是真实主键（create 时 Feign 反查 no→id），
-        // 与 JWT 里的 patientId（BIGINT PK）同类型可直接比较。DOCTOR/管理员不限制。
-        enforcePatientOwnership(r.getPatientId());
+        // medical_record.doctor_id 与 JWT 里的 doctorId（BIGINT PK）同类型可直接比较。
+        enforceRecordAccess(r);
         // patientId/doctorId 落库已是真实主键（create 时 Feign 反查 no→id）；但详情接口回传
         // 业务编号需 id→no 反向解析，目前未实现（display 反查是独立需求，留待下一批）。
         // 暂回传 null（避免传主键误导调用方当作 patient_no 使用）。
@@ -135,12 +135,16 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     public PageResult<MedicalRecordDTO.ListItem> list(int page, int pageSize, String patientId, Long appointmentId) {
         Page<MedicalRecord> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<MedicalRecord> qw = new QueryWrapper<>();
-        // 越权防护（IDOR）：PATIENT 只能列自己的病历（架构 §4.3 SELF 数据范围）。
+        // 越权防护（IDOR）：PATIENT 只能列自己的病历；DOCTOR 只能列自己接诊的病历。
         // PATIENT 身份时忽略入参 patientId，强制限定为本人 patientId，防用他人 patient_no 越权拉取。
         // 非 PATIENT（DOCTOR/管理员）尊重入参 patientId 过滤。
         Long scopePatientId = resolvePatientScope(patientId);
         if (scopePatientId != null) {
             qw.eq("patient_id", scopePatientId);
+        }
+        Long scopeDoctorId = resolveDoctorScope();
+        if (scopeDoctorId != null) {
+            qw.eq("doctor_id", scopeDoctorId);
         }
         // 可选：按预约 ID 过滤（供"完成就诊前校验是否有病历"场景）
         if (appointmentId != null) {
@@ -171,8 +175,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
             detail = "'draft updated'")
     public MedicalRecordDTO.UpdateResponse updateDraft(String recordNo, MedicalRecordDTO.UpdateDraftRequest req) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿
-        enforcePatientOwnership(r.getPatientId());
+        // 越权防护（IDOR）：PATIENT 只能改自己的病历草稿；DOCTOR 只能改自己接诊的病历草稿
+        enforceRecordAccess(r);
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可修改，当前状态: " + r.getStatus() + "（归档后不可改，§6.1 医疗文书不可变）");
@@ -212,8 +216,8 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
             detail = "'status=' + #result.status()")
     public MedicalRecordDTO.ArchiveResponse archive(String recordNo, MedicalRecordDTO.ArchiveRequest req) {
         MedicalRecord r = requireByNo(recordNo);
-        // 越权防护（IDOR）：PATIENT 不能归档他人病历（归档由接诊医生触发，此处防越权）
-        enforcePatientOwnership(r.getPatientId());
+        // 越权防护（IDOR）：PATIENT 不能归档他人病历；DOCTOR 只能归档自己接诊的病历
+        enforceRecordAccess(r);
         if (!"DRAFT".equals(r.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "仅草稿病历可归档，当前状态: " + r.getStatus());
@@ -318,7 +322,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
 
     // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围）=====
     //
-    // 当前调用者为 PATIENT 时，强制只能访问自己的数据；DOCTOR / 管理员不限制（架构 §4.3 ALL/ASSIGNED）。
+    // 当前调用者为 PATIENT 时，强制只能访问自己的数据；DOCTOR 强制限定自己接诊的数据（架构 §4.3 SELF/ASSIGNED）。
     // 身份取自 SecurityContext（网关已解析 X-User-* 头重建 JwtPayload，§4.4）。
     // 直连（无网关头、无 token）时 SecurityContext.getPayload() 返回 null，按"匿名拒绝"处理。
 
@@ -352,34 +356,71 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     }
 
     /**
+     * 列表/查询的 doctor 作用域解析：
+     * <ul>
+     *   <li>DOCTOR 身份：强制返回本人 doctorId（只能查自己接诊的病历）</li>
+     *   <li>PATIENT/管理员身份：不按 doctor 过滤，分别交由 patient scope 或管理员权限处理</li>
+     * </ul>
+     */
+    private Long resolveDoctorScope() {
+        JwtPayload p = SecurityContext.getPayload();
+        if (p == null || !p.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(p)) {
+            return null;
+        }
+        if (isDoctor(p)) {
+            Long selfDoctorId = p.doctorId();
+            if (selfDoctorId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联医生档案，无法查询病历");
+            }
+            return selfDoctorId;
+        }
+        return null;
+    }
+
+    /**
      * 单条资源的归属校验（detail/update/delete 等带具体 record 的场景）。
      * <p>PATIENT 身份：资源的 patient_id 必须等于本人 patientId，否则 FORBIDDEN。
-     * DOCTOR/管理员：不校验（可看全部/接诊范围）。
+     * <p>DOCTOR 身份：资源的 doctor_id 必须等于本人 doctorId，否则 FORBIDDEN。
+     * <p>管理员：不校验，保留既有跨病历管理行为。
      */
-    private void enforcePatientOwnership(Long resourcePatientId) {
+    private void enforceRecordAccess(MedicalRecord resource) {
         JwtPayload p = SecurityContext.getPayload();
         if (p == null || !p.isUser()) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
         }
         if (isPatient(p)) {
             Long selfPatientId = p.patientId();
-            if (selfPatientId == null || !selfPatientId.equals(resourcePatientId)) {
+            if (selfPatientId == null || !selfPatientId.equals(resource.getPatientId())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该患者的病历");
+            }
+            return;
+        }
+        if (isDoctor(p)) {
+            Long selfDoctorId = p.doctorId();
+            if (selfDoctorId == null || !selfDoctorId.equals(resource.getDoctorId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问非本人接诊的病历");
             }
         }
     }
 
-    /** 是否 PATIENT 主角色（primaryRole 或 roles 含 PATIENT） */
+    /** 是否 PATIENT 主角色；旧 token 缺 primaryRole 时回退 roles。 */
     private static boolean isPatient(JwtPayload p) {
         if (p == null) return false;
-        if ("PATIENT".equals(p.primaryRole())) return true;
+        if (p.primaryRole() != null && !p.primaryRole().isBlank()) {
+            return "PATIENT".equals(p.primaryRole());
+        }
         return p.roles() != null && p.roles().contains("PATIENT");
     }
 
-    /** 是否 DOCTOR 主角色（与 isPatient 同款判定） */
+    /** 是否 DOCTOR 主角色；旧 token 缺 primaryRole 时回退 roles。 */
     private static boolean isDoctor(JwtPayload p) {
         if (p == null) return false;
-        if ("DOCTOR".equals(p.primaryRole())) return true;
+        if (p.primaryRole() != null && !p.primaryRole().isBlank()) {
+            return "DOCTOR".equals(p.primaryRole());
+        }
         return p.roles() != null && p.roles().contains("DOCTOR");
     }
 
