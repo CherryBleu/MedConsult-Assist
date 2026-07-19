@@ -119,8 +119,13 @@ def verify_launch_config(
             errors.append(f"unexpected launch project {name}")
 
     seen: set[str] = set()
-    for config in configurations:
+    for index, config in enumerate(configurations, start=1):
         project_name = str(config.get("projectName", ""))
+        label = project_name or str(config.get("name", f"configuration #{index}"))
+        if not project_name:
+            errors.append(f"{label} must declare projectName")
+            continue
+
         if project_name in seen:
             errors.append(f"duplicate launch project {project_name}")
         seen.add(project_name)
