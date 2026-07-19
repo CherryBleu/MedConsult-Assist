@@ -7,6 +7,10 @@ const consumeFailOnce = (key) => {
 
 // 药品列表
 export const mockDrugList = () => {
+  const isDrugCatalogPage = typeof window !== 'undefined' && window.location.pathname === '/pharmacy/drug'
+  if (isDrugCatalogPage && consumeFailOnce('mock_drug_list_fail_once')) {
+    return Promise.reject(new Error('药品目录加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
@@ -42,6 +46,9 @@ export const mockStockList = () => {
 
 // 新增药品
 export const mockAddDrug = (data) => {
+  if (consumeFailOnce('mock_drug_save_fail_once')) {
+    return Promise.reject(new Error('药品保存失败，请重试'))
+  }
   return {
     code: 0,
     message: '新增成功',

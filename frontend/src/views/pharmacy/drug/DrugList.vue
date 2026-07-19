@@ -7,6 +7,7 @@
           <el-input
             v-model="searchKey"
             class="filter-control search-control"
+            aria-label="搜索药品名称或编号"
             placeholder="搜索药品名称/编号"
             clearable
             @keyup.enter="getDrugList"
@@ -47,8 +48,16 @@
               <el-table-column label="操作" width="172" fixed="right">
                 <template #default="{ row }">
                   <div class="table-actions">
-                    <el-button class="table-action" type="primary" link @click="handleEdit(row)">编辑</el-button>
-                    <el-button class="table-action" type="danger" link @click="handleToggleStatus(row)">
+                    <el-button class="table-action" type="primary" link :aria-label="`编辑${row.name || '药品'}`" @click="handleEdit(row)">
+                      编辑
+                    </el-button>
+                    <el-button
+                      class="table-action"
+                      type="danger"
+                      link
+                      :aria-label="`${row.status === 'DISABLED' ? '启用' : '禁用'}${row.name || '药品'}`"
+                      @click="handleToggleStatus(row)"
+                    >
                       {{ row.status === 'DISABLED' ? '启用' : '禁用' }}
                     </el-button>
                   </div>
@@ -123,7 +132,13 @@
           <el-input v-model="form.approvalNo" placeholder="国药准字..." />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%">
+          <el-select
+            v-model="form.category"
+            class="category-select"
+            aria-label="选择药品分类"
+            placeholder="请选择分类"
+            style="width: 100%"
+          >
             <el-option label="抗生素" value="抗生素" />
             <el-option label="解热镇痛" value="解热镇痛" />
             <el-option label="降压药" value="降压药" />
@@ -139,7 +154,7 @@
           <el-input-number v-model="form.price" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="单位" prop="unit">
-          <el-select v-model="form.unit" placeholder="请选择单位" style="width: 100%">
+          <el-select v-model="form.unit" aria-label="选择药品单位" placeholder="请选择单位" style="width: 100%">
             <el-option label="盒" value="盒" />
             <el-option label="瓶" value="瓶" />
             <el-option label="支" value="支" />
@@ -313,6 +328,11 @@ onMounted(() => {
 .drug-action {
   min-height: var(--touch-target);
   min-width: 76px;
+  touch-action: manipulation;
+}
+.drug-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 .table-actions {
   display: flex;
