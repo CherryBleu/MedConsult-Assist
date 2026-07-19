@@ -83,6 +83,9 @@ for (let i = 0; i < 14; i++) {
 }
 
 export const mockScheduleList = (doctorId) => {
+  if (consumeFailOnce('mock_doctor_schedule_fail_once')) {
+    return Promise.reject(new Error('排班加载失败，请重试'))
+  }
   let list = [...mockSchedules]
   if (doctorId) {
     list = list.filter(s => s.doctorId === Number(doctorId))
