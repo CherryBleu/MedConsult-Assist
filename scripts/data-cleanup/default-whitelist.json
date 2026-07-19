@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "description": "Explicit dry-run protection whitelist for MedConsult data cleanup. Extend via --config or --allow-* CLI arguments; do not remove built-in seed identities without review.",
+  "protected_identities": [
+    {
+      "source": "backend/auth-service/src/main/java/com/medconsult/auth/DataSeeder.java",
+      "role": "HOSPITAL_ADMIN",
+      "user_id": 1,
+      "user_no": "U0000001",
+      "account": "admin",
+      "phone": "13800000000",
+      "name": "系统管理员",
+      "patient_id": null,
+      "doctor_id": null,
+      "pharmacist_id": null
+    },
+    {
+      "source": "backend/auth-service/src/main/java/com/medconsult/auth/DataSeeder.java",
+      "role": "DOCTOR",
+      "user_id": 2,
+      "user_no": "U0000002",
+      "account": "doctor",
+      "phone": "13800000002",
+      "name": "张心明",
+      "patient_id": null,
+      "doctor_id": 2001,
+      "pharmacist_id": null
+    },
+    {
+      "source": "backend/auth-service/src/main/java/com/medconsult/auth/DataSeeder.java",
+      "role": "PATIENT",
+      "user_id": 3,
+      "user_no": "U0000003",
+      "account": "patient",
+      "phone": "13800000001",
+      "name": "赵演示",
+      "patient_id": 3001,
+      "doctor_id": null,
+      "pharmacist_id": null
+    },
+    {
+      "source": "backend/auth-service/src/main/java/com/medconsult/auth/DataSeeder.java",
+      "role": "PHARMACY_ADMIN",
+      "user_id": 4,
+      "user_no": "U0000004",
+      "account": "yaofang",
+      "phone": "13800000003",
+      "name": "药房管理员",
+      "patient_id": null,
+      "doctor_id": null,
+      "pharmacist_id": 4001
+    }
+  ]
+}

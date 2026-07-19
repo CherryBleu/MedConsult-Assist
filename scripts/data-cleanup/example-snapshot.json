@@ -1,0 +1,58 @@
+{
+  "mysql": {
+    "medconsult_auth.sys_user": [
+      {
+        "id": 1,
+        "user_no": "U0000001",
+        "account": "admin",
+        "phone": "13800000000",
+        "name": "系统管理员",
+        "role": "HOSPITAL_ADMIN",
+        "patient_id": null,
+        "doctor_id": null,
+        "pharmacist_id": null,
+        "deleted": 0
+      },
+      {
+        "id": 99,
+        "user_no": "U_TEST_099",
+        "account": "test_patient_legacy",
+        "phone": "18800009999",
+        "name": "测试患者",
+        "role": "PATIENT",
+        "patient_id": null,
+        "doctor_id": null,
+        "pharmacist_id": null,
+        "deleted": 0
+      }
+    ],
+    "medconsult_auth.login_log": [
+      {
+        "id": 500,
+        "user_id": 99,
+        "account": "test_patient_legacy"
+      },
+      {
+        "id": 501,
+        "user_id": 1,
+        "account": "admin"
+      }
+    ],
+    "medconsult_patient.patient": [
+      {
+        "id": 3001,
+        "patient_no": "P30001",
+        "name": "赵演示",
+        "phone": "13800000001",
+        "deleted": 0
+      },
+      {
+        "id": 9901,
+        "patient_no": "P_TEST_9901",
+        "name": "测试患者档案",
+        "phone": "18800009999",
+        "deleted": 0
+      }
+    ]
+  }
+}
