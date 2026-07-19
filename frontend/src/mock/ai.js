@@ -439,8 +439,8 @@ export const mockSendMessage = (sessionId, userMessage) => {
           score: 0.86,
           sourceId: 'DISEASE_JSON:心绞痛',
           diseaseName: '心绞痛',
-          fieldName: 'cure_department',
-          chunkText: '疑似心血管急症建议先至急诊科评估，再由心血管内科进一步诊治。'
+          fieldName: 'check',
+          chunkText: '如伴胸痛大汗，建议尽快完成心电图、心肌酶和生命体征评估。'
         }
       ] : [
         {
@@ -456,24 +456,24 @@ export const mockSendMessage = (sessionId, userMessage) => {
           score: 0.82,
           sourceId: 'DISEASE_JSON:上呼吸道感染',
           diseaseName: '上呼吸道感染',
-          fieldName: 'cure_department',
-          chunkText: '推荐就诊科室包含呼吸内科。'
+          fieldName: 'prevent',
+          chunkText: '建议注意休息、多饮温水，并避免受凉和持续熬夜。'
         }
       ],
       citations: highRisk ? [
         {
           sourceId: 'DISEASE_JSON:急性冠脉综合征',
           diseaseName: '急性冠脉综合征',
-          matchedFields: ['symptom', 'cure_department'],
-          snippet: '胸痛伴大汗需优先排除急性冠脉综合征；建议急诊科及时评估。',
+          matchedFields: ['symptom', 'check', 'cure_department'],
+          snippet: '胸痛伴大汗需优先排除急性冠脉综合征；建议急诊科及时评估并尽快完成相关检查。',
           score: 0.91
         }
       ] : [
         {
           sourceId: 'DISEASE_JSON:急性支气管炎',
           diseaseName: '急性支气管炎',
-          matchedFields: ['symptom', 'cure_department'],
-          snippet: '症状包含咳嗽、咳痰，可伴随发热、咽痛等表现；推荐就诊科室包含呼吸内科。',
+          matchedFields: ['symptom', 'prevent', 'cure_department'],
+          snippet: '症状包含咳嗽、咳痰，可伴随发热、咽痛等表现；日常可先注意休息、多饮水，并按需前往呼吸内科。',
           score: 0.89
         }
       ],

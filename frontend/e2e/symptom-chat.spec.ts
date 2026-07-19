@@ -34,6 +34,11 @@ async function expectTouchTargetsAtLeast(page: Page, selector: string, minSize =
   }
 }
 
+async function sendSymptom(page: Page, symptom: string) {
+  await page.getByPlaceholder('请输入您的症状描述...').fill(symptom)
+  await page.getByRole('button', { name: '发送' }).click()
+}
+
 /**
  * 流程 2：AI 症状自诊问答（RAG）。
  * 发送 mock 预设的症状（src/mock/ai.js 的 mockSendMessage 对 "咳嗽有痰怎么办" 有固定回复），
@@ -44,8 +49,7 @@ test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
   await gotoConsult(page)
 
   // 输入症状并发送（输入框 placeholder 固定）
-  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
-  await page.getByRole('button', { name: '发送' }).click()
+  await sendSymptom(page, '咳嗽有痰怎么办')
 
   // 行为断言1：我的消息出现在对话区
   await expect(page.getByText('咳嗽有痰怎么办').first()).toBeVisible({ timeout: 15_000 })
@@ -58,14 +62,17 @@ test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
   await expect(page.getByText('检索证据').first()).toBeVisible()
   await expect(page.getByText('急性支气管炎').first()).toBeVisible()
   await expect(page.getByText('向量匹配').first()).toBeVisible()
-  await expect(page.getByText('symptom').first()).toBeVisible()
+  await expect(page.getByText('症状表现').first()).toBeVisible()
+  await expect(page.getByText('日常预防').first()).toBeVisible()
+  await expect(page.getByText('symptom')).toHaveCount(0)
+  await expect(page.getByText('prevent')).toHaveCount(0)
+  await expect(page.getByText('DISEASE_JSON')).toHaveCount(0)
 })
 
 test('高风险症状先展示急症安全摘要再展示 RAG 证据', async ({ page }) => {
   await gotoConsult(page)
 
-  await page.getByPlaceholder('请输入您的症状描述...').fill('胸痛大汗怎么办')
-  await page.getByRole('button', { name: '发送' }).click()
+  await sendSymptom(page, '胸痛大汗怎么办')
 
   const safetySummary = page.getByTestId('safety-summary').first()
   await expect(safetySummary).toBeVisible({ timeout: 20_000 })
@@ -81,12 +88,37 @@ test('高风险症状先展示急症安全摘要再展示 RAG 证据', async ({ 
   expect(safetyBox?.y ?? 0).toBeLessThan(evidenceBox?.y ?? Number.MAX_SAFE_INTEGER)
 })
 
+test('桌面端输入区与用户消息列连续对齐', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 960 })
+  await gotoConsult(page)
+
+  await sendSymptom(page, '咳嗽有痰怎么办')
+  await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
+
+  const composer = page.getByTestId('desktop-composer').first()
+  const lastUserRow = page.locator('.message-item.user-message').last()
+  const [composerBox, userRowBox] = await Promise.all([
+    composer.boundingBox(),
+    lastUserRow.boundingBox()
+  ])
+
+  expect(composerBox).not.toBeNull()
+  expect(userRowBox).not.toBeNull()
+
+  const composerLeft = composerBox?.x ?? 0
+  const composerRight = (composerBox?.x ?? 0) + (composerBox?.width ?? 0)
+  const userRowLeft = userRowBox?.x ?? 0
+  const userRowRight = (userRowBox?.x ?? 0) + (userRowBox?.width ?? 0)
+
+  expect(Math.abs(composerLeft - userRowLeft)).toBeLessThanOrEqual(16)
+  expect(Math.abs(composerRight - userRowRight)).toBeLessThanOrEqual(16)
+})
+
 test('移动端问诊页无横向滚动且关键控件满足触控尺寸', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await gotoConsult(page)
 
-  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
-  await page.getByRole('button', { name: '发送' }).click()
+  await sendSymptom(page, '咳嗽有痰怎么办')
   await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
 
   await expectTouchTargetsAtLeast(page, '.ai-consult-action')
@@ -97,8 +129,7 @@ test('发送失败时保留症状并提供可重试错误状态', async ({ page 
   await gotoConsult(page)
   await page.evaluate(() => localStorage.setItem('mock_symptom_chat_fail_once', '1'))
 
-  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
-  await page.getByRole('button', { name: '发送' }).click()
+  await sendSymptom(page, '咳嗽有痰怎么办')
 
   await expect(page.getByText('咳嗽有痰怎么办').first()).toBeVisible()
   const errorAlert = page.getByRole('alert').filter({ hasText: 'AI 问诊服务暂时不可用' })
@@ -111,15 +142,17 @@ test('发送失败时保留症状并提供可重试错误状态', async ({ page 
 test('键盘可聚焦并切换 RAG 证据 disclosure', async ({ page }) => {
   await gotoConsult(page)
 
-  await page.getByPlaceholder('请输入您的症状描述...').fill('咳嗽有痰怎么办')
-  await page.getByRole('button', { name: '发送' }).click()
+  await sendSymptom(page, '咳嗽有痰怎么办')
   await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
 
   const evidenceToggle = page.getByTestId('evidence-toggle').first()
   await evidenceToggle.focus()
   await expect(evidenceToggle).toBeFocused()
   await evidenceToggle.press('Enter')
-  await expect(page.getByText('vec_mock_001').first()).toBeVisible()
+  await expect(page.getByText('证据字段：症状表现').first()).toBeVisible()
+  await expect(page.getByText('知识库疾病信息').first()).toBeVisible()
+  await expect(page.getByText('vec_mock_001')).toHaveCount(0)
+  await expect(page.getByText('cure_department')).toHaveCount(0)
 })
 
 test('患者 AI 问诊页没有 serious 或 critical Axe 违规', async ({ page }) => {

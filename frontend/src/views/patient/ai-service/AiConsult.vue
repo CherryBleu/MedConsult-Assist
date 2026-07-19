@@ -95,7 +95,7 @@
 
                   <div class="message-bubble ai-bubble">{{ msg.content }}</div>
 
-                  <section v-if="hasEvidence(msg)" class="evidence-panel" aria-label="RAG 检索证据">
+                  <section v-if="hasEvidence(msg)" class="evidence-panel" aria-label="相关疾病依据">
                     <div class="evidence-title">
                       <span class="evidence-title-main">
                         <el-icon><Document /></el-icon>
@@ -114,16 +114,19 @@
                         class="citation-card"
                       >
                         <div class="citation-head">
-                          <strong>{{ citation.diseaseName || citation.sourceId || '疾病 JSON 条目' }}</strong>
+                          <div class="citation-title">
+                            <strong>{{ displayDiseaseName(citation) }}</strong>
+                            <span class="citation-source">{{ evidenceSourceLabel(citation.sourceId) }}</span>
+                          </div>
                           <span v-if="typeof citation.score === 'number'" class="score-pill">
                             {{ formatScore(citation.score) }}
                           </span>
                         </div>
                         <p v-if="citation.snippet" class="citation-snippet">{{ citation.snippet }}</p>
-                        <div v-if="citation.matchedFields?.length" class="field-row">
-                          <span class="field-label">匹配字段</span>
+                        <div v-if="evidenceFieldLabels(citation).length" class="field-row">
+                          <span class="field-label">涉及内容</span>
                           <el-tag
-                            v-for="field in citation.matchedFields"
+                            v-for="field in evidenceFieldLabels(citation)"
                             :key="`${citationKey(citation)}-${field}`"
                             size="small"
                             effect="plain"
@@ -153,15 +156,16 @@
                           class="vector-item"
                         >
                           <div class="vector-head">
-                            <strong>{{ match.diseaseName || match.sourceId || '疾病 JSON 条目' }}</strong>
+                            <div class="citation-title">
+                              <strong>{{ displayDiseaseName(match) }}</strong>
+                              <span class="citation-source">{{ evidenceSourceLabel(match.sourceId) }}</span>
+                            </div>
                             <span v-if="typeof match.score === 'number'" class="score-pill">
                               {{ formatScore(match.score) }}
                             </span>
                           </div>
                           <div class="vector-meta">
-                            <span>{{ match.fieldName || 'text' }}</span>
-                            <span v-if="match.vectorId"> · {{ match.vectorId }}</span>
-                            <span v-if="match.sourceId"> · {{ match.sourceId }}</span>
+                            <span>证据字段：{{ fieldLabel(match.fieldName) }}</span>
                           </div>
                           <p v-if="match.chunkText" class="vector-snippet">{{ match.chunkText }}</p>
                         </article>
@@ -181,7 +185,7 @@
                 <div class="message-bubble user-bubble">{{ msg.content }}</div>
               </div>
               <el-avatar :size="36" class="user-avatar">
-                {{ (userStore.userInfo.name || '?').charAt(0) }}
+                {{ userInitial }}
               </el-avatar>
             </template>
           </article>
@@ -200,44 +204,51 @@
         </section>
 
         <form class="consult-composer" aria-label="发送症状描述" @submit.prevent="sendMessage">
-          <label class="composer-label" for="symptom-input">症状描述</label>
-          <div class="composer-row">
-            <el-input
-              id="symptom-input"
-              v-model="inputText"
-              type="textarea"
-              :rows="3"
-              :autosize="{ minRows: 2, maxRows: 5 }"
-              maxlength="500"
-              show-word-limit
-              placeholder="请输入您的症状描述..."
-              aria-label="症状描述"
-              aria-keyshortcuts="Control+Enter"
-              @keydown.ctrl.enter.prevent="sendMessage"
-            />
-            <el-button
-              class="send-button ai-consult-action"
-              type="primary"
-              native-type="submit"
-              :disabled="!inputText.trim() || loading"
-            >
-              发送
-            </el-button>
-          </div>
+          <div class="composer-shell" data-testid="desktop-composer">
+            <div class="composer-body">
+              <label class="composer-label" for="symptom-input">症状描述</label>
+              <div class="composer-row">
+                <el-input
+                  id="symptom-input"
+                  v-model="inputText"
+                  type="textarea"
+                  :rows="3"
+                  :autosize="{ minRows: 2, maxRows: 5 }"
+                  maxlength="500"
+                  show-word-limit
+                  placeholder="请输入您的症状描述..."
+                  aria-label="症状描述"
+                  aria-keyshortcuts="Control+Enter"
+                  @keydown.ctrl.enter.prevent="sendMessage"
+                />
+                <el-button
+                  class="send-button ai-consult-action"
+                  type="primary"
+                  native-type="submit"
+                  :disabled="!inputText.trim() || loading"
+                >
+                  发送
+                </el-button>
+              </div>
 
-          <div class="quick-questions" aria-label="快捷提问">
-            <span class="quick-label">快捷提问</span>
-            <el-button
-              v-for="q in quickQuestions"
-              :key="q"
-              class="quick-chip ai-consult-action"
-              size="small"
-              type="primary"
-              plain
-              @click="quickSend(q)"
-            >
-              {{ q }}
-            </el-button>
+              <div class="quick-questions" aria-label="快捷提问">
+                <span class="quick-label">快捷提问</span>
+                <el-button
+                  v-for="q in quickQuestions"
+                  :key="q"
+                  class="quick-chip ai-consult-action"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="quickSend(q)"
+                >
+                  {{ q }}
+                </el-button>
+              </div>
+            </div>
+            <el-avatar :size="36" class="user-avatar composer-avatar" aria-hidden="true">
+              {{ userInitial }}
+            </el-avatar>
           </div>
         </form>
       </main>
@@ -292,6 +303,35 @@ const messagesRef = ref(null)
 const inputText = ref('')
 
 const quickQuestions = ['咳嗽有痰怎么办', '胸痛大汗怎么办', '胸闷是什么原因']
+const evidenceFieldMap = {
+  name: '疾病名称',
+  category: '疾病分类',
+  symptom: '症状表现',
+  cause: '可能原因',
+  prevent: '日常预防',
+  yibao_status: '医保参考',
+  get_prob: '常见发病率',
+  easy_get: '易感人群',
+  get_way: '传播途径',
+  acompany: '伴随症状',
+  cure_department: '建议就诊科室',
+  cure_way: '常见治疗方式',
+  cure_lasttime: '恢复周期参考',
+  cured_prob: '恢复可能性参考',
+  common_drug: '常用药物',
+  cost_money: '费用参考',
+  check: '相关检查',
+  do_eat: '适宜饮食',
+  not_eat: '饮食注意',
+  recommand_eat: '推荐饮食',
+  recommand_drug: '常用药物',
+  text: '内容摘要'
+}
+
+const userInitial = computed(() => {
+  const name = String(userStore.userInfo.name || '').trim()
+  return name ? name.charAt(0) : '?'
+})
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -372,6 +412,49 @@ const formatScore = (score) => {
   return typeof score === 'number' ? `${Math.round(score * 100)}%` : ''
 }
 
+const displayDiseaseName = (record) => {
+  if (record?.diseaseName) return record.diseaseName
+  const sourceId = String(record?.sourceId || '').trim()
+  if (!sourceId) return '相关疾病信息'
+  const dividerIndex = sourceId.indexOf(':')
+  if (dividerIndex >= 0) {
+    const label = sourceId.slice(dividerIndex + 1).trim()
+    if (label) return label
+  }
+  return '相关疾病信息'
+}
+
+const evidenceSourceLabel = (sourceId) => {
+  if (!sourceId) return '知识库资料'
+  return '知识库疾病信息'
+}
+
+const fieldLabel = (fieldName) => {
+  const rawValue = String(fieldName || '').trim()
+  if (!rawValue) return '相关内容'
+
+  const normalized = rawValue.toLowerCase()
+  if (evidenceFieldMap[normalized]) {
+    return evidenceFieldMap[normalized]
+  }
+
+  if (/[\u4e00-\u9fa5]/.test(rawValue)) {
+    return rawValue
+  }
+
+  return '相关内容'
+}
+
+const evidenceFieldLabels = (record) => {
+  const rawFields = Array.isArray(record?.matchedFields)
+    ? record.matchedFields
+    : record?.fieldName
+      ? [record.fieldName]
+      : []
+
+  return [...new Set(rawFields.map(fieldLabel).filter(Boolean))]
+}
+
 const answerSourceLabel = (source) => {
   if (source === 'VECTOR_SEARCH_AND_RULE') {
     return '向量检索 + 规则'
@@ -379,7 +462,7 @@ const answerSourceLabel = (source) => {
   if (source === 'VECTOR_SEARCH_AND_RULE_DEGRADED') {
     return '降级检索 + 规则'
   }
-  return source
+  return '综合分析结果'
 }
 
 const citationKey = (citation) => {
@@ -416,6 +499,7 @@ onMounted(async () => {
 
 <style scoped>
 .consult-shell {
+  --chat-column-max: 820px;
   min-height: calc(100vh - 100px);
   display: flex;
   flex-direction: column;
@@ -482,33 +566,43 @@ onMounted(async () => {
   flex-direction: column;
   border: 1px solid var(--border-light);
   border-radius: 8px;
-  background: #fff;
+  background: #f8fafc;
 }
 
 .message-timeline {
   flex: 1;
   min-height: 420px;
   max-height: calc(100vh - 300px);
-  padding: 18px;
+  padding: 18px 18px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: #f8fafc;
+  background: transparent;
 }
 
 .welcome-message,
 .message-item {
+  width: min(100%, var(--chat-column-max));
   display: flex;
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
 }
 
+.welcome-message,
+.message-item:not(.user-message) {
+  margin-right: auto;
+}
+
 .message-item.user-message {
   flex-direction: row-reverse;
+  margin-left: auto;
 }
 
 .message-stack {
-  width: min(760px, calc(100% - 48px));
+  flex: 1 1 auto;
+  width: auto;
+  max-width: calc(100% - 48px);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -719,6 +813,19 @@ onMounted(async () => {
   font-size: 14px;
 }
 
+.citation-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.citation-source {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .citation-snippet,
 .vector-snippet {
   margin: 8px 0 0;
@@ -733,6 +840,16 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+}
+
+.vector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .score-pill {
@@ -781,14 +898,37 @@ onMounted(async () => {
 }
 
 .consult-composer {
-  padding: 14px;
+  padding: 0 18px 18px;
   border-top: 1px solid var(--border-light);
+  background: #f8fafc;
+}
+
+.composer-shell {
+  width: min(100%, var(--chat-column-max));
+  margin-left: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.composer-body {
+  flex: 1 1 auto;
+  max-width: calc(100% - 48px);
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
   background: #fff;
+}
+
+.composer-avatar {
+  margin-bottom: 14px;
 }
 
 .composer-label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--text-primary);
   font-weight: 700;
 }
@@ -917,12 +1057,11 @@ onMounted(async () => {
   .message-timeline {
     min-height: 360px;
     max-height: none;
-    padding: 14px;
-    padding-bottom: 18px;
+    padding: 14px 14px 10px;
   }
 
   .message-stack {
-    width: calc(100% - 48px);
+    max-width: calc(100% - 48px);
   }
 
   .message-bubble {
@@ -948,9 +1087,23 @@ onMounted(async () => {
   }
 
   .consult-composer {
+    padding: 0 14px 14px;
     position: sticky;
     bottom: 0;
     z-index: 1;
+  }
+
+  .composer-shell {
+    width: 100%;
+    gap: 0;
+  }
+
+  .composer-body {
+    max-width: 100%;
+  }
+
+  .composer-avatar {
+    display: none;
   }
 }
 
