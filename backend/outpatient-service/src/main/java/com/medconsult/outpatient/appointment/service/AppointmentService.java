@@ -1,8 +1,8 @@
 package com.medconsult.outpatient.appointment.service;
 
 import com.medconsult.common.core.PageResult;
-import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
+import com.medconsult.outpatient.appointment.dto.AppointmentOwnershipDTO;
 
 /**
  * 预约挂号服务接口（对齐《接口文档》§2.5）。

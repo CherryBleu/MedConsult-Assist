@@ -1,8 +1,8 @@
 package com.medconsult.outpatient.appointment.controller;
 
 import com.medconsult.common.core.Result;
-import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.common.security.SecurityContext;
+import com.medconsult.outpatient.appointment.dto.AppointmentOwnershipDTO;
 import com.medconsult.outpatient.appointment.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
