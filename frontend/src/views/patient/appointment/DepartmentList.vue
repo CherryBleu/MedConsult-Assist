@@ -2,16 +2,22 @@
   <div class="page-container">
     <!-- 智能分诊区域 -->
     <div class="card-box triage-section">
-      <div class="triage-header" @click="triageExpanded = !triageExpanded">
+      <button
+        type="button"
+        class="triage-header"
+        :aria-expanded="triageExpanded"
+        aria-controls="department-triage-panel"
+        @click="triageExpanded = !triageExpanded"
+      >
         <div class="triage-title-row">
           <el-icon :size="24" color="#1677ff"><Cpu /></el-icon>
           <span class="triage-title">智能分诊</span>
           <span class="triage-subtitle">不知道挂哪个科？输入症状，AI帮您推荐</span>
         </div>
         <el-icon :size="20" :class="{ expanded: triageExpanded }"><ArrowDown /></el-icon>
-      </div>
+      </button>
 
-      <div v-show="triageExpanded" class="triage-body">
+      <div id="department-triage-panel" v-show="triageExpanded" class="triage-body">
         <div v-if="!triageResult" class="input-section">
           <el-input
             v-model="symptoms"
@@ -66,24 +72,34 @@
     <div class="card-box">
       <h2 class="page-title">选择科室</h2>
       
-      <div v-loading="loading" class="dept-category">
-        <div 
-          v-for="item in departmentList" 
-          :key="item.id" 
-          class="dept-card interactive-card"
-          @click="selectDepartment(item)"
-        >
-          <div class="dept-card-header">
-            <span class="dept-card-name">{{ item.name }}</span>
-            <el-tag size="small" v-if="item.hot">热门</el-tag>
-          </div>
-          <p class="dept-card-desc">{{ item.description }}</p>
-          <div class="dept-card-footer">
-            <span>{{ item.location }}</span>
-            <el-button type="primary" link>去挂号 →</el-button>
-          </div>
+      <PageState
+        :loading="loading"
+        :error="errorMessage"
+        :empty="departmentList.length === 0"
+        empty-text="暂无可预约科室"
+        @retry="getDepartmentList"
+      >
+        <div class="dept-category" aria-label="可预约科室">
+          <button
+            v-for="item in departmentList"
+            :key="item.id"
+            type="button"
+            class="dept-card interactive-card"
+            :aria-label="`${item.name}，${item.description || '暂无简介'}，${item.location || '院区待确认'}，去挂号`"
+            @click="selectDepartment(item)"
+          >
+            <div class="dept-card-header">
+              <span class="dept-card-name">{{ item.name }}</span>
+              <el-tag size="small" v-if="item.hot">热门</el-tag>
+            </div>
+            <p class="dept-card-desc">{{ item.description || '暂无科室简介' }}</p>
+            <div class="dept-card-footer">
+              <span>{{ item.location || '院区待确认' }}</span>
+              <span class="dept-card-cta">去挂号</span>
+            </div>
+          </button>
         </div>
-      </div>
+      </PageState>
     </div>
   </div>
 </template>
@@ -95,9 +111,11 @@ import { ElMessage } from 'element-plus'
 import { Cpu, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { getDepartmentListApi } from '@/api/department'
 import { triageApi } from '@/api/ai'
+import PageState from '@/components/common/PageState.vue'
 
 const router = useRouter()
 const loading = ref(false)
+const errorMessage = ref('')
 const departmentList = ref([])
 
 // 智能分诊相关状态
@@ -138,9 +156,13 @@ const goToDeptFromTriage = (deptId) => {
 // 获取科室列表
 const getDepartmentList = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const res = await getDepartmentListApi()
-    departmentList.value = res.data
+    departmentList.value = Array.isArray(res.data) ? res.data.filter(item => item.enabled !== 0) : []
+  } catch (error) {
+    departmentList.value = []
+    errorMessage.value = error?.message || '科室列表加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -176,15 +198,23 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
+  min-height: 56px;
   padding: 16px 20px;
+  border: 0;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   user-select: none;
   background: linear-gradient(135deg, #e6f4ff 0%, #f0f7ff 100%);
+  color: inherit;
 }
 .triage-title-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .triage-title {
   font-size: 16px;
@@ -292,15 +322,22 @@ onMounted(() => {
 
 .dept-category {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
 .dept-card {
+  display: flex;
+  min-height: 164px;
+  width: 100%;
+  flex-direction: column;
+  justify-content: space-between;
   padding: 20px;
   border: 1px solid var(--border-lighter);
-  border-radius: 18px;
+  border-radius: var(--radius-base);
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(248,251,255,.90));
 }
 .dept-card:hover {
@@ -329,9 +366,70 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   font-size: 12px;
   color: var(--text-secondary);
   padding-top: 12px;
   border-top: 1px solid var(--border-light);
+}
+.dept-card-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target);
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(2, 132, 199, .1);
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .triage-header {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .triage-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .triage-subtitle {
+    margin-left: 0;
+    line-height: 1.5;
+  }
+
+  .duration-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .duration-row .el-button {
+    min-height: var(--touch-target);
+  }
+
+  .dept-category {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .dept-card {
+    min-height: 148px;
+    padding: 16px;
+  }
+
+  .dept-card-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dept-card-cta {
+    width: 100%;
+  }
 }
 </style>
