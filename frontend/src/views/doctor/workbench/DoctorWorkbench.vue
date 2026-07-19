@@ -25,46 +25,60 @@
       <div class="card-box flex-1">
         <div class="section-header">
           <h3 class="section-title">今日待就诊</h3>
-          <el-button type="primary" link @click="$router.push('/doctor/reception')">查看全部</el-button>
+          <el-button type="primary" link class="doctor-workbench-action" @click="navigateTo('/doctor/reception')">查看全部</el-button>
         </div>
-        <div v-loading="loading" class="patient-list">
-          <div v-for="item in pendingList" :key="item.id" class="patient-item">
-            <div class="patient-info">
-              <span class="patient-name">{{ item.patientName }}</span>
-              <el-tag size="small">{{ item.gender === 'MALE' ? '男' : '女' }} {{ item.age }}岁</el-tag>
-            </div>
-            <div class="visit-reason">主诉：{{ item.visitReason }}</div>
-            <div class="item-footer">
-              <span>第{{ item.queueNo }}号</span>
-              <el-button type="primary" size="small" @click="goWriteRecord(item)">
-                去接诊
-              </el-button>
+        <PageState
+          :loading="loading"
+          :error="loadError"
+          :empty="pendingList.length === 0"
+          loading-text="正在加载待就诊患者..."
+          empty-text="暂无待就诊患者"
+          @retry="getReceptionList"
+        >
+          <div class="patient-list">
+            <div v-for="item in pendingList" :key="item.id" class="patient-item">
+              <div class="patient-info">
+                <span class="patient-name">{{ item.patientName }}</span>
+                <el-tag size="small">{{ item.gender === 'MALE' ? '男' : '女' }} {{ item.age }}岁</el-tag>
+              </div>
+              <div class="visit-reason">主诉：{{ item.visitReason || '未填写' }}</div>
+              <div class="item-footer">
+                <span>第{{ item.queueNo }}号</span>
+                <el-button
+                  type="primary"
+                  size="small"
+                  class="doctor-workbench-action"
+                  :aria-label="`为${item.patientName}去接诊`"
+                  @click="goWriteRecord(item)"
+                >
+                  去接诊
+                </el-button>
+              </div>
             </div>
           </div>
-          <el-empty v-if="!loading && pendingList.length === 0" :image-size="80" description="暂无待就诊患者" />
-        </div>
+        </PageState>
       </div>
 
       <!-- 快捷功能 -->
       <div class="card-box quick-card">
         <h3 class="section-title">快捷功能</h3>
         <div class="quick-grid">
-          <div class="quick-item" @click="$router.push('/doctor/reception')">
+          <button type="button" class="quick-item" @click="navigateTo('/doctor/reception')">
             <el-icon :size="24"><Calendar /></el-icon>
             <span>接诊管理</span>
-          </div>
-          <div class="quick-item" @click="$router.push('/doctor/records')">
+          </button>
+          <button type="button" class="quick-item" @click="navigateTo('/doctor/records')">
             <el-icon :size="24"><Document /></el-icon>
             <span>病历管理</span>
-          </div>
-          <div class="quick-item" @click="$router.push('/doctor/schedule')">
+          </button>
+          <button type="button" class="quick-item" @click="navigateTo('/doctor/schedule')">
             <el-icon :size="24"><Clock /></el-icon>
             <span>我的排班</span>
-          </div>
-          <div class="quick-item" @click="$router.push('/doctor/record-summary')">
+          </button>
+          <button type="button" class="quick-item" @click="navigateTo('/doctor/record-summary')">
             <el-icon :size="24"><Cpu /></el-icon>
             <span>AI摘要</span>
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -77,10 +91,12 @@ import { useRouter } from 'vue-router'
 import { Calendar, Document, Clock, Cpu } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { getReceptionListApi } from '@/api/appointment'
+import PageState from '@/components/common/PageState.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(false)
+const loadError = ref('')
 const receptionList = ref([])
 
 const pendingList = computed(() => {
@@ -93,9 +109,13 @@ const completedCount = computed(() => receptionList.value.filter(i => i.appointm
 
 const getReceptionList = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const res = await getReceptionListApi()
     receptionList.value = res.data.records || res.data || []
+  } catch (e) {
+    receptionList.value = []
+    loadError.value = e?.response?.data?.message || e?.message || '待就诊患者加载失败'
   } finally {
     loading.value = false
   }
@@ -113,6 +133,10 @@ const goWriteRecord = (item) => {
   })
 }
 
+const navigateTo = (path) => {
+  router.push(path)
+}
+
 onMounted(() => {
   getReceptionList()
 })
@@ -121,11 +145,12 @@ onMounted(() => {
 <style scoped>
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 16px;
   margin-bottom: 20px;
 }
 .stat-card {
+  min-width: 0;
   background: #fff;
   border-radius: var(--radius-base);
   padding: 20px;
@@ -145,6 +170,7 @@ onMounted(() => {
 .content-row {
   display: flex;
   gap: 20px;
+  align-items: flex-start;
 }
 .flex-1 { flex: 1; }
 .quick-card { width: 320px; flex-shrink: 0; }
@@ -176,6 +202,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 6px;
 }
 .patient-name {
@@ -192,10 +219,17 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   font-size: 12px;
   color: var(--text-secondary);
   padding-top: 10px;
   border-top: 1px solid var(--border-light);
+}
+
+.doctor-workbench-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
 }
 
 .quick-grid {
@@ -207,15 +241,82 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 20px 0;
+  min-height: 92px;
+  padding: 16px 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-base);
+  background: transparent;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--text-regular);
+  font: inherit;
 }
-.quick-item:hover {
+.quick-item:hover,
+.quick-item:focus-visible {
   background: var(--bg-hover);
   color: var(--primary-color);
+  outline: none;
+  border-color: rgba(64, 158, 255, .32);
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, .12);
+}
+.quick-item :deep(.el-icon) {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px) {
+  .content-row {
+    flex-direction: column;
+  }
+
+  .flex-1,
+  .quick-card {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .section-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .section-header :deep(.el-button) {
+    width: 100%;
+    min-height: var(--touch-target);
+    margin-left: 0;
+  }
+
+  .patient-item,
+  .item-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .item-footer .doctor-workbench-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .stat-row,
+  .quick-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
