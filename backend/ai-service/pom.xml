@@ -111,6 +111,10 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
         <!-- Knife4j（OpenAPI3 接口文档，jakarta 适配 Boot 3.2） -->
         <dependency>
             <groupId>com.github.xiaoymin</groupId>
