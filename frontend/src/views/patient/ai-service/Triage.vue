@@ -16,6 +16,7 @@
               v-model="symptoms"
               type="textarea"
               :rows="4"
+              :disabled="submitting"
               placeholder="请描述您的症状，例如：咳嗽、咳痰、发热3天..."
               maxlength="200"
               show-word-limit
@@ -30,17 +31,53 @@
             </el-radio-group>
           </el-form-item>
           <el-form-item label="">
-            <el-button 
-              type="primary" 
-              size="large" 
-              class="submit-btn"
+            <el-button
+              type="primary"
+              size="large"
+              class="submit-btn triage-action"
               :loading="submitting"
+              :disabled="submitting"
               @click="handleTriage"
             >
               开始分诊
             </el-button>
           </el-form-item>
         </el-form>
+
+        <div
+          v-if="submitting"
+          class="triage-stream"
+          role="status"
+          aria-live="polite"
+          aria-atomic="false"
+        >
+          <div class="triage-stream__header">
+            <span class="triage-stream__dot" aria-hidden="true"></span>
+            <div>
+              <div class="triage-stream__title">正在接收分诊建议</div>
+              <div class="triage-stream__stage">{{ streamStage }}</div>
+            </div>
+          </div>
+          <p class="triage-stream__preview">
+            {{ streamText || '正在建立 AI 分诊流式连接，请稍候...' }}
+          </p>
+        </div>
+
+        <el-alert
+          v-else-if="errorMsg"
+          class="triage-error"
+          role="alert"
+          type="error"
+          :closable="false"
+          show-icon
+          title="分诊请求失败"
+        >
+          <p class="triage-error__message">{{ errorMsg }}</p>
+          <div class="triage-error__footer">
+            <span>请检查症状描述，或稍后重试。AI 分诊不能替代医生诊断。</span>
+            <el-button type="primary" size="small" class="triage-action" @click="handleTriage">重试</el-button>
+          </div>
+        </el-alert>
 
         <div class="tip-box">
           <el-icon><InfoFilled /></el-icon>
@@ -49,10 +86,10 @@
       </div>
 
       <!-- 分诊结果 -->
-      <div v-else class="result-section">
+      <div v-else class="result-section" data-testid="triage-result">
         <div class="result-header">
           <h3>分诊结果</h3>
-          <el-button link type="primary" @click="reset">重新分诊</el-button>
+          <el-button link type="primary" class="triage-action" @click="reset">重新分诊</el-button>
         </div>
 
         <div class="risk-bar" :class="riskLevel">
@@ -76,7 +113,7 @@
               <div class="confidence-text">置信度 {{ Math.round((item.confidence || 0) * 100) }}%</div>
               <el-progress :percentage="Math.round((item.confidence || 0) * 100)" :show-text="false" />
             </div>
-            <el-button type="primary" size="small" @click="goToDept(item.departmentId)">
+            <el-button type="primary" size="small" class="triage-action" @click="goToDept(item.departmentId)">
               去挂号
             </el-button>
           </div>
@@ -93,12 +130,13 @@
 // keep-alive include 按组件 name 匹配，必须显式声明 name（与路由 name 一致）
 defineOptions({ name: 'Triage' })
 
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Cpu, InfoFilled } from '@element-plus/icons-vue'
 import { useTriageStore } from '@/store/modules/triage'
+import { triageStreamApi } from '@/api/ai'
 
 const router = useRouter()
 const triageStore = useTriageStore()
@@ -108,6 +146,9 @@ const triageStore = useTriageStore()
 // 也由 store action 持有，组件销毁不影响请求继续。
 // storeToRefs 返回可写 ref，v-model 双向绑定直接落到 store 状态上。
 const { symptoms, duration, submitting, result } = storeToRefs(triageStore)
+const streamText = ref('')
+const streamStage = ref('准备连接')
+const errorMsg = ref('')
 
 // 后端 TriageResponse 无 riskLevel 字段，根据 emergencyRecommended + 最高置信度推导
 const riskLevel = computed(() => {
@@ -124,17 +165,76 @@ const riskLabel = computed(() => {
   return map[riskLevel.value] || '低风险'
 })
 
-// 触发分诊：仅做输入校验 + 调 store action，真正的请求/结果写入全在 store.triage 内完成。
+const splitSymptoms = () => String(symptoms.value || '')
+  .split(/[,，、\n]/)
+  .map(s => s.trim())
+  .filter(Boolean)
+
+const getStreamText = (payload) => {
+  if (payload == null) return ''
+  if (typeof payload === 'string') return payload
+  if (payload.departmentName) {
+    const confidence = Math.round((payload.confidence || 0) * 100)
+    return `${payload.departmentName}：${payload.reason || '正在评估匹配度'}（置信度 ${confidence}%）`
+  }
+  return payload.token == null ? '' : String(payload.token)
+}
+
+// 触发分诊：页面消费 SSE 事件，同时继续把输入、请求态和结果写入既有 Pinia 状态。
 const handleTriage = async () => {
   if (!symptoms.value.trim()) {
     ElMessage.warning('请描述您的症状')
     return
   }
-  await triageStore.triage()
+  if (submitting.value) return
+
+  submitting.value = true
+  result.value = null
+  errorMsg.value = ''
+  streamText.value = ''
+  streamStage.value = '正在连接 AI 分诊服务'
+  try {
+    const res = await triageStreamApi({
+      symptoms: splitSymptoms(),
+      duration: duration.value
+    }, {
+      onStart: () => {
+        streamStage.value = 'AI 已开始分析症状'
+      },
+      onDelta: (payload) => {
+        const text = getStreamText(payload)
+        if (text) streamText.value += streamText.value ? `\n${text}` : text
+      },
+      onResult: (payload) => {
+        result.value = payload
+      },
+      onDone: () => {
+        streamStage.value = '分诊建议生成完成'
+      },
+      onError: (payload) => {
+        errorMsg.value = payload?.message || '智能分诊请求失败'
+      }
+    })
+    if (!result.value && res?.data) {
+      result.value = res.data
+    }
+    if (!result.value) {
+      throw new Error('AI 流未返回分诊结果')
+    }
+  } catch (e) {
+    console.error('智能分诊失败', e)
+    result.value = null
+    errorMsg.value = errorMsg.value || e?.response?.data?.message || e?.message || '智能分诊请求失败，请稍后重试'
+  } finally {
+    submitting.value = false
+  }
 }
 
 const reset = () => {
   triageStore.reset()
+  errorMsg.value = ''
+  streamText.value = ''
+  streamStage.value = '准备连接'
 }
 
 const goToDept = (deptId) => {
@@ -149,6 +249,7 @@ const goToDept = (deptId) => {
 .triage-card {
   max-width: 700px;
   margin: 0 auto;
+  overflow: hidden;
 }
 
 .triage-header {
@@ -173,6 +274,80 @@ const goToDept = (deptId) => {
 
 .submit-btn {
   width: 100%;
+}
+
+.triage-action {
+  min-height: 44px;
+  min-width: 88px;
+}
+
+.triage-stream {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid rgba(22, 119, 255, .18);
+  border-radius: 8px;
+  background: rgba(240, 247, 255, .8);
+}
+
+.triage-stream__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.triage-stream__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 5px rgba(22, 119, 255, .12);
+  animation: triage-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.triage-stream__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.triage-stream__stage {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.triage-stream__preview {
+  margin: 0;
+  padding: 12px;
+  min-height: 48px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.triage-error {
+  margin-top: 20px;
+}
+
+.triage-error__message {
+  margin: 0 0 8px;
+  color: var(--el-color-danger);
+  line-height: 1.5;
+}
+
+.triage-error__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 .tip-box {
@@ -242,6 +417,7 @@ const goToDept = (deptId) => {
 }
 .dept-info {
   flex: 1;
+  min-width: 0;
 }
 .dept-name {
   font-size: 16px;
@@ -251,6 +427,8 @@ const goToDept = (deptId) => {
 .dept-reason {
   font-size: 12px;
   color: var(--text-secondary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .confidence {
   width: 120px;
@@ -267,5 +445,67 @@ const goToDept = (deptId) => {
   text-align: center;
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+@keyframes triage-pulse {
+  0%, 100% {
+    opacity: .72;
+    transform: scale(.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .triage-card {
+    max-width: 100%;
+  }
+
+  .triage-header {
+    align-items: flex-start;
+  }
+
+  .triage-stream,
+  .triage-error {
+    margin-top: 16px;
+  }
+
+  .triage-error__footer,
+  .result-header,
+  .risk-bar,
+  .dept-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .triage-error__footer .triage-action,
+  .result-header .triage-action,
+  .dept-item .triage-action {
+    width: 100%;
+  }
+
+  .risk-bar {
+    gap: 8px;
+  }
+
+  .dept-item {
+    gap: 12px;
+  }
+
+  .dept-info {
+    width: 100%;
+  }
+
+  .confidence {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .triage-stream__dot {
+    animation: none;
+  }
 }
 </style>

@@ -92,6 +92,40 @@ const parseErrorText = (text) => {
   }
 }
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+const consumeMockFailOnce = (key) => {
+  if (typeof localStorage === 'undefined') return false
+  if (localStorage.getItem(key) !== '1') return false
+  localStorage.removeItem(key)
+  return true
+}
+
+const mockTriageStream = async (data, callbacks = {}) => {
+  if (consumeMockFailOnce('mock_triage_stream_fail_once')) {
+    await delay(120)
+    const error = new Error('AI 分诊流服务暂时不可用，请稍后重试')
+    callbacks.onError?.({ status: 'FAILED', message: error.message })
+    throw error
+  }
+
+  const result = mockTriageResult(data.symptoms).data
+  callbacks.onStart?.({ status: 'PROCESSING' })
+  for (const item of result.recommendations || []) {
+    await delay(180)
+    callbacks.onDelta?.(item)
+  }
+  await delay(120)
+  callbacks.onResult?.(result)
+  callbacks.onDone?.({ status: 'COMPLETED' })
+
+  return {
+    code: 0,
+    message: 'success',
+    data: result
+  }
+}
+
 // 智能分诊
 export const triageApi = (data) => {
   if (USE_MOCK) {
@@ -102,6 +136,40 @@ export const triageApi = (data) => {
     method: 'post',
     data
   })
+}
+
+// 智能分诊（SSE 流式）
+export const triageStreamApi = async (data, callbacks = {}) => {
+  if (USE_MOCK) {
+    return mockTriageStream(data, callbacks)
+  }
+
+  const token = getToken()
+  const headers = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/triage/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(parseErrorText(errorText) || `AI 流式请求失败（HTTP ${response.status}）`)
+  }
+
+  const streamData = await readSseResponse(response, callbacks)
+  return {
+    code: 0,
+    message: 'success',
+    data: streamData
+  }
 }
 
 // 创建AI问诊会话（症状自诊，纯RAG不调大模型）
