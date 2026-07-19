@@ -298,6 +298,9 @@ export const mockImagingHistoryList = (role = 'patient') => {
 
 // 用药分析
 export const mockMedicationAnalysis = (recordId) => {
+  if (consumeFailOnce('mock_medication_analysis_fail_once')) {
+    return Promise.reject(new Error('用药分析请求失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',

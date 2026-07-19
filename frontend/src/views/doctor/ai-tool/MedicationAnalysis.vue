@@ -14,7 +14,7 @@
             <el-form-item label="选择病历">
               <el-select
                 v-model="selectedRecord"
-                class="field-control"
+                class="field-control medication-record-select"
                 placeholder="请选择要分析的病历"
                 filterable
                 :loading="recordLoading"
@@ -44,7 +44,7 @@
             <el-form-item label="选择药品">
               <el-select
                 v-model="selectedDrugIds"
-                class="field-control"
+                class="field-control medication-drug-select"
                 placeholder="请选择本次分析涉及的真实药品"
                 filterable
                 multiple
@@ -88,7 +88,7 @@
             </div>
             <el-button
               type="primary"
-              class="medication-action"
+              class="medication-action medication-analysis-action"
               :loading="analyzing"
               :disabled="!canAnalyze"
               @click="doAnalysis"
@@ -108,7 +108,12 @@
         empty-text="选择病历和药品后开始分析"
         @retry="doAnalysis"
       >
-        <section v-if="analysisResult" class="result-section" aria-labelledby="medication-result-title">
+        <section
+          v-if="analysisResult"
+          class="result-section"
+          data-testid="medication-analysis-result"
+          aria-labelledby="medication-result-title"
+        >
           <div class="result-header">
             <h3 id="medication-result-title">分析结果</h3>
             <span class="result-meta">药品 {{ selectedPrescriptions.length }} 项</span>
@@ -382,6 +387,10 @@ onMounted(() => {
   width: 100%;
 }
 
+.field-control :deep(.el-select__wrapper) {
+  min-height: var(--touch-target);
+}
+
 .form-error {
   margin: 14px 0 0;
   color: var(--el-color-danger);
@@ -421,6 +430,11 @@ onMounted(() => {
 .medication-action {
   min-height: var(--touch-target);
   min-width: 96px;
+  touch-action: manipulation;
+}
+.medication-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .result-section {
