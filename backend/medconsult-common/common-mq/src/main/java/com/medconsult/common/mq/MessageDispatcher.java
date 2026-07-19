@@ -97,11 +97,11 @@ public class MessageDispatcher implements RabbitTemplate.ConfirmCallback {
         // CorrelationData.id = LocalMessage.id，confirm 回调凭它回查更新状态
         CorrelationData cd = new CorrelationData(String.valueOf(msg.getId()));
         try {
-            rabbitTemplate.send(msg.getExchange(), msg.getRoutingKey(),
-                    org.springframework.amqp.core.MessageBuilder
-                            .withBody(msg.getPayloadJson().getBytes())
-                            .setHeader("messageNo", msg.getMessageNo())
-                            .build(),
+            rabbitTemplate.convertAndSend(msg.getExchange(), msg.getRoutingKey(), msg.getPayloadJson(),
+                    message -> {
+                        message.getMessageProperties().getHeaders().put("messageNo", msg.getMessageNo());
+                        return message;
+                    },
                     cd);
             // send 成功（已写入 broker TCP 缓冲）→ CAS 置 SENT，等 confirm 回调确认。
             // CAS 条件 status IN (PENDING,SENT)：若并发已把消息推进到 CONFIRMED/FAILED 终态，
