@@ -24,6 +24,9 @@ export const mockDrugList = () => {
 
 // 库存列表
 export const mockStockList = () => {
+  if (consumeFailOnce('mock_stock_list_fail_once')) {
+    return Promise.reject(new Error('库存列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
@@ -48,6 +51,9 @@ export const mockAddDrug = (data) => {
 
 // 库存出入库
 export const mockStockOperate = (id, type, quantity, remark) => {
+  if (consumeFailOnce('mock_stock_operate_fail_once')) {
+    return Promise.reject(new Error('库存操作失败，请重试'))
+  }
   return {
     code: 0,
     message: type === 'IN' ? '入库成功' : '出库成功',

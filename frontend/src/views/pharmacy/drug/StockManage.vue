@@ -51,8 +51,28 @@
               </el-table-column>
               <el-table-column label="操作" width="180" fixed="right">
                 <template #default="{ row }">
-                  <el-button size="small" type="success" link @click="openStockDialog(row, 'IN')">入库</el-button>
-                  <el-button size="small" type="warning" link @click="openStockDialog(row, 'OUT')">出库</el-button>
+                  <div class="stock-table-actions">
+                    <el-button
+                      size="small"
+                      type="success"
+                      link
+                      class="stock-table-action"
+                      :aria-label="`为${row.drugName || '药品'}办理入库`"
+                      @click="openStockDialog(row, 'IN')"
+                    >
+                      入库
+                    </el-button>
+                    <el-button
+                      size="small"
+                      type="warning"
+                      link
+                      class="stock-table-action"
+                      :aria-label="`为${row.drugName || '药品'}办理出库`"
+                      @click="openStockDialog(row, 'OUT')"
+                    >
+                      出库
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -93,8 +113,24 @@
               </dl>
 
               <div class="stock-card__actions">
-                <el-button type="success" plain @click="openStockDialog(row, 'IN')">入库</el-button>
-                <el-button type="warning" plain @click="openStockDialog(row, 'OUT')">出库</el-button>
+                <el-button
+                  type="success"
+                  plain
+                  class="stock-card__action"
+                  :aria-label="`为${row.drugName || '药品'}办理入库`"
+                  @click="openStockDialog(row, 'IN')"
+                >
+                  入库
+                </el-button>
+                <el-button
+                  type="warning"
+                  plain
+                  class="stock-card__action"
+                  :aria-label="`为${row.drugName || '药品'}办理出库`"
+                  @click="openStockDialog(row, 'OUT')"
+                >
+                  出库
+                </el-button>
               </div>
             </article>
           </template>
@@ -287,6 +323,20 @@ onMounted(() => {
 .stock-action {
   min-height: var(--touch-target);
   min-width: 76px;
+  touch-action: manipulation;
+}
+.stock-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stock-table-actions .el-button {
+  margin-left: 0;
+}
+.stock-table-action {
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  touch-action: manipulation;
 }
 .low-stock {
   color: var(--danger-color);
@@ -364,6 +414,7 @@ onMounted(() => {
   width: 100%;
   min-height: var(--touch-target);
   margin-left: 0;
+  touch-action: manipulation;
 }
 .stock-form :deep(.el-form-item__label) {
   color: var(--text-primary);
