@@ -522,10 +522,10 @@ public class AuthServiceImpl implements AuthService {
         // RBAC 五表落地后恢复 selectPage（届时 DB 侧支持 role 过滤）。
         java.util.List<SysUser> all = userMapper.selectList(qw);
 
-        // role 过滤：sys_user 表无 role 列，role 存 Redis（medconsult:auth:role:{userId}）。
+        // role 过滤：RBAC 行存在时以 sys_user_role/sys_role 主角色为准；无 RBAC 行才回退 Redis。
         java.util.List<AuthDTO.UserListItem> filtered = new java.util.ArrayList<>();
         for (SysUser u : all) {
-            String userRole = resolveRole(u.getId());
+            String userRole = resolveListRole(u.getId());
             if (role != null && !role.isBlank() && !role.equalsIgnoreCase(userRole)) {
                 continue; // role 过滤不命中，跳过
             }
@@ -566,6 +566,11 @@ public class AuthServiceImpl implements AuthService {
             // Redis 不可用兜底，不阻断查询
         }
         return "PATIENT";
+    }
+
+    private String resolveListRole(Long userId) {
+        var access = rbacQueryService.findUserAccess(userId);
+        return access.isPresent() ? access.get().primaryRole() : resolveRole(userId);
     }
 
     private AccessFacts resolveAccess(Long userId) {

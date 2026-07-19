@@ -297,6 +297,83 @@ class AuthFlowTest {
     }
 
     @Test
+    void userList_usesRbacPrimaryRoleWhenRowsExist() throws Exception {
+        TokenPair adminTokens = login("admin", "123456");
+        seedRbacRole(1L, 89001L, "DOCTOR", 0, 89101L, "rbac:list-doctor");
+        seedRbacRole(1L, 89002L, "PHARMACY_ADMIN", 1, 89102L, "rbac:list-pharmacy");
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "admin")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items[0].account").value("admin"))
+                .andExpect(jsonPath("$.data.items[0].role").value("PHARMACY_ADMIN"));
+    }
+
+    @Test
+    void userList_fallsBackToRedisRoleWhenRbacRowsMissing() throws Exception {
+        TokenPair adminTokens = login("admin", "123456");
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "yaofang")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items[0].account").value("yaofang"))
+                .andExpect(jsonPath("$.data.items[0].role").value("PHARMACY_ADMIN"));
+    }
+
+    @Test
+    void userList_roleFilterUsesDisplayedRbacPrimaryRoleWhenRowsExist() throws Exception {
+        TokenPair adminTokens = login("admin", "123456");
+        seedRbacRole(1L, 89003L, "DOCTOR", 0, 89103L, "rbac:list-filter-doctor");
+        seedRbacRole(1L, 89004L, "PHARMACY_ADMIN", 1, 89104L, "rbac:list-filter-pharmacy");
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "admin")
+                        .param("role", "PHARMACY_ADMIN")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].account").value("admin"))
+                .andExpect(jsonPath("$.data.items[0].role").value("PHARMACY_ADMIN"));
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "admin")
+                        .param("role", "HOSPITAL_ADMIN")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
+    void userList_doesNotFallBackToRedisWhenRbacRowsOnlyContainDisabledRoles() throws Exception {
+        TokenPair adminTokens = login("admin", "123456");
+        seedRbacRole(1L, 89005L, "DOCTOR", 1, 89105L, "rbac:list-disabled-role", 0);
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "admin")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items[0].account").value("admin"))
+                .andExpect(jsonPath("$.data.items[0].role").value(org.hamcrest.Matchers.nullValue()));
+
+        mvc.perform(get("/api/v1/auth/users")
+                        .param("keyword", "admin")
+                        .param("role", "HOSPITAL_ADMIN")
+                        .header("Authorization", "Bearer " + adminTokens.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
     void refresh_preservesNarrowScopeFromRefreshToken() throws Exception {
         TokenPair tokens = login("patient", "123456");
         JwtPayload refreshPayload = assertTokenScope(tokens.refreshToken(), "PATIENT", "ai:symptom-chat");
