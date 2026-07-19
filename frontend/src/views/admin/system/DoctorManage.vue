@@ -16,33 +16,40 @@
       >
         <ResponsiveTable aria-label="医生管理列表">
           <template #table>
-            <el-table :data="doctorList" border stripe>
-              <el-table-column prop="doctorNo" label="工号" width="120" />
-              <el-table-column prop="name" label="姓名" width="100" />
-              <el-table-column label="性别" width="80">
-                <template #default="{ row }">{{ row.gender === 'MALE' ? '男' : '女' }}</template>
-              </el-table-column>
-              <el-table-column prop="title" label="职称" width="100" />
-              <el-table-column prop="departmentName" label="所属科室" width="140" />
-              <el-table-column prop="specialties" label="擅长" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="phone" label="联系电话" width="130" />
-              <el-table-column label="挂号费" width="100">
-                <template #default="{ row }">¥{{ row.registrationFee }}</template>
-              </el-table-column>
-              <el-table-column label="状态" width="90">
-                <template #default="{ row }">
-                  <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
-                    {{ row.status === 'ACTIVE' ? '在职' : '停用' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="180" fixed="right">
-                <template #default="{ row }">
-                  <el-button size="small" type="primary" link class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
-                  <el-button size="small" type="danger" link class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div
+              class="admin-doctor-table-shell"
+              data-testid="admin-doctor-table-shell"
+              aria-label="医生管理宽表横向滚动区域"
+              tabindex="0"
+            >
+              <el-table :data="doctorList" border stripe class="admin-doctor-table">
+                <el-table-column prop="doctorNo" label="工号" width="120" />
+                <el-table-column prop="name" label="姓名" width="100" />
+                <el-table-column label="性别" width="80">
+                  <template #default="{ row }">{{ row.gender === 'MALE' ? '男' : '女' }}</template>
+                </el-table-column>
+                <el-table-column prop="title" label="职称" width="100" />
+                <el-table-column prop="departmentName" label="所属科室" width="140" />
+                <el-table-column prop="specialties" label="擅长" min-width="180" show-overflow-tooltip />
+                <el-table-column prop="phone" label="联系电话" width="130" />
+                <el-table-column label="挂号费" width="100">
+                  <template #default="{ row }">¥{{ row.registrationFee }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+                      {{ row.status === 'ACTIVE' ? '在职' : '停用' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="180" fixed="right">
+                  <template #default="{ row }">
+                    <el-button size="small" type="primary" link class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
+                    <el-button size="small" type="danger" link class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </template>
 
           <template #card>
@@ -92,7 +99,12 @@
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑医生' : '新增医生'" width="min(520px, calc(100vw - 32px))">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="isEdit ? '编辑医生' : '新增医生'"
+      width="min(520px, calc(100vw - 32px))"
+      class="admin-doctor-dialog"
+    >
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="工号" prop="doctorNo">
           <el-input v-model="form.doctorNo" placeholder="请输入医生工号" :disabled="isEdit" />
@@ -291,6 +303,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
 }
 .page-title {
@@ -304,6 +318,26 @@ onMounted(() => {
   min-height: var(--touch-target);
   min-width: 88px;
   touch-action: manipulation;
+}
+
+.admin-doctor-table-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+
+.admin-doctor-table {
+  min-width: 1240px;
+}
+
+.admin-doctor-table-shell:focus-visible {
+  outline: 2px solid rgba(2, 132, 199, .18);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
 }
 
 .doctor-card {
@@ -406,5 +440,23 @@ onMounted(() => {
 }
 .tip-alert {
   padding: 8px 12px;
+}
+
+:global(.admin-doctor-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  margin: 24px auto !important;
+}
+
+:global(.admin-doctor-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:global(.admin-doctor-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
 }
 </style>
