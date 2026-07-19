@@ -53,6 +53,9 @@ export const mockDeleteUser = (id) => {
 
 // 科室列表
 export const mockDeptList = () => {
+  if (consumeFailOnce('mock_admin_department_list_fail_once')) {
+    return Promise.reject(new Error('科室列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
