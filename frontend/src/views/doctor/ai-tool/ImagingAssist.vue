@@ -153,9 +153,9 @@
               </div>
               <div v-else class="image-preview-wrapper">
                 <img ref="previewImg" :src="imageUrl" class="preview-image" alt="待提交的医学影像预览" @load="onImageLoad" />
-                <canvas ref="annotationCanvas" class="annotation-canvas"></canvas>
+                <canvas ref="annotationCanvas" class="annotation-canvas" aria-hidden="true"></canvas>
                 <div class="image-overlay">
-                  <el-button type="danger" size="small" circle aria-label="移除影像" @click.stop="removeImage">
+                  <el-button type="danger" size="small" circle class="image-remove-action" aria-label="移除影像" @click.stop="removeImage">
                     <el-icon><Close /></el-icon>
                   </el-button>
                 </div>
@@ -198,7 +198,7 @@
             <div class="detail-image-section">
               <div class="image-wrapper">
                 <img :src="imageUrl" class="detail-image" alt="影像检测原图与异常区域标注" @load="drawDetailAnnotations" />
-                <canvas ref="detailCanvas" class="detail-canvas"></canvas>
+                <canvas ref="detailCanvas" class="detail-canvas" aria-hidden="true"></canvas>
                 <div v-if="currentTask.regions && currentTask.regions.length" class="legend">
                   <div v-for="(region, idx) in currentTask.regions" :key="idx" class="legend-item">
                     <span class="legend-color" :style="{ background: getRegionColor(idx) }"></span>
@@ -718,8 +718,14 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.imaging-action {
+.imaging-action,
+.image-remove-action {
   min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  touch-action: manipulation;
+}
+
+.imaging-action {
   min-width: 88px;
 }
 
