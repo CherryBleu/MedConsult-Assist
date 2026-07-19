@@ -57,10 +57,8 @@ public class RiskRuleEngine {
         RuleSnapshot snapshot = currentSnapshot();
         if (!snapshot.fallbackOnly()) {
             RiskAssessment databaseAssessment = assessWithDatabaseSnapshot(message, context, snapshot);
-            if (databaseAssessment != null) {
-                return databaseAssessment;
-            }
-            return contextRisk(context);
+            RiskAssessment fallbackAssessment = fallbackAssess(message, context, snapshot.negativeWords());
+            return higherRisk(databaseAssessment, fallbackAssessment);
         }
         return fallbackAssess(message, context);
     }
@@ -189,10 +187,14 @@ public class RiskRuleEngine {
     }
 
     private RiskAssessment fallbackAssess(String message, PatientContext context) {
+        return fallbackAssess(message, context, List.of());
+    }
+
+    private RiskAssessment fallbackAssess(String message, PatientContext context, List<String> negativeWords) {
         String text = Objects.toString(message, "");
         List<String> reasons = new ArrayList<>();
         for (String term : CRITICAL_TERMS) {
-            if (text.contains(term)) {
+            if (text.contains(term) && !isNegated(text, term, negativeWords)) {
                 reasons.add("命中高危症状：" + term);
             }
         }
@@ -200,7 +202,7 @@ public class RiskRuleEngine {
             return new RiskAssessment("HIGH", true, reasons);
         }
         for (String term : MEDIUM_TERMS) {
-            if (text.contains(term)) {
+            if (text.contains(term) && !isNegated(text, term, negativeWords)) {
                 reasons.add("命中需尽快评估的症状：" + term);
             }
         }
@@ -209,6 +211,18 @@ public class RiskRuleEngine {
             return new RiskAssessment("MEDIUM", false, reasons);
         }
         return new RiskAssessment("LOW", false, List.of());
+    }
+
+    private static RiskAssessment higherRisk(RiskAssessment databaseAssessment, RiskAssessment fallbackAssessment) {
+        if (databaseAssessment == null) {
+            return fallbackAssessment;
+        }
+        if (fallbackAssessment == null) {
+            return databaseAssessment;
+        }
+        return severity(fallbackAssessment.riskLevel()) > severity(databaseAssessment.riskLevel())
+                ? fallbackAssessment
+                : databaseAssessment;
     }
 
     private RiskAssessment contextRisk(PatientContext context) {

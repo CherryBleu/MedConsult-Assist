@@ -92,6 +92,23 @@ class RiskRuleEngineDatabaseTest {
     }
 
     @Test
+    void databaseLowMatchShouldNotDowngradeHardcodedCriticalEmergencyTerms() {
+        SymptomRuleMapper symptomRuleMapper = mock(SymptomRuleMapper.class);
+        HighRiskSymptomRuleMapper highRiskRuleMapper = mock(HighRiskSymptomRuleMapper.class);
+        NegativeRuleMapper negativeRuleMapper = mock(NegativeRuleMapper.class);
+        when(symptomRuleMapper.selectList(any())).thenReturn(List.of(symptomRule("轻微头晕", "轻症头晕")));
+        when(highRiskRuleMapper.selectList(any())).thenReturn(List.of(highRiskRule("[\"急腹症风险\"]", "HIGH", "疑似急腹症")));
+        when(negativeRuleMapper.selectList(any())).thenReturn(List.of());
+
+        RiskAssessment assessment = new RiskRuleEngine(symptomRuleMapper, highRiskRuleMapper, negativeRuleMapper)
+                .assess("轻微头晕，但持续胸痛并伴随呼吸困难", null);
+
+        assertEquals("HIGH", assessment.riskLevel());
+        assertTrue(assessment.emergencyAdvice());
+        assertTrue(assessment.reasons().stream().anyMatch(reason -> reason.contains("持续胸痛")));
+    }
+
+    @Test
     void refreshFailureShouldKeepPreviousDatabaseSnapshot() {
         SymptomRuleMapper symptomRuleMapper = mock(SymptomRuleMapper.class);
         HighRiskSymptomRuleMapper highRiskRuleMapper = mock(HighRiskSymptomRuleMapper.class);

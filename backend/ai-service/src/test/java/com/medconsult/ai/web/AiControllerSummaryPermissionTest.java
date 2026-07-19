@@ -158,6 +158,6 @@ class AiControllerSummaryPermissionTest {
     private static JwtPayload servicePayload(String serviceCode) {
         return new JwtPayload(
                 JwtPayload.SubjectType.SERVICE, null, serviceCode, serviceCode, List.of(), null,
-                null, null, null, null, List.of(), "jti", Long.MAX_VALUE);
+                null, null, null, null, List.of("ai:write"), "jti", Long.MAX_VALUE);
     }
 }
