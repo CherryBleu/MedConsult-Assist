@@ -14,9 +14,9 @@
       <el-tabs v-model="activeTab" class="main-tabs">
         <el-tab-pane label="新建检测" name="new">
           <div class="upload-section">
-            <el-form label-width="100px">
+            <el-form class="imaging-form" label-position="top">
               <el-form-item label="影像类型">
-                <el-select v-model="imagingForm.imagingType" placeholder="请选择影像类型" style="width: 200px">
+                <el-select v-model="imagingForm.imagingType" class="field-control" placeholder="请选择影像类型" aria-label="影像类型">
                   <el-option label="CT" value="CT" />
                   <el-option label="X线" value="X线" />
                   <el-option label="MRI" value="MRI" />
@@ -24,7 +24,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="检查部位">
-                <el-select v-model="imagingForm.bodyPart" placeholder="请选择检查部位" style="width: 200px">
+                <el-select v-model="imagingForm.bodyPart" class="field-control" placeholder="请选择检查部位" aria-label="检查部位">
                   <el-option label="胸部" value="胸部" />
                   <el-option label="腹部" value="腹部" />
                   <el-option label="头颅" value="头颅" />
@@ -49,10 +49,10 @@
                 <div class="upload-tip">支持 JPG、PNG、DICOM 格式，单张不超过 10MB</div>
               </div>
               <div v-else class="image-preview-wrapper">
-                <img ref="previewImg" :src="imageUrl" class="preview-image" @load="onImageLoad" />
-                <canvas ref="annotationCanvas" class="annotation-canvas"></canvas>
+                <img ref="previewImg" :src="imageUrl" class="preview-image" :alt="buildImagingAlt('待提交的医学影像预览')" @load="onImageLoad" />
+                <canvas ref="annotationCanvas" class="annotation-canvas" aria-hidden="true"></canvas>
                 <div class="image-overlay">
-                  <el-button type="danger" size="small" circle @click.stop="removeImage">
+                  <el-button type="danger" size="small" circle class="image-remove-action" aria-label="移除影像" @click.stop="removeImage">
                     <el-icon><Close /></el-icon>
                   </el-button>
                 </div>
@@ -63,6 +63,7 @@
               <el-button
                 type="primary"
                 size="large"
+                class="patient-imaging-action"
                 :loading="submitting"
                 :disabled="!imageUrl || !imagingForm.imagingType || !imagingForm.bodyPart"
                 @click="submitDetection"
@@ -71,7 +72,9 @@
               </el-button>
             </div>
 
-            <div v-if="detecting" class="progress-section">
+            <div v-if="submitError" class="inline-error" role="alert">{{ submitError }}</div>
+
+            <div v-if="detecting" class="progress-section" role="status" aria-live="polite">
               <el-progress :percentage="progress" :status="progressStatus" />
               <p class="progress-text">{{ progressText }}</p>
             </div>
@@ -87,8 +90,8 @@
 
             <div class="result-content">
               <div class="result-image-wrapper">
-                <img :src="imageUrl" class="result-image" @load="drawAnnotations" />
-                <canvas ref="resultCanvas" class="result-canvas"></canvas>
+                <img :src="imageUrl" class="result-image" :alt="buildImagingAlt('影像检测结果原图与异常区域标注', detectionResult)" @load="drawAnnotations" />
+                <canvas ref="resultCanvas" class="result-canvas" aria-hidden="true"></canvas>
                 <div v-if="detectionResult.regions && detectionResult.regions.length" class="legend">
                   <div v-for="(region, idx) in detectionResult.regions" :key="idx" class="legend-item">
                     <span class="legend-color" :style="{ background: getRegionColor(idx) }"></span>
@@ -110,6 +113,15 @@
                     <el-tag v-else type="warning" size="small">待医生审核</el-tag>
                   </el-descriptions-item>
                 </el-descriptions>
+
+                <div v-if="detectionResult.regions && detectionResult.regions.length" class="region-text-list" aria-label="异常区域文字说明">
+                  <h4>异常区域文字说明</h4>
+                  <ul>
+                    <li v-for="(region, idx) in detectionResult.regions" :key="idx">
+                      {{ getRegionDescription(region) }}
+                    </li>
+                  </ul>
+                </div>
 
                 <div class="findings-box">
                   <h4>AI影像所见</h4>
@@ -144,36 +156,87 @@
         </el-tab-pane>
 
         <el-tab-pane label="历史记录" name="history">
-          <el-table :data="historyList" v-loading="historyLoading" stripe style="width: 100%">
-            <el-table-column prop="taskNo" label="检测编号" width="180" />
-            <el-table-column prop="imagingType" label="影像类型" width="100" />
-            <el-table-column prop="bodyPart" label="检查部位" width="100" />
-            <el-table-column label="检测结果" width="120">
-              <template #default="{ row }">
-                <el-tag :type="row.hasAbnormal ? 'danger' : 'success'" size="small">
-                  {{ row.hasAbnormal ? '异常' : '正常' }}
-                </el-tag>
+          <PageState
+            :loading="historyLoading"
+            :error="historyError"
+            :empty="historyList.length === 0"
+            loading-text="正在加载影像检测历史..."
+            empty-text="暂无影像检测历史"
+            @retry="getHistoryList"
+          >
+            <ResponsiveTable aria-label="影像检测历史记录">
+              <template #table>
+                <el-table :data="historyList" stripe style="width: 100%">
+                  <el-table-column prop="taskNo" label="检测编号" width="180" />
+                  <el-table-column prop="imagingType" label="影像类型" width="100" />
+                  <el-table-column prop="bodyPart" label="检查部位" width="100" />
+                  <el-table-column label="检测结果" width="120">
+                    <template #default="{ row }">
+                      <el-tag :type="row.hasAbnormal ? 'danger' : 'success'" size="small">
+                        {{ row.hasAbnormal ? '异常' : '正常' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="置信度" width="120">
+                    <template #default="{ row }">
+                      <el-progress :percentage="row.confidence" :stroke-width="6" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="审核状态" width="100">
+                    <template #default="{ row }">
+                      <el-tag :type="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'" size="small">
+                        {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="createdAt" label="检测时间" width="180" />
+                  <el-table-column label="操作" width="120">
+                    <template #default="{ row }">
+                      <el-button type="primary" link size="small" class="patient-imaging-action" :aria-label="`查看 ${row.taskNo} 检测详情`" @click="viewHistory(row)">查看详情</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </template>
-            </el-table-column>
-            <el-table-column label="置信度" width="120">
-              <template #default="{ row }">
-                <el-progress :percentage="row.confidence" :stroke-width="6" />
+
+              <template #card>
+                <article
+                  v-for="row in historyList"
+                  :key="row.detectionId || row.taskId || row.taskNo"
+                  class="history-card"
+                  data-testid="responsive-patient-imaging-card"
+                >
+                  <div class="history-card__header">
+                    <div>
+                      <p class="history-card__title">{{ row.taskNo || row.taskId }}</p>
+                      <p class="history-card__meta">{{ row.createdAt || '-' }}</p>
+                    </div>
+                    <span class="status-chip" :class="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'">
+                      {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
+                    </span>
+                  </div>
+                  <dl class="history-card__fields">
+                    <div>
+                      <dt>类型</dt>
+                      <dd>{{ row.imagingType || '-' }} {{ row.bodyPart || '' }}</dd>
+                    </div>
+                    <div>
+                      <dt>AI结果</dt>
+                      <dd>
+                        <span class="status-chip" :class="row.hasAbnormal ? 'danger' : 'success'">
+                          {{ row.hasAbnormal ? '异常' : '正常' }}
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>置信度</dt>
+                      <dd>{{ Number(row.confidence || 0) }}%</dd>
+                    </div>
+                  </dl>
+                  <el-button type="primary" plain class="patient-imaging-action" @click="viewHistory(row)">查看详情</el-button>
+                </article>
               </template>
-            </el-table-column>
-            <el-table-column label="审核状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="row.reviewStatus === 'REVIEWED' ? 'success' : 'warning'" size="small">
-                  {{ row.reviewStatus === 'REVIEWED' ? '已审核' : '待审核' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="createdAt" label="检测时间" width="180" />
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button type="primary" link size="small" @click="viewHistory(row)">查看详情</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+            </ResponsiveTable>
+          </PageState>
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -187,6 +250,8 @@ import { PictureFilled, UploadFilled, Close } from '@element-plus/icons-vue'
 import { submitImagingDetectionApi, getImagingResultApi, getImagingHistoryListApi, uploadImageFileApi } from '@/api/ai'
 import { useUserStore } from '@/store/modules/user'
 import { getToken } from '@/utils/auth'
+import PageState from '@/components/common/PageState.vue'
+import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
 const userStore = useUserStore()
 
@@ -203,6 +268,8 @@ const currentTaskId = ref('')
 const pollTimer = ref(null)
 const historyList = ref([])
 const historyLoading = ref(false)
+const historyError = ref('')
+const submitError = ref('')
 
 const previewImg = ref(null)
 const annotationCanvas = ref(null)
@@ -217,15 +284,34 @@ const regionColors = ['#ff4d4f', '#faad14', '#52c41a', '#1890ff', '#722ed1']
 
 const getRegionColor = (idx) => regionColors[idx % regionColors.length]
 
+const buildImagingAlt = (context, result = null) => {
+  const source = result || detectionResult.value || {}
+  const type = source.imagingType || imagingForm.imagingType || '医学影像'
+  const part = source.bodyPart || imagingForm.bodyPart || '检查部位'
+  if (source.hasAbnormal === true) return `${context}：${type}${part}，AI提示存在异常区域`
+  if (source.hasAbnormal === false) return `${context}：${type}${part}，AI未提示明显异常`
+  return `${context}：${type}${part}`
+}
+
+const getRegionDescription = (region) => {
+  const confidence = Number(region.confidence || 0)
+  const hasRegionBox = [region.x, region.y, region.width, region.height].every(value => Number.isFinite(Number(value)))
+  const regionBox = hasRegionBox ? `，区域 x${region.x} y${region.y} 宽${region.width} 高${region.height}` : ''
+  return `${region.label || '异常区域'}，置信度 ${confidence}%${regionBox}`
+}
+
 const handleFileChange = (file) => {
+  submitError.value = ''
   const isImage = file.raw.type.startsWith('image/')
   const isLt10M = file.raw.size / 1024 / 1024 < 10
 
   if (!isImage) {
+    submitError.value = '请上传图片文件'
     ElMessage.error('请上传图片文件')
     return
   }
   if (!isLt10M) {
+    submitError.value = '图片大小不能超过 10MB'
     ElMessage.error('图片大小不能超过 10MB')
     return
   }
@@ -239,6 +325,7 @@ const removeImage = () => {
   imageUrl.value = ''
   imageFile.value = null
   detectionResult.value = null
+  submitError.value = ''
   if (pollTimer.value) {
     clearInterval(pollTimer.value)
     pollTimer.value = null
@@ -297,7 +384,9 @@ const drawAnnotations = () => {
 }
 
 const submitDetection = async () => {
+  submitError.value = ''
   if (!imageFile.value) {
+    submitError.value = '请先上传影像图片'
     ElMessage.warning('请先上传影像图片')
     return
   }
@@ -327,7 +416,8 @@ const submitDetection = async () => {
     ElMessage.success('检测任务已提交，正在处理中...')
     startPolling()
   } catch (e) {
-    ElMessage.error('提交失败，请重试')
+    submitError.value = e?.response?.data?.message || e?.message || '提交失败，请重试'
+    ElMessage.error(submitError.value)
     detecting.value = false
   } finally {
     submitting.value = false
@@ -357,6 +447,7 @@ const startPolling = () => {
       detecting.value = false
       progressStatus.value = 'exception'
       progressText.value = '检测超时，请稍后在历史记录中查看结果'
+      submitError.value = progressText.value
       ElMessage.warning('检测超时，请稍后在历史记录中查看结果')
       getHistoryList()
       return
@@ -388,14 +479,16 @@ const startPolling = () => {
         pollTimer.value = null
         detecting.value = false
         progressStatus.value = 'exception'
-        progressText.value = '检测失败'
-        ElMessage.error(data.failReason || data.errorMessage || '检测失败，请重试')
+        progressText.value = data.failReason || data.errorMessage || '检测失败，请重试'
+        submitError.value = progressText.value
+        ElMessage.error(submitError.value)
       }
     } catch (e) {
       clearInterval(pollTimer.value)
       pollTimer.value = null
       detecting.value = false
-      ElMessage.error('获取检测结果失败')
+      submitError.value = e?.response?.data?.message || e?.message || '获取检测结果失败'
+      ElMessage.error(submitError.value)
     }
   }, 1500)
 }
@@ -420,11 +513,15 @@ const getReviewTagType = (result) => {
 
 const getHistoryList = async () => {
   historyLoading.value = true
+  historyError.value = ''
   try {
     // 后端按 patientId 过滤；患者端传当前用户 patientId
     const patientId = userStore.userInfo?.patientId
     const res = await getImagingHistoryListApi(patientId || null)
     historyList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
+  } catch (e) {
+    historyList.value = []
+    historyError.value = e?.response?.data?.message || e?.message || '影像检测历史加载失败'
   } finally {
     historyLoading.value = false
   }
@@ -449,7 +546,8 @@ const viewHistory = async (row) => {
       setTimeout(() => drawAnnotations(), 300)
     })
   } catch (e) {
-    ElMessage.error('获取详情失败')
+    submitError.value = e?.response?.data?.message || e?.message || '获取详情失败，请重试'
+    ElMessage.error(submitError.value)
   }
 }
 
@@ -497,7 +595,39 @@ onUnmounted(() => {
 }
 
 .upload-section {
-  max-width: 700px;
+  max-width: 760px;
+}
+
+.imaging-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(2, 132, 199, .1);
+  border-radius: var(--radius-base);
+  background: var(--bg-page);
+}
+
+.imaging-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.imaging-form :deep(.el-form-item__label) {
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.field-control {
+  width: 100%;
+}
+
+.patient-imaging-action,
+.image-remove-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
 }
 
 .image-uploader {
@@ -505,7 +635,7 @@ onUnmounted(() => {
 }
 .image-uploader :deep(.el-upload-dragger) {
   width: 100%;
-  height: 320px;
+  min-height: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -551,10 +681,22 @@ onUnmounted(() => {
 
 .submit-section {
   margin-top: 24px;
-  text-align: center;
+  display: flex;
+  justify-content: center;
 }
-.submit-section .el-button {
+.submit-section .patient-imaging-action {
   width: 200px;
+}
+
+.inline-error {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(185, 28, 28, .22);
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--el-color-danger);
+  font-size: var(--font-sm);
+  line-height: 1.6;
 }
 
 .progress-section {
@@ -642,6 +784,7 @@ onUnmounted(() => {
 .findings-box,
 .diagnosis-box,
 .suggestions-box,
+.region-text-list,
 .review-box {
   padding: 16px;
   background: var(--bg-page);
@@ -650,6 +793,7 @@ onUnmounted(() => {
 .findings-box h4,
 .diagnosis-box h4,
 .suggestions-box h4,
+.region-text-list h4,
 .review-box h4 {
   font-size: 14px;
   font-weight: 600;
@@ -672,10 +816,15 @@ onUnmounted(() => {
   margin: 0;
   padding-left: 20px;
 }
-.suggestions-box li {
+.suggestions-box li,
+.region-text-list li {
   font-size: 13px;
   color: var(--text-regular);
   line-height: 2;
+}
+.region-text-list ul {
+  margin: 0;
+  padding-left: 20px;
 }
 .review-box {
   background: #f6ffed;
@@ -684,5 +833,170 @@ onUnmounted(() => {
   font-size: 12px !important;
   color: var(--text-secondary) !important;
   margin-top: 8px !important;
+}
+
+.history-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-base);
+  background: var(--bg-card);
+}
+
+.history-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history-card__header > div {
+  min-width: 0;
+}
+
+.history-card__title,
+.history-card__meta {
+  margin: 0;
+}
+
+.history-card__title {
+  overflow-wrap: anywhere;
+  font-size: var(--font-base);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.history-card__meta {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}
+
+.history-card__fields {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.history-card__fields div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.history-card__fields dt,
+.history-card__fields dd {
+  margin: 0;
+}
+
+.history-card__fields dt {
+  color: var(--text-secondary);
+}
+
+.history-card__fields dd {
+  min-width: 0;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.status-chip.success {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.status-chip.warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.status-chip.danger {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.history-card__header .status-chip,
+.history-card__fields .status-chip {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+  .page-header,
+  .header-left,
+  .result-header,
+  .submit-section {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .header-left {
+    gap: 10px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .imaging-form,
+  .result-content {
+    grid-template-columns: 1fr;
+  }
+
+  .image-uploader :deep(.el-upload-dragger),
+  .image-preview-wrapper {
+    min-height: 240px;
+    height: auto;
+  }
+
+  .result-image-wrapper {
+    min-height: 240px;
+  }
+
+  .legend {
+    right: 12px;
+    max-width: calc(100% - 24px);
+  }
+
+  .submit-section .patient-imaging-action,
+  .history-card .patient-imaging-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .image-uploader :deep(.el-upload-dragger),
+  .image-preview-wrapper,
+  .result-image-wrapper {
+    min-height: 210px;
+  }
+
+  .imaging-form,
+  .findings-box,
+  .diagnosis-box,
+  .suggestions-box,
+  .region-text-list,
+  .review-box,
+  .history-card {
+    padding: 14px;
+  }
 }
 </style>
