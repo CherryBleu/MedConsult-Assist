@@ -127,6 +127,15 @@ class MedicalRecordFlowTest {
                 .header("X-User-Patient-Id", "9999")
                 .header("X-User-Doctor-Id", "2001");
     }
+    /** 多角色账号当前以 PATIENT 为主角色时，即使 roles 含 DOCTOR，创建病历仍应拒绝 */
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder patientPrimaryMultiRoleAuth(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
+        return b.header("X-User-Id", "6003")
+                .header("X-User-Primary-Role", "PATIENT")
+                .header("X-User-Roles", "PATIENT,DOCTOR")
+                .header("X-User-Patient-Id", "1001")
+                .header("X-User-Doctor-Id", "2001");
+    }
     /** 患者本人身份（patientId=1001，与 createRecord stub 的归属主键一致） */
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder selfPatientAuth(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder b) {
@@ -183,6 +192,35 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").exists())
                 .andExpect(jsonPath("$.data.status").value("DRAFT"));
+    }
+
+    @Test
+    void createRecord_requestedOtherDoctorForbidden() throws Exception {
+        when(doctorFeignClient.resolveDoctorId("D2999"))
+                .thenReturn(Result.ok(EntityIdDTO.of(2999L)));
+
+        String body = """
+                {"patientId":"%s","doctorId":"D2999","appointmentId":"A202607200001",
+                 "chiefComplaint":"尝试绑定其他医生接诊预约",
+                 "initialDiagnosis":["越权创建测试"]}""".formatted(PATIENT_NO);
+
+        mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void createRecord_patientPrimaryMultiRoleForbiddenBeforeDoctorLookup() throws Exception {
+        when(doctorFeignClient.resolveDoctorId("D_NOT_EXIST"))
+                .thenReturn(Result.ok(null));
+
+        String body = """
+                {"patientId":"%s","doctorId":"D_NOT_EXIST","chiefComplaint":"患者尝试创建病历",
+                 "initialDiagnosis":["越权创建测试"]}""".formatted(PATIENT_NO);
+
+        mvc.perform(patientPrimaryMultiRoleAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test

@@ -68,14 +68,19 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
      */
     @Override
     public MedicalRecordDTO.CreateResponse create(MedicalRecordDTO.CreateRequest req) {
-        // ① 身份与归属校验（§2.3 权限矩阵「病历 创建=DOCTOR 自己接诊的」）：
-        //    DOCTOR 身份下强制 doctorId 为本人（防伪造他人医生身份建病历）；管理员暂放行（留待行级权限）。
-        enforceCreateScope(req);
-        // ② 事务外：Feign 反查真实主键（patient_no/doctor_no 不存在 → NOT_FOUND，此时无 DB 写入可回滚）
+        JwtPayload payload = SecurityContext.requireUser();
+        if (isPatient(payload)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "患者无权创建病历");
+        }
+
+        // ① 事务外：Feign 反查真实主键（patient_no/doctor_no 不存在 → NOT_FOUND，此时无 DB 写入可回滚）
         Long patientId = resolvePatientId(req.getPatientId());
-        Long doctorId = resolveDoctorId(req.getDoctorId());
+        Long requestedDoctorId = resolveDoctorId(req.getDoctorId());
+        // ② 身份与归属校验（§2.3 权限矩阵「病历 创建=DOCTOR 自己接诊的」）：
+        //    DOCTOR 身份下请求医生必须解析为 JWT doctorId，防伪造其他医生接诊上下文建病历。
+        Long doctorId = enforceCreateScope(payload, requestedDoctorId);
         Long appointmentId = (req.getAppointmentId() != null && !req.getAppointmentId().isBlank())
-                // appointment 反查待 outpatient 暴露接口；暂用正哈希占位（可空、非查询键，影响有限）
+                // appointment_no 尚未反查 patient/doctor 归属；当前仅保存正哈希占位，不作为授权依据。
                 ? positiveHash(req.getAppointmentId()) : null;
 
         // ③ 事务内：纯 DB 写入（无远程调用，事务持有时间短）
@@ -83,29 +88,24 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     }
 
     /**
-     * 创建病历的身份归属校验（参考 AppointmentServiceImpl.enforceCreateScope）。
-     * <p>DOCTOR 身份：强制覆盖 doctorId 为 JWT 内的本人 doctorId，防伪造他人身份给任意患者建病历。
+     * 创建病历的身份归属校验（参考 AppointmentServiceImpl.enforceAppointmentOwnership）。
+     * <p>DOCTOR 身份：请求医生必须解析为 JWT 内的本人 doctorId，防伪造他人接诊上下文给任意患者建病历。
      * <p>HOSPITAL_ADMIN：放行（管理员可代建，行级权限留待 RBAC 五表阶段）。
-     * <p>PATIENT：禁止建病历（§2.3 矩阵「病历 创建」无 PATIENT）。
+     * <p>PATIENT：已在 Feign 反查前拒绝（§2.3 矩阵「病历 创建」无 PATIENT）。
      */
-    private void enforceCreateScope(MedicalRecordDTO.CreateRequest req) {
-        JwtPayload payload = SecurityContext.requireUser();
-        if (isPatient(payload)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "患者无权创建病历");
-        }
+    private Long enforceCreateScope(JwtPayload payload, Long requestedDoctorId) {
         if (isDoctor(payload)) {
             Long selfDoctorId = payload.doctorId();
             if (selfDoctorId == null) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联医生档案，无法创建病历");
             }
-            // DOCTOR 只能以本人身份建病历：覆盖请求体 doctorId，防伪造他人医生编号
-            if (req.getDoctorId() != null && !req.getDoctorId().isBlank()
-                    && !String.valueOf(selfDoctorId).equals(req.getDoctorId())) {
-                log.warn("DOCTOR 创建病历时传入了 doctorId={}，已覆盖为本人身份 {}", req.getDoctorId(), selfDoctorId);
+            if (!selfDoctorId.equals(requestedDoctorId)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无权以非本人接诊医生创建病历");
             }
-            req.setDoctorId(String.valueOf(selfDoctorId));
+            return selfDoctorId;
         }
         // HOSPITAL_ADMIN/PHARMACY_ADMIN 保留请求体值（代建场景）
+        return requestedDoctorId;
     }
 
     // ===== §2.6.2 详情 =====
