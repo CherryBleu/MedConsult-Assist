@@ -7,6 +7,8 @@ const consumeFailOnce = (key) => {
   return true
 }
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
 export const mockRecordSummary = (recordId) => {
   return {
     code: 0,
@@ -18,12 +20,46 @@ export const mockRecordSummary = (recordId) => {
       summaryContent: {
         chiefComplaint: '咳嗽、咳痰3天，伴低热',
         diagnosis: '急性支气管炎',
+        medications: ['阿莫西林胶囊', '氨溴索口服溶液'],
+        treatmentPlan: '抗感染、化痰治疗，注意休息',
+        followUpAdvice: '注意休息，多饮水，3天后复诊',
         medication: '阿莫西林胶囊、氨溴索口服溶液',
         advice: '注意休息，多饮水，3天后复诊'
       },
       modelName: 'medical-summary-v1.0',
       createdAt: new Date().toLocaleString()
     }
+  }
+}
+
+export const mockRecordSummaryStream = async (recordId, handlers = {}) => {
+  if (consumeFailOnce('mock_summary_stream_fail_once')) {
+    await delay(120)
+    const error = new Error('AI 摘要流服务暂时不可用，请稍后重试')
+    handlers.onError?.({ status: 'FAILED', message: error.message })
+    throw error
+  }
+
+  const result = mockRecordSummary(recordId).data
+  const tokens = [
+    '咳嗽、咳痰3天，伴低热',
+    '；初步诊断为急性支气管炎',
+    '；建议抗感染、化痰治疗并按时复诊'
+  ]
+
+  handlers.onStart?.({ status: 'PROCESSING' })
+  for (const token of tokens) {
+    await delay(120)
+    handlers.onDelta?.({ token })
+  }
+  await delay(80)
+  handlers.onResult?.(result)
+  handlers.onDone?.({ status: 'COMPLETED' })
+
+  return {
+    code: 0,
+    message: 'success',
+    data: result
   }
 }
 

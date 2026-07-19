@@ -1,7 +1,96 @@
 import request from '@/utils/request'
+import { getToken } from '@/utils/auth'
 import { mockTriageResult, mockCreateSession, mockSendMessage, mockSessionHistory } from '@/mock/ai'
-import { mockRecordSummary, mockRecordSummaryByText, mockMedicationAnalysis, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
+import { mockRecordSummary, mockRecordSummaryStream, mockRecordSummaryByText, mockMedicationAnalysis, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+
+const parseSsePayload = (raw) => {
+  if (!raw || raw === '[DONE]') return null
+  try {
+    return JSON.parse(raw)
+  } catch (e) {
+    return raw
+  }
+}
+
+const parseSseFrame = (frame) => {
+  const lines = frame.split(/\r?\n/)
+  let eventName = 'message'
+  const dataLines = []
+
+  for (const line of lines) {
+    if (!line || line.startsWith(':')) continue
+    const separatorIndex = line.indexOf(':')
+    const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex)
+    let value = separatorIndex === -1 ? '' : line.slice(separatorIndex + 1)
+    if (value.startsWith(' ')) value = value.slice(1)
+
+    if (field === 'event') eventName = value
+    if (field === 'data') dataLines.push(value)
+  }
+
+  if (eventName === 'message' && dataLines.length === 0) return null
+  return {
+    eventName,
+    payload: parseSsePayload(dataLines.join('\n'))
+  }
+}
+
+const readSseResponse = async (response, callbacks = {}) => {
+  if (!response.body) {
+    throw new Error('当前浏览器不支持流式响应读取')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalResult = null
+
+  const handleFrame = (frame) => {
+    const event = parseSseFrame(frame)
+    if (!event) return
+
+    const { eventName, payload } = event
+    if (eventName === 'start') callbacks.onStart?.(payload)
+    if (eventName === 'delta') callbacks.onDelta?.(payload)
+    if (eventName === 'result') {
+      finalResult = payload
+      callbacks.onResult?.(payload)
+    }
+    if (eventName === 'done') callbacks.onDone?.(payload)
+    if (eventName === 'error') {
+      callbacks.onError?.(payload)
+      throw new Error(payload?.message || 'AI 流式请求失败')
+    }
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() || ''
+      frames.forEach(handleFrame)
+    }
+
+    buffer += decoder.decode()
+    if (buffer.trim()) handleFrame(buffer)
+    return finalResult
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+const parseErrorText = (text) => {
+  if (!text) return ''
+  try {
+    const parsed = JSON.parse(text)
+    return parsed?.message || text
+  } catch (e) {
+    return text
+  }
+}
 
 // 智能分诊
 export const triageApi = (data) => {
@@ -58,6 +147,45 @@ export const generateSummaryByRecordApi = (recordNo) => {
     url: `/ai/summary/by-record/${recordNo}`,
     method: 'post'
   })
+}
+
+// 生成病历摘要（按病历号，SSE 流式）
+// 后端流式接口是 POST + text/event-stream，浏览器端用 fetch + ReadableStream 消费命名 SSE 事件。
+export const generateSummaryByRecordStreamApi = async (recordNo, callbacks = {}) => {
+  if (USE_MOCK) {
+    return mockRecordSummaryStream(recordNo, callbacks)
+  }
+
+  const token = getToken()
+  const headers = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json'
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/summary/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      recordId: recordNo,
+      summaryType: 'STRUCTURED',
+      saveDraft: false
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(parseErrorText(errorText) || `AI 流式请求失败（HTTP ${response.status}）`)
+  }
+
+  const data = await readSseResponse(response, callbacks)
+  return {
+    code: 0,
+    message: 'success',
+    data
+  }
 }
 
 // 生成病历摘要（按文本）

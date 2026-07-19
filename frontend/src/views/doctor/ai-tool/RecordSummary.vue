@@ -4,12 +4,12 @@
       <h2 class="page-title">AI病历摘要生成</h2>
       
       <div class="select-section">
-        <el-form label-width="100px">
+        <el-form class="summary-form" label-width="100px">
           <el-form-item label="选择病历">
             <el-select
               v-model="selectedRecord"
+              class="record-select"
               placeholder="请选择要生成摘要的病历"
-              style="width: 500px"
               filterable
             >
               <el-option
@@ -31,11 +31,36 @@
                 </div>
               </el-option>
             </el-select>
-            <el-button type="primary" :loading="generating" @click="generateSummary" style="margin-left: 12px">
+            <el-button
+              type="primary"
+              class="record-summary-action generate-action"
+              :loading="generating"
+              :disabled="generating"
+              @click="generateSummary"
+            >
               生成摘要
             </el-button>
           </el-form-item>
         </el-form>
+      </div>
+
+      <div
+        v-if="generating"
+        class="stream-section"
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+      >
+        <div class="stream-header">
+          <span class="stream-dot" aria-hidden="true"></span>
+          <div>
+            <div class="stream-title">正在接收流式摘要</div>
+            <div class="stream-subtitle">{{ streamStage }}</div>
+          </div>
+        </div>
+        <p class="stream-preview">
+          {{ streamText || '正在建立 AI 流式连接，请稍候...' }}
+        </p>
       </div>
 
       <div v-if="summaryResult" class="result-section">
@@ -76,20 +101,25 @@
         </el-descriptions>
 
         <div class="action-bar">
-          <el-button type="primary" @click="applyToRecord">应用到病历</el-button>
-          <el-button @click="reset">重新生成</el-button>
+          <el-button type="primary" class="record-summary-action" @click="applyToRecord">应用到病历</el-button>
+          <el-button class="record-summary-action" @click="reset">重新生成</el-button>
         </div>
       </div>
 
       <el-alert
         v-else-if="errorMsg"
+        class="summary-error"
+        role="alert"
         type="error"
         :closable="false"
         show-icon
-        :title="errorMsg"
-        description="请检查病历是否存在且内容完整，或稍后重试。如持续失败请联系管理员检查 AI 服务配置。"
+        title="病历摘要生成失败"
       >
-        <el-button type="primary" size="small" @click="generateSummary" style="margin-top: 8px">重试</el-button>
+        <p class="summary-error__message">{{ errorMsg }}</p>
+        <div class="summary-error__footer">
+          <span>请检查病历是否存在且内容完整，或稍后重试。</span>
+          <el-button type="primary" size="small" class="record-summary-action" @click="generateSummary">重试</el-button>
+        </div>
       </el-alert>
 
       <el-empty v-else description="选择病历后点击生成，AI将自动提取结构化摘要" />
@@ -105,12 +135,14 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
-import { generateSummaryByRecordApi } from '@/api/ai'
+import { generateSummaryByRecordStreamApi } from '@/api/ai'
 
 const selectedRecord = ref('')
 const generating = ref(false)
 const recordList = ref([])
 const summaryResult = ref(null)
+const streamText = ref('')
+const streamStage = ref('准备连接')
 // 接口失败时的错误信息（非空则显示错误提示而非空 el-empty，让用户知道是失败了而非"返回空"）
 const errorMsg = ref('')
 
@@ -137,16 +169,47 @@ const getRecordList = async () => {
   recordList.value = res.data?.records ?? res.data ?? []
 }
 
+const getStreamToken = (payload) => {
+  if (payload == null) return ''
+  if (typeof payload === 'string') return payload
+  return payload.token == null ? '' : String(payload.token)
+}
+
 const generateSummary = async () => {
   if (!selectedRecord.value) {
     ElMessage.warning('请先选择病历')
     return
   }
   generating.value = true
+  streamText.value = ''
+  streamStage.value = '正在连接 AI 服务'
   errorMsg.value = ''
+  summaryResult.value = null
   try {
-    const res = await generateSummaryByRecordApi(selectedRecord.value)
-    summaryResult.value = res.data
+    const res = await generateSummaryByRecordStreamApi(selectedRecord.value, {
+      onStart: () => {
+        streamStage.value = 'AI 已开始生成摘要'
+      },
+      onDelta: (payload) => {
+        const token = getStreamToken(payload)
+        if (token) streamText.value += token
+      },
+      onResult: (payload) => {
+        summaryResult.value = payload
+      },
+      onDone: () => {
+        streamStage.value = '摘要生成完成'
+      },
+      onError: (payload) => {
+        errorMsg.value = payload?.message || '病历摘要生成失败'
+      }
+    })
+    if (!summaryResult.value && res?.data) {
+      summaryResult.value = res.data
+    }
+    if (!summaryResult.value) {
+      throw new Error('AI 流未返回摘要结果')
+    }
     ElMessage.success('摘要生成完成')
   } catch (e) {
     // 接口失败（403/404/500/网络异常/LLM 不可用）时不再静默吞异常回到 el-empty
@@ -154,7 +217,7 @@ const generateSummary = async () => {
     // request 拦截器已弹 toast，这里取后端 message 显示在页面内（持久可见）。
     console.error('生成病历摘要失败', e)
     summaryResult.value = null
-    errorMsg.value = e?.response?.data?.message || e?.message || '病历摘要生成失败'
+    errorMsg.value = errorMsg.value || e?.response?.data?.message || e?.message || '病历摘要生成失败'
   } finally {
     generating.value = false
   }
@@ -167,6 +230,8 @@ const applyToRecord = () => {
 const reset = () => {
   summaryResult.value = null
   errorMsg.value = ''
+  streamText.value = ''
+  streamStage.value = '准备连接'
   selectedRecord.value = ''
 }
 
@@ -188,6 +253,79 @@ onMounted(() => {
   background: var(--bg-page);
   border-radius: var(--radius-base);
   margin-bottom: 24px;
+}
+
+.summary-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.summary-form :deep(.el-form-item__content) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.record-select {
+  width: min(100%, 500px);
+  flex: 1 1 320px;
+}
+
+.record-summary-action {
+  min-height: 44px;
+  min-width: 88px;
+}
+
+.generate-action {
+  flex: 0 0 auto;
+}
+
+.stream-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid rgba(2, 132, 199, .18);
+  border-radius: 8px;
+  background: rgba(240, 249, 255, .78);
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.stream-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 5px rgba(2, 132, 199, .12);
+  animation: stream-pulse 1.2s ease-in-out infinite;
+}
+
+.stream-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.stream-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.stream-preview {
+  margin: 0;
+  padding: 12px;
+  min-height: 48px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--text-primary);
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 .result-header {
@@ -224,6 +362,29 @@ onMounted(() => {
   border-top: 1px solid var(--border-light);
 }
 
+.action-bar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.summary-error {
+  margin-bottom: 16px;
+}
+
+.summary-error__message {
+  margin: 0 0 8px;
+  color: var(--el-color-danger);
+  line-height: 1.5;
+}
+
+.summary-error__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 /* 病历下拉选项 */
 .record-option {
   line-height: 1.4;
@@ -250,5 +411,72 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@keyframes stream-pulse {
+  0%, 100% {
+    opacity: .72;
+    transform: scale(.95);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .select-section {
+    padding: 16px;
+  }
+
+  .summary-form :deep(.el-form-item) {
+    display: block;
+  }
+
+  .summary-form :deep(.el-form-item__label) {
+    display: block;
+    width: auto !important;
+    margin-bottom: 8px;
+    line-height: 1.4;
+    text-align: left;
+  }
+
+  .summary-form :deep(.el-form-item__content) {
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 0 !important;
+  }
+
+  .record-select,
+  .generate-action {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .stream-section {
+    padding: 14px;
+  }
+
+  .result-header,
+  .action-bar,
+  .summary-error__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .action-bar .record-summary-action,
+  .summary-error__footer .record-summary-action {
+    width: 100%;
+  }
+
+  .option-main {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-dot {
+    animation: none;
+  }
 }
 </style>
