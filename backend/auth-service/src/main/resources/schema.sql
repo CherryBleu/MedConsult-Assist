@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS sys_permission (
     resource_type    VARCHAR(50)                       COMMENT '资源类型',
     action           VARCHAR(20)                       COMMENT '操作：read/write/audit/export',
     description      VARCHAR(200)                      COMMENT '描述',
+    enabled          TINYINT      NOT NULL DEFAULT 1   COMMENT 'permission enabled flag: 0 disabled, 1 enabled',
     created_at       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     deleted          TINYINT      NOT NULL DEFAULT 0,

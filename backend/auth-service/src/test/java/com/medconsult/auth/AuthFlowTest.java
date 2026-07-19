@@ -276,6 +276,22 @@ class AuthFlowTest {
     }
 
     @Test
+    void login_filtersDisabledRbacPermissionScopeWhenUserRoleRowsExist() throws Exception {
+        seedRbacRoleWithPermissionEnabled(1L, 81002L, "DOCTOR", 1,
+                82002L, "rbac:disabled-login-scope", 1, 0);
+
+        TokenPair tokens = login("admin", "123456");
+        JwtPayload payload = jwtCodec.parse(tokens.accessToken());
+
+        assertEquals("DOCTOR", payload.primaryRole());
+        assertEquals(List.of("DOCTOR"), payload.roles());
+        assertEquals(List.of(), payload.scope());
+        assertFalse(payload.scope().contains("rbac:disabled-login-scope"));
+        assertFalse(payload.scope().contains("user:manage"));
+        assertFalse(payload.scope().contains("ai:summary:confirm"));
+    }
+
+    @Test
     void login_fallsBackToRedisRoleScopeWhenRbacRowsMissing() throws Exception {
         JwtPayload payload = assertTokenScope(login("yaofang", "123456").accessToken(),
                 "PHARMACY_ADMIN", "drug:write");
@@ -413,6 +429,32 @@ class AuthFlowTest {
         assertEquals("DOCTOR", payload.primaryRole());
         assertEquals(List.of("DOCTOR"), payload.roles());
         assertEquals(List.of("rbac:refresh-scope"), payload.scope());
+    }
+
+    @Test
+    void refresh_filtersDisabledRbacPermissionScopeWhenUserRoleRowsExist() throws Exception {
+        TokenPair tokens = login("admin", "123456");
+        seedRbacRoleWithPermissionEnabled(1L, 85002L, "DOCTOR", 1,
+                86002L, "rbac:disabled-refresh-scope", 1, 0);
+
+        String refreshBody = "{\"refreshToken\":\"" + tokens.refreshToken() + "\"}";
+        MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh")
+                        .contentType("application/json")
+                        .content(refreshBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.accessToken").exists())
+                .andReturn();
+
+        String newAccessToken = om.readTree(refreshResult.getResponse().getContentAsString())
+                .at("/data/accessToken").asText();
+        JwtPayload payload = jwtCodec.parse(newAccessToken);
+        assertEquals("DOCTOR", payload.primaryRole());
+        assertEquals(List.of("DOCTOR"), payload.roles());
+        assertEquals(List.of(), payload.scope());
+        assertFalse(payload.scope().contains("rbac:disabled-refresh-scope"));
+        assertFalse(payload.scope().contains("user:manage"));
+        assertFalse(payload.scope().contains("ai:summary:confirm"));
     }
 
     @Test
@@ -674,15 +716,29 @@ class AuthFlowTest {
 
     private void seedRbacRole(Long userId, Long roleId, String roleCode, Integer isPrimary,
                               Long permissionId, String permissionCode, Integer roleEnabled) {
+        seedRbacRoleWithPermissionEnabled(userId, roleId, roleCode, isPrimary,
+                permissionId, permissionCode, roleEnabled, null);
+    }
+
+    private void seedRbacRoleWithPermissionEnabled(Long userId, Long roleId, String roleCode, Integer isPrimary,
+                                                   Long permissionId, String permissionCode, Integer roleEnabled,
+                                                   Integer permissionEnabled) {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         jdbc.update("""
                 INSERT INTO sys_role (id, role_code, role_name, enabled)
                 VALUES (?, ?, ?, ?)
                 """, roleId, roleCode, roleCode, roleEnabled);
-        jdbc.update("""
-                INSERT INTO sys_permission (id, permission_code, permission_name)
-                VALUES (?, ?, ?)
-                """, permissionId, permissionCode, permissionCode);
+        if (permissionEnabled == null) {
+            jdbc.update("""
+                    INSERT INTO sys_permission (id, permission_code, permission_name)
+                    VALUES (?, ?, ?)
+                    """, permissionId, permissionCode, permissionCode);
+        } else {
+            jdbc.update("""
+                    INSERT INTO sys_permission (id, permission_code, permission_name, enabled)
+                    VALUES (?, ?, ?, ?)
+                    """, permissionId, permissionCode, permissionCode, permissionEnabled);
+        }
         jdbc.update("""
                 INSERT INTO sys_role_permission (id, role_id, permission_id, data_scope)
                 VALUES (?, ?, ?, 'ALL')

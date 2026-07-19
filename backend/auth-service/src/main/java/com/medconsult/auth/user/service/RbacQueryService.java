@@ -1,17 +1,23 @@
 package com.medconsult.auth.user.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.medconsult.auth.user.entity.SysPermission;
 import com.medconsult.auth.user.entity.SysRole;
 import com.medconsult.auth.user.entity.SysRolePermission;
 import com.medconsult.auth.user.entity.SysUserRole;
-import com.medconsult.auth.user.mapper.SysPermissionMapper;
 import com.medconsult.auth.user.mapper.SysRoleMapper;
 import com.medconsult.auth.user.mapper.SysRolePermissionMapper;
 import com.medconsult.auth.user.mapper.SysUserRoleMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Service;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +36,8 @@ public class RbacQueryService {
     private final SysUserRoleMapper userRoleMapper;
     private final SysRoleMapper roleMapper;
     private final SysRolePermissionMapper rolePermissionMapper;
-    private final SysPermissionMapper permissionMapper;
+    private final NamedParameterJdbcTemplate jdbc;
+    private final DataSource dataSource;
 
     public Optional<RbacAccess> findUserAccess(Long userId) {
         if (userId == null) {
@@ -88,20 +95,64 @@ public class RbacQueryService {
 
         List<Long> permissionIds = links.stream()
                 .map(SysRolePermission::getPermissionId)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        Map<Long, SysPermission> permissionsById = permissionMapper.selectBatchIds(permissionIds).stream()
-                .filter(permission -> permission.getPermissionCode() != null
-                        && !permission.getPermissionCode().isBlank())
-                .collect(Collectors.toMap(SysPermission::getId, Function.identity(), (a, b) -> a));
+        if (permissionIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, String> permissionsById = queryPermissionCodes(permissionIds);
 
         return links.stream()
                 .map(SysRolePermission::getPermissionId)
                 .map(permissionsById::get)
-                .filter(permission -> permission != null)
-                .map(SysPermission::getPermissionCode)
+                .filter(permissionCode -> permissionCode != null && !permissionCode.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private Map<Long, String> queryPermissionCodes(List<Long> permissionIds) {
+        String enabledFilter = permissionEnabledColumnExists() ? " AND enabled = 1" : "";
+        String sql = """
+                SELECT id, permission_code
+                FROM sys_permission
+                WHERE deleted = 0
+                  AND id IN (:permissionIds)
+                """ + enabledFilter;
+        MapSqlParameterSource params = new MapSqlParameterSource("permissionIds", permissionIds);
+        return jdbc.query(sql, params, rs -> {
+            Map<Long, String> permissions = new LinkedHashMap<>();
+            while (rs.next()) {
+                String permissionCode = rs.getString("permission_code");
+                if (permissionCode != null && !permissionCode.isBlank()) {
+                    permissions.putIfAbsent(rs.getLong("id"), permissionCode);
+                }
+            }
+            return permissions;
+        });
+    }
+
+    private boolean permissionEnabledColumnExists() {
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        try {
+            DatabaseMetaData metadata = connection.getMetaData();
+            String catalog = connection.getCatalog();
+            return hasColumn(metadata, catalog, "sys_permission", "enabled")
+                    || hasColumn(metadata, catalog, "SYS_PERMISSION", "ENABLED")
+                    || hasColumn(metadata, null, "sys_permission", "enabled")
+                    || hasColumn(metadata, null, "SYS_PERMISSION", "ENABLED");
+        } catch (SQLException ex) {
+            return false;
+        } finally {
+            DataSourceUtils.releaseConnection(connection, dataSource);
+        }
+    }
+
+    private static boolean hasColumn(DatabaseMetaData metadata, String catalog, String table, String column)
+            throws SQLException {
+        try (ResultSet columns = metadata.getColumns(catalog, null, table, column)) {
+            return columns.next();
+        }
     }
 
     public record RbacAccess(List<String> roles, String primaryRole, List<String> scope) {
