@@ -7,6 +7,7 @@
           <el-select
             v-model="selectedDrugId"
             class="drug-select"
+            aria-label="选择药品"
             filterable
             remote
             reserve-keyword
@@ -23,7 +24,13 @@
               :value="normalizeDrugId(d)"
             />
           </el-select>
-          <el-select v-model="typeFilter" class="type-select" placeholder="操作类型" clearable>
+          <el-select
+            v-model="typeFilter"
+            class="type-select"
+            aria-label="筛选操作类型"
+            placeholder="操作类型"
+            clearable
+          >
             <el-option label="入库" value="INBOUND" />
             <el-option label="出库" value="OUTBOUND" />
           </el-select>
@@ -270,6 +277,11 @@ onMounted(() => {
 .flow-action {
   min-height: var(--touch-target);
   min-width: 72px;
+  touch-action: manipulation;
+}
+.flow-action:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 .text-success {
   color: #67c23a;
@@ -285,6 +297,15 @@ onMounted(() => {
   margin-top: 20px;
   max-width: 100%;
   overflow-x: auto;
+}
+.pagination-wrap :deep(.el-pagination button),
+.pagination-wrap :deep(.el-pagination .number),
+.pagination-wrap :deep(.el-pagination .more),
+.pagination-wrap :deep(.el-pagination__sizes .el-select__wrapper),
+.pagination-wrap :deep(.el-pagination__jump .el-input__wrapper) {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  touch-action: manipulation;
 }
 .flow-card {
   display: grid;

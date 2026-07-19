@@ -80,6 +80,9 @@ export const mockStockWarningList = () => {
 
 // 库存流水列表
 export const mockStockFlowList = () => {
+  if (consumeFailOnce('mock_stock_flow_fail_once')) {
+    return Promise.reject(new Error('库存流水加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
