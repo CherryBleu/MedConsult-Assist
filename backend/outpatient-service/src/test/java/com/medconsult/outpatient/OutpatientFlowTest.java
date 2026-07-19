@@ -2,6 +2,7 @@ package com.medconsult.outpatient;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +58,8 @@ import static org.junit.jupiter.api.Assertions.*;
 })
 @org.springframework.transaction.annotation.Transactional
 class OutpatientFlowTest {
+
+    private static final String JWT_SECRET = "test-secret-0123456789abcdef0123456789abcdef-min32bytes";
 
     @Autowired
     MockMvc mvc;
@@ -203,6 +206,24 @@ class OutpatientFlowTest {
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].appointmentId").value(appointmentNo))
                 .andExpect(jsonPath("$.data.items[0].appointmentStatus").value("BOOKED"));
+    }
+
+    @Test
+    void internalAppointmentOwnershipRequiresServiceJwtAndReturnsOwnerIds() throws Exception {
+        String scheduleNo = createSchedule(5);
+        String appointmentNo = createAppointment(scheduleNo, "9012");
+
+        mvc.perform(withPatient(get("/internal/appointments/no/" + appointmentNo + "/ownership"), "9012"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401001));
+
+        mvc.perform(withService(get("/internal/appointments/no/" + appointmentNo + "/ownership")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.appointmentNo").value(appointmentNo))
+                .andExpect(jsonPath("$.data.appointmentId").isNumber())
+                .andExpect(jsonPath("$.data.patientId").value(9012))
+                .andExpect(jsonPath("$.data.doctorId").value(doctorId));
     }
 
     @Test
@@ -442,5 +463,16 @@ class OutpatientFlowTest {
                 .header("X-User-Primary-Role", "DOCTOR")
                 .header("X-User-Roles", "DOCTOR")
                 .header("X-User-Doctor-Id", String.valueOf(doctorId));
+    }
+
+    private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {
+        return builder.header("Authorization", "Bearer " + serviceToken())
+                .header("X-Caller-Service", "medical-record-service");
+    }
+
+    private static String serviceToken() {
+        return new JwtCodec(JWT_SECRET)
+                .signService("medical-record-service", "medical-record-service",
+                        java.util.List.of("appointment:read"), 3600L, "svc-jti-appointment-test");
     }
 }

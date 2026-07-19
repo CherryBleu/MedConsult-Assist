@@ -13,8 +13,10 @@ import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.AppointmentFeignClient;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.medicalrecord.medicalrecord.dto.MedicalRecordDTO;
@@ -57,6 +59,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     /** Feign 反查 patient_no / doctor_no → 真实 BIGINT 主键（替代正哈希占位，根治串号） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
+    private final AppointmentFeignClient appointmentFeignClient;
     private final MedicalRecordTxService txService;
 
     // ===== §2.6.1 创建 =====
@@ -79,9 +82,7 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         // ② 身份与归属校验（§2.3 权限矩阵「病历 创建=DOCTOR 自己接诊的」）：
         //    DOCTOR 身份下请求医生必须解析为 JWT doctorId，防伪造其他医生接诊上下文建病历。
         Long doctorId = enforceCreateScope(payload, requestedDoctorId);
-        Long appointmentId = (req.getAppointmentId() != null && !req.getAppointmentId().isBlank())
-                // appointment_no 尚未反查 patient/doctor 归属；当前仅保存正哈希占位，不作为授权依据。
-                ? positiveHash(req.getAppointmentId()) : null;
+        Long appointmentId = resolveAppointmentId(req.getAppointmentId(), patientId, doctorId);
 
         // ③ 事务内：纯 DB 写入（无远程调用，事务持有时间短）
         return txService.createInTx(req, patientId, doctorId, appointmentId);
@@ -296,13 +297,19 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         }
     }
 
-    /** 业务编号 → 正哈希 Long（仅 appointment 占位用；patient/doctor 已改 Feign 反查）。 */
-    private static long positiveHash(String businessNo) {
-        if (businessNo == null) {
-            return 0L;
+    private Long resolveAppointmentId(String appointmentNo, Long patientId, Long doctorId) {
+        if (appointmentNo == null || appointmentNo.isBlank()) {
+            return null;
         }
-        long h = businessNo.hashCode();
-        return h == Long.MIN_VALUE ? 0L : Math.abs(h);
+        Result<AppointmentOwnershipDTO> resp = appointmentFeignClient.resolveOwnership(appointmentNo);
+        if (resp == null || resp.data() == null || resp.data().appointmentId() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "预约不存在: " + appointmentNo);
+        }
+        AppointmentOwnershipDTO ownership = resp.data();
+        if (!patientId.equals(ownership.patientId()) || !doctorId.equals(ownership.doctorId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权使用非当前患者或医生的预约创建病历");
+        }
+        return ownership.appointmentId();
     }
 
     /**

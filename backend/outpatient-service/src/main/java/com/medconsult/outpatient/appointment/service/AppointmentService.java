@@ -1,6 +1,7 @@
 package com.medconsult.outpatient.appointment.service;
 
 import com.medconsult.common.core.PageResult;
+import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 
 /**
@@ -31,4 +32,7 @@ public interface AppointmentService {
 
     /** §2.5.6 更新就诊状态（状态机校验） */
     AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req);
+
+    /** Internal: appointment_no -> appointment primary key and patient/doctor ownership. */
+    AppointmentOwnershipDTO internalResolveOwnership(String appointmentNo);
 }

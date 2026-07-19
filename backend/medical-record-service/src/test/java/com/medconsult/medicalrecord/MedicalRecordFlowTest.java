@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.AppointmentFeignClient;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
+import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.common.feign.dto.DispenseDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.security.JwtCodec;
@@ -95,6 +97,9 @@ class MedicalRecordFlowTest {
     @MockBean
     DoctorFeignClient doctorFeignClient;
 
+    @MockBean
+    AppointmentFeignClient appointmentFeignClient;
+
     private static final String PATIENT_NO = "P202607060001";
     private static final String OTHER_PATIENT_NO = "P202607069999";
     private static final String DOCTOR_NO = "D10001";
@@ -175,6 +180,12 @@ class MedicalRecordFlowTest {
                 .thenReturn(Result.ok(EntityIdDTO.of(2001L)));
         when(doctorFeignClient.resolveDepartmentId(any()))
                 .thenReturn(Result.ok(EntityIdDTO.of(3001L)));
+        when(appointmentFeignClient.resolveOwnership(any()))
+                .thenReturn(Result.ok(new AppointmentOwnershipDTO(9001L, "A202607200001", 1001L, 2001L)));
+        when(appointmentFeignClient.resolveOwnership("A_OTHER_PATIENT"))
+                .thenReturn(Result.ok(new AppointmentOwnershipDTO(9002L, "A_OTHER_PATIENT", 9999L, 2001L)));
+        when(appointmentFeignClient.resolveOwnership("A_OTHER_DOCTOR"))
+                .thenReturn(Result.ok(new AppointmentOwnershipDTO(9003L, "A_OTHER_DOCTOR", 1001L, 2999L)));
     }
 
     // ===== 病历域 =====
@@ -204,6 +215,30 @@ class MedicalRecordFlowTest {
                 {"patientId":"%s","doctorId":"D2999","appointmentId":"A202607200001",
                  "chiefComplaint":"尝试绑定其他医生接诊预约",
                  "initialDiagnosis":["越权创建测试"]}""".formatted(PATIENT_NO);
+
+        mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void createRecord_appointmentPatientMismatchForbidden() throws Exception {
+        String body = """
+                {"patientId":"%s","doctorId":"%s","appointmentId":"A_OTHER_PATIENT",
+                 "chiefComplaint":"尝试使用其他患者预约创建病历",
+                 "initialDiagnosis":["预约归属越权测试"]}""".formatted(PATIENT_NO, DOCTOR_NO);
+
+        mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
+    void createRecord_appointmentDoctorMismatchForbidden() throws Exception {
+        String body = """
+                {"patientId":"%s","doctorId":"%s","appointmentId":"A_OTHER_DOCTOR",
+                 "chiefComplaint":"尝试使用其他医生预约创建病历",
+                 "initialDiagnosis":["预约归属越权测试"]}""".formatted(PATIENT_NO, DOCTOR_NO);
 
         mvc.perform(doctorAuth(post("/api/v1/medical-records").contentType("application/json").content(body)))
                 .andExpect(status().isForbidden())

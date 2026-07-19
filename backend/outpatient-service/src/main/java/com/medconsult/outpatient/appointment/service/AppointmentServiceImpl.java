@@ -7,6 +7,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
@@ -301,6 +302,16 @@ public class AppointmentServiceImpl implements AppointmentService {
         // 越权防护（IDOR）：PATIENT 只能改本人预约状态，DOCTOR 只能改本人接诊的
         enforceAppointmentOwnership(a);
         return transitionStatus(a, req.getAppointmentStatus());
+    }
+
+    @Override
+    public AppointmentOwnershipDTO internalResolveOwnership(String appointmentNo) {
+        Appointment a = requireByNo(appointmentNo);
+        return new AppointmentOwnershipDTO(
+                a.getId(),
+                a.getAppointmentNo(),
+                a.getPatientId(),
+                a.getDoctorId());
     }
 
     private AppointmentDTO.StatusResponse transitionStatus(Appointment a, String newStatus) {
