@@ -41,6 +41,10 @@ export const mockArchiveRecord = (id) => {
 
 // 我的病历列表（对齐 medical_record 表字段）
 export const mockRecordList = () => {
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('mock_patient_record_list_fail_once') === '1') {
+    localStorage.removeItem('mock_patient_record_list_fail_once')
+    return Promise.reject(new Error('病历列表加载失败，请重试'))
+  }
   return {
     code: 0,
     message: 'success',
