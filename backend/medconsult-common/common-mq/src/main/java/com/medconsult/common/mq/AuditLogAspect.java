@@ -60,7 +60,7 @@ public class AuditLogAspect {
         this.auditLogProducer = auditLogProducer;
     }
 
-    @Around("@annotation(audit) || @within(audit)")
+    @Around("@annotation(audit)")
     public Object around(ProceedingJoinPoint pjp, AuditLog audit) throws Throwable {
         Object result = pjp.proceed();
         // 业务成功才审计；try-catch 确保审计异常不污染已成功的主业务返回值

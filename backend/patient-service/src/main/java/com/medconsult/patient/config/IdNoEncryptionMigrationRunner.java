@@ -8,7 +8,7 @@ import com.medconsult.patient.mapper.PatientMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -31,7 +31,8 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnBean(CryptoService.class)  // 未配置加密 key 时（CryptoService 未装配）跳过迁移
+// 与 CryptoService 同条件（都看 medconsult.crypto.id-no.key），避免 @ConditionalOnBean 跨配置类时序问题
+@ConditionalOnProperty(name = "medconsult.crypto.id-no.key")
 @Order(30)  // 晚于业务初始化
 public class IdNoEncryptionMigrationRunner implements CommandLineRunner {
 

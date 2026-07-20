@@ -101,6 +101,7 @@ public class MessageDispatcher implements RabbitTemplate.ConfirmCallback {
                     org.springframework.amqp.core.MessageBuilder
                             .withBody(msg.getPayloadJson().getBytes())
                             .setHeader("messageNo", msg.getMessageNo())
+                            .setContentType("text/plain")
                             .build(),
                     cd);
             // send 成功（已写入 broker TCP 缓冲）→ CAS 置 SENT，等 confirm 回调确认。
