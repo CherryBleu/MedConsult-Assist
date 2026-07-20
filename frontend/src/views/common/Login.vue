@@ -239,16 +239,13 @@ const handleLogin = async () => {
   min-height: 100svh;
   display: flex;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at 8% 12%, rgba(8, 145, 178, .20), transparent 28%),
-    radial-gradient(circle at 92% 18%, rgba(22, 163, 74, .15), transparent 26%),
-    var(--bg-page);
+  background: linear-gradient(135deg, #f8fbfd 0%, #eef8f9 100%);
 }
 
 /* 左侧品牌区 */
 .login-left {
   flex: 1;
-  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 54%, var(--accent-green) 100%);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 56%, var(--accent-green) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -297,7 +294,7 @@ const handleLogin = async () => {
 /* 右侧登录区 */
 .login-right {
   width: 520px;
-  background: rgba(255, 255, 255, .94);
+  background: rgba(248, 251, 253, .94);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,7 +303,7 @@ const handleLogin = async () => {
 
 .login-card {
   width: min(100%, 380px);
-  border-radius: var(--radius-xl);
+  border-radius: 12px;
 }
 
 .login-title {
@@ -365,15 +362,15 @@ const handleLogin = async () => {
   font-size: 12px;
   min-height: 32px;
   padding: 4px 10px;
-  background: var(--bg-page);
-  border-radius: 4px;
+  background: #f3fafb;
+  border-radius: 999px;
   color: var(--primary-color);
   cursor: pointer;
   transition: all .2s;
   user-select: none;
 }
 .demo-tag:hover {
-  background: rgba(22, 119, 255, 0.1);
+  background: #e0f2fe;
 }
 
 /* 入口选择界面 */
@@ -388,12 +385,12 @@ const handleLogin = async () => {
   width: 100%;
   min-height: 132px;
   padding: 24px;
-  border: 2px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.25s ease;
   text-align: center;
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
   font: inherit;
 }
 
@@ -458,6 +455,7 @@ const handleLogin = async () => {
 
 .back-entry:hover {
   color: var(--primary-color);
+  background: var(--bg-hover);
 }
 
 .entry-card:focus-visible,
@@ -469,6 +467,11 @@ const handleLogin = async () => {
 
 .login-form :deep(.el-input__wrapper) {
   min-height: 44px;
+  box-shadow: 0 0 0 1px rgba(203, 213, 225, .88) inset;
+}
+
+.login-form :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--primary-color) inset, var(--focus-ring);
 }
 
 @media (max-width: 900px) {

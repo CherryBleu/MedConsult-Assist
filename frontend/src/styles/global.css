@@ -1,7 +1,7 @@
 @import './reset.css';
 @import './variables.css';
 
-/* 通用工具类 */
+/* Utility classes */
 .flex {
   display: flex;
 }
@@ -37,36 +37,191 @@
 .mt-10 { margin-top: 10px; }
 .mt-20 { margin-top: 20px; }
 
-/* 页面容器通用样式 */
+body {
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--primary-color);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #b6cbd3;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #88aeb9;
+}
+
+/* Page shells */
 .page-container {
-  padding: 24px;
-  background: var(--gradient-soft);
-  min-height: 100%;
   min-width: 0;
   max-width: 100%;
+  min-height: 100%;
+  padding: 24px;
   overflow-x: auto;
+  background: var(--gradient-soft);
 }
+
 .card-box {
   min-width: 0;
   max-width: 100%;
-  background: var(--bg-glass);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 18px;
   padding: 22px;
-  box-shadow: var(--shadow-card);
-  backdrop-filter: blur(14px);
   overflow-wrap: anywhere;
+  background: var(--bg-glass);
+  border: 1px solid rgba(216, 231, 236, 0.9);
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-card);
 }
+
 .interactive-card {
-  transition: transform var(--motion-base) ease, box-shadow var(--motion-base) ease, border-color var(--motion-base) ease;
+  transition:
+    transform var(--motion-base) ease,
+    box-shadow var(--motion-base) ease,
+    border-color var(--motion-base) ease,
+    background-color var(--motion-base) ease;
 }
+
 .interactive-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
+  border-color: rgba(14, 116, 144, 0.35);
   box-shadow: var(--shadow-hover);
 }
 
+/* Element Plus polish */
+.el-button {
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  transition:
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+
+.el-button--large {
+  min-height: var(--touch-target);
+}
+
+.el-button--primary {
+  box-shadow: 0 8px 16px rgba(14, 116, 144, 0.18);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus-visible {
+  box-shadow: 0 10px 20px rgba(14, 116, 144, 0.24);
+}
+
+.el-button.is-link,
+.el-button.is-text {
+  box-shadow: none;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select .el-input__wrapper,
+.el-input-number .el-input__wrapper {
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border-light) inset;
+  transition:
+    box-shadow var(--motion-fast) ease,
+    background-color var(--motion-fast) ease;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover,
+.el-select .el-input__wrapper:hover,
+.el-input-number .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px #9bc7d2 inset;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select .el-input__wrapper.is-focus,
+.el-input-number .el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--primary-color) inset, var(--focus-ring);
+}
+
+.el-form-item__label {
+  color: var(--text-regular);
+  font-weight: 600;
+}
+
+.el-table {
+  --el-table-header-bg-color: #f3fafb;
+  --el-table-header-text-color: #164e63;
+  --el-table-row-hover-bg-color: #f0fdfa;
+  color: var(--text-regular);
+  border-radius: var(--radius-base);
+  overflow: hidden;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 700;
+}
+
+.el-table .cell {
+  line-height: 1.5;
+}
+
+.el-table--border,
+.el-table--group {
+  border-color: var(--border-light);
+}
+
+.el-pagination {
+  gap: 4px;
+}
+
+.el-tag {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.el-dialog,
+.el-message-box,
+.el-popper,
+.el-card {
+  border-radius: var(--radius-base);
+}
+
+.el-dialog {
+  box-shadow: 0 24px 70px rgba(15, 35, 95, 0.18);
+}
+
+.el-dialog__header,
+.el-message-box__header {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-lighter);
+}
+
+.el-drawer {
+  --el-drawer-padding-primary: 20px;
+}
+
+.el-loading-mask {
+  border-radius: inherit;
+  backdrop-filter: blur(2px);
+}
+
 :focus-visible {
-  outline: 2px solid rgba(2, 132, 199, .18);
+  outline: 2px solid rgba(14, 116, 144, 0.25);
   outline-offset: 2px;
   box-shadow: var(--focus-ring);
 }
@@ -90,8 +245,12 @@ a,
   }
 
   .card-box {
-    border-radius: var(--radius-lg);
     padding: 16px;
+  }
+
+  .el-dialog {
+    width: calc(100vw - 24px) !important;
+    margin-top: 8vh !important;
   }
 }
 

@@ -151,10 +151,11 @@ onMounted(() => {
 }
 .stat-card {
   min-width: 0;
-  background: #fff;
-  border-radius: var(--radius-base);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfd 100%);
+  border: 1px solid var(--border-lighter);
+  border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 8px 20px rgba(15, 35, 95, 0.05);
 }
 .stat-value {
   font-size: 28px;
@@ -196,7 +197,8 @@ onMounted(() => {
 .patient-item {
   padding: 14px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-base);
+  border-radius: 12px;
+  background: #fff;
 }
 .patient-info {
   display: flex;
@@ -246,7 +248,7 @@ onMounted(() => {
   min-height: 92px;
   padding: 16px 8px;
   border: 1px solid transparent;
-  border-radius: var(--radius-base);
+  border-radius: 12px;
   background: transparent;
   cursor: pointer;
   transition: all 0.2s;
@@ -259,7 +261,7 @@ onMounted(() => {
   color: var(--primary-color);
   outline: none;
   border-color: rgba(64, 158, 255, .32);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, .12);
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, .12);
 }
 .quick-item :deep(.el-icon) {
   flex: 0 0 auto;
