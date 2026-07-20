@@ -13,6 +13,22 @@ $stdoutLog = Join-Path $repoRoot ("backend\outpatient-service\target\spring-boot
 $stderrLog = Join-Path $repoRoot ("backend\outpatient-service\target\spring-boot-run.$logToken.stderr.log")
 $probeUri = "http://127.0.0.1:$Port$ProbePath"
 
+function Stop-ListenerProcesses {
+    param([int]$TargetPort)
+
+    $listeners = Get-NetTCPConnection -LocalPort $TargetPort -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($listenerPid in $listeners) {
+        if ($listenerPid -gt 0) {
+            try {
+                Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+            }
+            catch {
+            }
+        }
+    }
+}
+
 if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force }
 if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force }
 
@@ -104,4 +120,5 @@ finally {
         Stop-Process -Id $process.Id -Force
         Wait-Process -Id $process.Id -Timeout 5 -ErrorAction SilentlyContinue
     }
+    Stop-ListenerProcesses -TargetPort $Port
 }
