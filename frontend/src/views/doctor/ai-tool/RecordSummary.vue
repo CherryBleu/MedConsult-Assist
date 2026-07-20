@@ -15,7 +15,7 @@
               <el-option
                 v-for="item in recordList"
                 :key="item.id"
-                :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
+                :label="`${item.recordNo} | ${item.patientName || '未知患者'}`"
                 :value="item.recordNo"
               >
                 <div class="record-option">
@@ -31,6 +31,9 @@
                 </div>
               </el-option>
             </el-select>
+            <p v-if="selectedRecordItem" class="selected-record-hint" data-testid="selected-record-complaint">
+              {{ selectedRecordItem.chiefComplaint || '无主诉' }}
+            </p>
             <el-button
               type="primary"
               class="record-summary-action generate-action"
@@ -157,6 +160,11 @@ const isSummaryEmpty = computed(() => {
     && !formatList(s.followUpAdvice)
 })
 
+// 当前选中的病历对象，用于在选择器下方展示完整主诉（避免 select 触发器截断长文本）
+const selectedRecordItem = computed(() => {
+  return recordList.value.find(item => item.recordNo === selectedRecord.value) || null
+})
+
 const getRecordList = async () => {
   const res = await getRecordListApi()
   // 后端分页返回 {records,total}；兼容 mock 返回数组
@@ -234,8 +242,24 @@ onMounted(() => {
 }
 
 .record-select {
-  width: min(100%, 500px);
-  flex: 1 1 320px;
+  /* 桌面端允许更宽，避免长主诉在 select 触发器中被截断；
+     移动端 flex: 1 让其占满列宽。 */
+  min-width: 320px;
+  max-width: 800px;
+  flex: 1 1 480px;
+}
+
+.selected-record-hint {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--primary-color, #0284c7);
+  background: rgba(2, 132, 199, 0.06);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  flex-basis: 100%;
 }
 
 .record-summary-action {
