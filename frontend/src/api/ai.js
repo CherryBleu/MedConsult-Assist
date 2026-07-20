@@ -1,5 +1,6 @@
 import request from '@/utils/request'
 import { getToken } from '@/utils/auth'
+import { API_V1_BASE_URL } from '@/utils/apiBase'
 import { mockTriageResult, mockCreateSession, mockSendMessage, mockSessionHistory, mockSubmitFeedback } from '@/mock/ai'
 import { mockRecordSummary, mockRecordSummaryStream, mockRecordSummaryByText, mockMedicationAnalysis, mockMedicationAnalysisStream, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
@@ -153,7 +154,7 @@ export const triageStreamApi = async (data, callbacks = {}) => {
     headers.Authorization = `Bearer ${token}`
   }
 
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/triage/stream`, {
+  const response = await fetch(`${API_V1_BASE_URL}/ai/triage/stream`, {
     method: 'POST',
     headers,
     body: JSON.stringify(data)
@@ -234,7 +235,7 @@ export const generateSummaryByRecordStreamApi = async (recordNo, callbacks = {})
     headers.Authorization = `Bearer ${token}`
   }
 
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/summary/stream`, {
+  const response = await fetch(`${API_V1_BASE_URL}/ai/summary/stream`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -331,7 +332,7 @@ export const medicationAnalysisStreamApi = async (data, callbacks = {}) => {
     headers.Authorization = `Bearer ${token}`
   }
 
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/v1/ai/medication-analysis/stream`, {
+  const response = await fetch(`${API_V1_BASE_URL}/ai/medication-analysis/stream`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload)

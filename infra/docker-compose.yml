@@ -252,6 +252,21 @@ services:
       start_period: 120s
     networks: [medconsult-net]
 
+  # ============== Frontend Nginx ==============
+  # 静态前端 + /api、/doc 反向代理，浏览器同源访问，避免依赖 CORS。
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: medconsult-frontend:local
+    container_name: medconsult-frontend
+    restart: unless-stopped
+    environment:
+      GATEWAY_UPSTREAM: "${GATEWAY_UPSTREAM:-host.docker.internal:8080}"
+    ports:
+      - "127.0.0.1:3000:80"
+    networks: [medconsult-net]
+
 volumes:
   mysql_data:
   redis_data:

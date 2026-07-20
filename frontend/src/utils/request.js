@@ -1,10 +1,11 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { getToken, setToken, removeToken, getRefreshToken, removeRefreshToken } from './auth'
+import { API_V1_BASE_URL } from './apiBase'
 import router from '@/router'
 
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL + '/v1',
+  baseURL: API_V1_BASE_URL,
   // AI 问诊（RAG + LLM）端到端可能耗时 30-60s，统一放宽到 90s 避免前端超时
   timeout: 90000
 })
@@ -74,7 +75,7 @@ const doRefreshToken = async () => {
     }
   }
   const res = await axios.post(
-    import.meta.env.VITE_API_BASE_URL + '/v1/auth/refresh',
+    `${API_V1_BASE_URL}/auth/refresh`,
     { refreshToken },
     { headers: { 'Content-Type': 'application/json' } }
   )
