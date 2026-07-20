@@ -13,7 +13,9 @@ public class AiFeedbackEntity {
     private String aiResultType;
     private String aiResultId;
     private Long feedbackBy;
+    // 旧字段 useful/adopted 保留兼容历史数据，新写入只写 rating
     private Integer useful;
+    private Integer rating;
     private Integer adopted;
     private String comment;
     private String adminReply;
@@ -66,6 +68,14 @@ public class AiFeedbackEntity {
 
     public void setUseful(Integer useful) {
         this.useful = useful;
+    }
+
+    public Integer getRating() {
+        return rating;
+    }
+
+    public void setRating(Integer rating) {
+        this.rating = rating;
     }
 
     public Integer getAdopted() {

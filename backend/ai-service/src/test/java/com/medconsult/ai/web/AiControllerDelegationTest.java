@@ -165,10 +165,10 @@ class AiControllerDelegationTest {
         List<ImageDetectionResponse> images = List.of(imageResponse);
         when(imagingDetectionService.listByPatient("42")).thenReturn(images);
 
-        FeedbackRequest feedbackRequest = new FeedbackRequest("TRIAGE", "TRIAGE-1", "42", true, true, "helpful");
+        FeedbackRequest feedbackRequest = new FeedbackRequest("TRIAGE", "TRIAGE-1", 5, "helpful");
         FeedbackResponse feedbackResponse = new FeedbackResponse("FB-1", "TRIAGE-1");
         when(feedbackService.submit(same(feedbackRequest))).thenReturn(feedbackResponse);
-        List<FeedbackItem> feedbackItems = List.of(new FeedbackItem("FB-1", "42", true, true, "helpful", null));
+        List<FeedbackItem> feedbackItems = List.of(new FeedbackItem("FB-1", "42", 5, "helpful", null));
         when(feedbackService.list("TRIAGE", "TRIAGE-1")).thenReturn(feedbackItems);
         FeedbackReplyRequest replyRequest = new FeedbackReplyRequest("收到");
         FeedbackReplyResponse replyResponse = new FeedbackReplyResponse("FB-1", "收到", "REPLIED");

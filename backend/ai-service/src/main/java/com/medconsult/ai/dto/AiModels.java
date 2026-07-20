@@ -1,6 +1,8 @@
 package com.medconsult.ai.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -275,9 +277,7 @@ public final class AiModels {
     public record FeedbackRequest(
             @NotBlank String aiResultType,
             @NotBlank String aiResultId,
-            @NotBlank String feedbackBy,
-            @NotNull Boolean useful,
-            Boolean adopted,
+            @NotNull @Min(1) @Max(5) Integer rating,
             String comment
     ) {
     }
@@ -291,8 +291,7 @@ public final class AiModels {
     public record FeedbackItem(
             String feedbackId,
             String feedbackBy,
-            boolean useful,
-            boolean adopted,
+            Integer rating,
             String comment,
             String adminReply
     ) {

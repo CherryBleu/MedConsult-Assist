@@ -21,9 +21,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,15 +47,13 @@ class FeedbackServiceSecurityTest {
     void submitShouldUseJwtUserIdInsteadOfForgedBodyIdentity() {
         bindPayload(userPayload("PATIENT", List.of("PATIENT"), 7L));
 
-        service.submit(new FeedbackRequest(
-                "SUMMARY", "SUM-1", "999", true, false, "helpful"));
+        service.submit(new FeedbackRequest("SUMMARY", "SUM-1", 5, "helpful"));
 
         ArgumentCaptor<AiFeedbackEntity> entityCaptor = ArgumentCaptor.forClass(AiFeedbackEntity.class);
         verify(feedbackMapper).insert(entityCaptor.capture());
         AiFeedbackEntity entity = entityCaptor.getValue();
         assertEquals(7L, entity.getFeedbackBy());
-        assertEquals(1, entity.getUseful());
-        assertEquals(0, entity.getAdopted());
+        assertEquals(5, entity.getRating());
     }
 
     @Test
@@ -65,8 +61,7 @@ class FeedbackServiceSecurityTest {
         bindPayload(servicePayload("medical-record-service"));
 
         BusinessException error = assertThrows(BusinessException.class,
-                () -> service.submit(new FeedbackRequest(
-                        "SUMMARY", "SUM-1", "7", true, true, "bad identity")));
+                () -> service.submit(new FeedbackRequest("SUMMARY", "SUM-1", 4, "bad identity")));
 
         assertEquals(ErrorCode.UNAUTHORIZED, error.getErrorCode());
         verify(feedbackMapper, never()).insert(any());
@@ -86,7 +81,7 @@ class FeedbackServiceSecurityTest {
     @Test
     void listShouldAllowDoctorAndMapFeedbackItems() {
         bindPayload(userPayload("DOCTOR", List.of("DOCTOR"), 33L));
-        AiFeedbackEntity stored = feedback("FB-1", 7L, 1, 0, "useful", "thanks");
+        AiFeedbackEntity stored = feedback("FB-1", 7L, 5, "useful", "thanks");
         when(feedbackMapper.selectList(any())).thenReturn(List.of(stored));
 
         List<FeedbackItem> items = service.list("SUMMARY", "SUM-1");
@@ -94,8 +89,7 @@ class FeedbackServiceSecurityTest {
         assertEquals(1, items.size());
         assertEquals("FB-1", items.get(0).feedbackId());
         assertEquals("7", items.get(0).feedbackBy());
-        assertTrue(items.get(0).useful());
-        assertFalse(items.get(0).adopted());
+        assertEquals(5, items.get(0).rating());
         assertEquals("thanks", items.get(0).adminReply());
     }
 
@@ -121,13 +115,12 @@ class FeedbackServiceSecurityTest {
     }
 
     private static AiFeedbackEntity feedback(String feedbackNo, Long feedbackBy,
-                                             Integer useful, Integer adopted,
+                                             Integer rating,
                                              String comment, String reply) {
         AiFeedbackEntity entity = new AiFeedbackEntity();
         entity.setFeedbackNo(feedbackNo);
         entity.setFeedbackBy(feedbackBy);
-        entity.setUseful(useful);
-        entity.setAdopted(adopted);
+        entity.setRating(rating);
         entity.setComment(comment);
         entity.setAdminReply(reply);
         entity.setCreatedAt(LocalDateTime.now());
