@@ -19,25 +19,37 @@
 
       <div id="department-triage-panel" v-show="triageExpanded" class="triage-body">
         <div v-if="!triageResult" class="input-section">
-          <el-input
-            v-model="symptoms"
-            type="textarea"
-            :rows="3"
-            placeholder="请描述您的症状，例如：咳嗽、咳痰、发热3天..."
-            maxlength="200"
-            show-word-limit
-          />
-          <div class="duration-row">
-            <span class="duration-label">症状持续时间：</span>
-            <el-radio-group v-model="duration" size="small">
-              <el-radio value="1天以内">1天以内</el-radio>
-              <el-radio value="1-3天">1-3天</el-radio>
-              <el-radio value="3-7天">3-7天</el-radio>
-              <el-radio value="7天以上">7天以上</el-radio>
+          <div class="triage-intake">
+            <div class="triage-intake__header">
+              <div>
+                <span class="triage-intake__eyebrow">先确认症状持续时间</span>
+                <h3 class="triage-intake__title">分诊会优先参考持续时长</h3>
+              </div>
+              <el-button type="primary" :loading="triageLoading" class="triage-cta" @click="handleTriage">
+                开始分诊
+              </el-button>
+            </div>
+            <el-radio-group v-model="duration" size="small" class="duration-group">
+              <el-radio
+                v-for="item in durationOptions"
+                :key="item.value"
+                :value="item.value"
+                border
+                class="duration-option"
+              >
+                <span class="duration-option__label">{{ item.label }}</span>
+                <span class="duration-option__hint">{{ item.hint }}</span>
+              </el-radio>
             </el-radio-group>
-            <el-button type="primary" :loading="triageLoading" @click="handleTriage">
-              开始分诊
-            </el-button>
+            <el-input
+              v-model="symptoms"
+              type="textarea"
+              :rows="3"
+              class="triage-input"
+              placeholder="请描述您的症状，例如：咳嗽、咳痰、发热3天..."
+              maxlength="200"
+              show-word-limit
+            />
           </div>
           <div class="tip-row">
             <el-icon><InfoFilled /></el-icon>
@@ -111,17 +123,19 @@ import { ElMessage } from 'element-plus'
 import { Cpu, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { getDepartmentListApi } from '@/api/department'
 import { triageApi } from '@/api/ai'
+import { DEFAULT_TRIAGE_DURATION, TRIAGE_DURATION_OPTIONS } from '@/store/modules/triage'
 import PageState from '@/components/common/PageState.vue'
 
 const router = useRouter()
 const loading = ref(false)
 const errorMessage = ref('')
 const departmentList = ref([])
+const durationOptions = TRIAGE_DURATION_OPTIONS
 
 // 智能分诊相关状态
 const triageExpanded = ref(false)
 const symptoms = ref('')
-const duration = ref('1-3天')
+const duration = ref(DEFAULT_TRIAGE_DURATION)
 const triageLoading = ref(false)
 const triageResult = ref(null)
 
@@ -237,17 +251,82 @@ onMounted(() => {
   padding: 20px;
   border-top: 1px solid var(--border-light);
 }
-.duration-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 16px;
-  flex-wrap: wrap;
+.triage-intake {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(22, 119, 255, .16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(240, 247, 255, .86), rgba(255, 255, 255, .96));
 }
-.duration-label {
-  font-size: 14px;
+.triage-intake__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.triage-intake__eyebrow {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+.triage-intake__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-primary);
-  flex-shrink: 0;
+}
+.triage-cta {
+  min-height: 44px;
+  min-width: 112px;
+}
+.duration-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.duration-option {
+  margin-right: 0;
+  width: 100%;
+}
+:deep(.duration-option.el-radio.is-bordered) {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  min-height: 68px;
+  margin-right: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-color: rgba(22, 119, 255, .18);
+  background: rgba(255, 255, 255, .96);
+}
+:deep(.duration-option.el-radio.is-bordered.is-checked) {
+  border-color: var(--primary-color);
+  background: rgba(230, 244, 255, .9);
+}
+:deep(.duration-option .el-radio__label) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 10px;
+  white-space: normal;
+}
+.duration-option__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.duration-option__hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.triage-input :deep(textarea) {
+  min-height: 108px;
 }
 .tip-row {
   display: flex;
@@ -287,7 +366,8 @@ onMounted(() => {
   gap: 10px;
 }
 .dept-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 120px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
@@ -404,18 +484,26 @@ onMounted(() => {
     line-height: 1.5;
   }
 
-  .duration-row {
+  .triage-intake__header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .duration-row .el-button {
-    min-height: var(--touch-target);
+  .duration-group {
+    grid-template-columns: 1fr;
+  }
+
+  .triage-cta {
+    width: 100%;
   }
 
   .dept-category {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .dept-item {
+    grid-template-columns: 1fr;
   }
 
   .dept-card {

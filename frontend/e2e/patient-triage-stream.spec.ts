@@ -11,6 +11,35 @@ async function fillSymptoms(page: Page) {
   await page.locator('.triage-card textarea').fill('咳嗽、咳痰、低热3天')
 }
 
+async function expectDesktopTriageWorkspace(page: Page) {
+  const durationToolbar = page.getByTestId('triage-duration-toolbar')
+  const workspaceMain = page.getByTestId('triage-workspace-main')
+  const workspaceSidebar = page.getByTestId('triage-workspace-sidebar')
+  const textarea = page.locator('.triage-card textarea')
+
+  await expect(durationToolbar).toBeVisible()
+  await expect(workspaceMain).toBeVisible()
+  await expect(workspaceSidebar).toBeVisible()
+
+  const durationLabels = await durationToolbar.locator('.duration-option__label').allInnerTexts()
+  expect(durationLabels[0]).toContain('1天以内')
+
+  const [durationBox, textareaBox, mainBox, sidebarBox] = await Promise.all([
+    durationToolbar.boundingBox(),
+    textarea.boundingBox(),
+    workspaceMain.boundingBox(),
+    workspaceSidebar.boundingBox(),
+  ])
+
+  expect(durationBox).not.toBeNull()
+  expect(textareaBox).not.toBeNull()
+  expect(mainBox).not.toBeNull()
+  expect(sidebarBox).not.toBeNull()
+
+  expect(durationBox!.y).toBeLessThan(textareaBox!.y)
+  expect(sidebarBox!.x).toBeGreaterThan(mainBox!.x + mainBox!.width * 0.55)
+}
+
 async function expectNoHorizontalOverflow(page: Page) {
   const metrics = await page.evaluate(() => ({
     documentScrollWidth: document.documentElement.scrollWidth,
@@ -39,6 +68,7 @@ async function expectTouchTargetsAtLeast(page: Page, selector: string, minSize =
 
 test('患者智能分诊先展示流式进度再渲染推荐结果', async ({ page }) => {
   await gotoTriage(page)
+  await expectDesktopTriageWorkspace(page)
   await fillSymptoms(page)
 
   await page.getByRole('button', { name: '开始分诊' }).click()

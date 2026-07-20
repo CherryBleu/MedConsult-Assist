@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
 import { triageApi } from '@/api/ai'
 
+export const TRIAGE_DURATION_OPTIONS = Object.freeze([
+  { value: '1天以内', label: '1天以内', hint: '突发或急性变化' },
+  { value: '1-3天', label: '1-3天', hint: '近期出现' },
+  { value: '3-7天', label: '3-7天', hint: '持续观察中' },
+  { value: '7天以上', label: '7天以上', hint: '反复或迁延' }
+])
+
+export const DEFAULT_TRIAGE_DURATION = '1-3天'
+
 /**
  * 智能分诊状态。
  *
@@ -17,7 +26,7 @@ export const useTriageStore = defineStore('triage', {
     // 症状文本（用户在文本框输入）
     symptoms: '',
     // 持续时间单选项
-    duration: '1-3天',
+    duration: DEFAULT_TRIAGE_DURATION,
     // 是否正在请求分诊接口
     submitting: false,
     // 分诊结果（后端 TriageResponse），null 表示尚未分诊
