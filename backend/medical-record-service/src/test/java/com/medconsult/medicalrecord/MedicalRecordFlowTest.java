@@ -553,6 +553,37 @@ class MedicalRecordFlowTest {
     }
 
     @Test
+    void prescriptionList_selfPatientReturnsOwnOnly() throws Exception {
+        createPrescription(); // 归属 patientId=1001，DRAFT
+        // 本人患者可调列表（不再 403），且只看到自己的处方
+        mvc.perform(selfPatientAuth(get("/api/v1/prescriptions")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].status").value("DRAFT"));
+    }
+
+    @Test
+    void prescriptionList_otherPatientReturnsEmpty() throws Exception {
+        createPrescription(); // 归属 patientId=1001
+        // 其他患者（patientId=9999）调列表只看到自己的处方，不越权看到 1001 的
+        mvc.perform(otherPatientAuth(get("/api/v1/prescriptions")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @Test
+    void prescriptionList_patientWithoutProfileForbidden() throws Exception {
+        // PATIENT 身份但未关联患者档案（X-User-Patient-Id 缺失）→ 403
+        mvc.perform(get("/api/v1/prescriptions")
+                        .header("X-User-Id", "6003")
+                        .header("X-User-Primary-Role", "PATIENT")
+                        .header("X-User-Roles", "PATIENT"))
+                .andExpect(jsonPath("$.code").value(403001));
+    }
+
+    @Test
     void review_notFound() throws Exception {
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/RX_NOT_EXIST/review")
                         .contentType("application/json")

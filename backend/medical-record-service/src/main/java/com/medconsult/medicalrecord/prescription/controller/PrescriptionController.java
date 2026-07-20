@@ -37,9 +37,9 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.create(req));
     }
 
-    /** 处方列表（可按 status 过滤，药师审方工作台）—— 医生看自己开的，药师/管理员看全部（§2.3） */
+    /** 处方列表（可按 status 过滤）—— 患者只看本人处方（SELF 过滤在 service），医生看自己开的，药师/管理员看全部（§2.3） */
     @GetMapping
-    @Permission(roles = {"DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
+    @Permission(roles = {"PATIENT", "DOCTOR", "PHARMACY_ADMIN", "HOSPITAL_ADMIN"})
     @Operation(summary = "分页查询处方")
     public Result<PageResult<PrescriptionDTO.ListItem>> list(
             @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,

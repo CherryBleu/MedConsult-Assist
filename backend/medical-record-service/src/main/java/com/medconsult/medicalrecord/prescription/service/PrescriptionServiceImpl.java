@@ -108,6 +108,12 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         if (status != null && !status.isBlank()) {
             qw.eq("status", status);
         }
+        // PATIENT SELF 范围（IDOR 防护，架构 §4.3）：患者只能看本人处方，与 detail 一致。
+        // DOCTOR/PHARMACY_ADMIN/HOSPITAL_ADMIN 维持原工作台全量可见。
+        Long scopedPatientId = resolveListPatientScope();
+        if (scopedPatientId != null) {
+            qw.eq("patient_id", scopedPatientId);
+        }
         qw.orderByDesc("created_at");
         IPage<Prescription> result = prescriptionMapper.selectPage(p, qw);
         List<PrescriptionDTO.ListItem> items = new ArrayList<>();
@@ -121,6 +127,26 @@ public class PrescriptionServiceImpl implements PrescriptionService {
                     rx.getCreatedAt()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+    }
+
+    /**
+     * 列表查询的患者作用域解析（IDOR 防护，对齐 detail#enforcePatientOwnership）：
+     * PATIENT 身份强制限定为本人 patient_id（忽略入参）；其他角色返回 null（不过滤，看全部）。
+     * PATIENT 但账号未关联患者档案时直接抛 403，与 detail 的 enforcePatientOwnership 一致。
+     */
+    private Long resolveListPatientScope() {
+        JwtPayload payload = SecurityContext.getPayload();
+        if (payload == null || !payload.isUser()) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "需要用户登录");
+        }
+        if (isPatient(payload)) {
+            Long selfPatientId = payload.patientId();
+            if (selfPatientId == null) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未关联患者档案，无法查询处方");
+            }
+            return selfPatientId;
+        }
+        return null;
     }
 
     // ===== 详情 =====
