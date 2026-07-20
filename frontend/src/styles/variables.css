@@ -1,86 +1,74 @@
 :root {
-  /* Healthcare dashboard palette: calm cyan, clinical green, high-contrast text. */
-  --primary-color: #0e7490;
-  --primary-light: #67e8f9;
-  --primary-dark: #164e63;
+  /* 主题色 - 医疗蓝 + 健康绿，优先保证可读性和信任感 */
+  --primary-color: #0284c7;
+  --primary-light: #38bdf8;
+  --primary-dark: #075985;
   --accent-cyan: #0891b2;
-  --accent-green: #059669;
-  --accent-amber: #d97706;
+  --accent-green: #16a34a;
+  --accent-amber: #f59e0b;
   --accent-violet: #4f46e5;
-
-  /* Element Plus theme tokens. */
-  --el-color-primary-rgb: 14, 116, 144;
-  --el-color-primary: #0e7490;
-  --el-color-primary-dark-2: #164e63;
-  --el-color-primary-light-3: #22d3ee;
-  --el-color-primary-light-5: #a5f3fc;
-  --el-color-primary-light-7: #cffafe;
-  --el-color-primary-light-8: #ecfeff;
-  --el-color-primary-light-9: #f0fdfa;
-  --el-color-success-rgb: 5, 150, 105;
-  --el-color-success: #059669;
-  --el-color-warning-rgb: 217, 119, 6;
-  --el-color-warning: #d97706;
+  /* Element Plus 交互前景色必须在白字/浅色表面上满足 WCAG AA。 */
+  --el-color-primary-rgb: 3, 105, 161;
+  --el-color-primary: #0369a1;
+  --el-color-primary-dark-2: #075985;
+  --el-color-success-rgb: 21, 128, 61;
+  --el-color-success: #15803d;
+  --el-color-warning-rgb: 180, 83, 9;
+  --el-color-warning: #b45309;
   --el-color-danger-rgb: 185, 28, 28;
   --el-color-danger: #b91c1c;
   --el-color-error-rgb: 185, 28, 28;
   --el-color-error: #b91c1c;
   --el-color-info-rgb: 71, 85, 105;
   --el-color-info: #475569;
-  --el-border-radius-base: 8px;
-  --el-border-radius-small: 6px;
-  --el-font-size-base: 14px;
-  --el-font-size-small: 13px;
-  --el-text-color-primary: #0f172a;
-  --el-text-color-regular: #334155;
-  --el-text-color-secondary: #64748b;
-  --el-border-color: #cbd5e1;
-  --el-border-color-light: #d8e7ec;
-  --el-border-color-lighter: #edf4f7;
-  --el-fill-color-light: #f8fbfd;
-  --el-fill-color-lighter: #fbfdfe;
-  --el-bg-color-page: #f6fafb;
+  --gradient-primary: linear-gradient(135deg, #0369a1 0%, #0284c7 48%, #16a34a 100%);
+  --gradient-soft: radial-gradient(circle at 12% 12%, rgba(2,132,199,.13), transparent 34%), radial-gradient(circle at 88% 18%, rgba(22,163,74,.11), transparent 28%), #f0f9ff;
 
-  --gradient-primary: linear-gradient(135deg, #164e63 0%, #0e7490 56%, #059669 100%);
-  --gradient-soft: linear-gradient(180deg, #f8fbfd 0%, #eef8f9 100%);
-
-  --success-color: #059669;
-  --warning-color: #d97706;
+  /* 功能状态色 */
+  --success-color: #16a34a;
+  --warning-color: #f59e0b;
   --danger-color: #dc2626;
   --info-color: #64748b;
 
+  /* 文字色 */
   --text-primary: #0f172a;
   --text-regular: #334155;
   --text-secondary: #64748b;
   --text-placeholder: #94a3b8;
 
-  --bg-page: #f6fafb;
+  /* 背景色 */
+  --bg-page: #f0f9ff;
   --bg-card: #ffffff;
-  --bg-hover: #ecfeff;
-  --bg-glass: rgba(255, 255, 255, 0.96);
+  --bg-hover: #e0f2fe;
+  --bg-glass: rgba(255, 255, 255, 0.88);
 
+  /* 边框色 */
   --border-color: #cbd5e1;
-  --border-light: #d8e7ec;
-  --border-lighter: #edf4f7;
+  --border-light: #dbeafe;
+  --border-lighter: #e8f2f8;
 
-  --shadow-card: 0 14px 32px rgba(15, 35, 95, 0.08);
-  --shadow-hover: 0 18px 38px rgba(14, 116, 144, 0.16);
-  --focus-ring: 0 0 0 3px rgba(14, 116, 144, 0.24);
+  /* 阴影 */
+  --shadow-card: 0 18px 46px rgba(15, 35, 95, 0.08);
+  --shadow-hover: 0 22px 54px rgba(2, 132, 199, 0.15);
+  --focus-ring: 0 0 0 3px rgba(2, 132, 199, 0.28);
 
+  /* 布局与交互 */
   --content-max: 1200px;
   --touch-target: 44px;
   --motion-fast: 150ms;
   --motion-base: 220ms;
   --motion-slow: 320ms;
 
+  /* 字号 */
   --font-xs: 12px;
   --font-sm: 14px;
   --font-base: 16px;
   --font-lg: 18px;
   --font-xl: 20px;
 
-  --radius-sm: 6px;
-  --radius-base: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
+  /* 圆角 */
+  --radius-sm: 8px;
+  --radius-base: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
 }

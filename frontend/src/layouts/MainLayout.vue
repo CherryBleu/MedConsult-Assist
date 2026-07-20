@@ -405,9 +405,8 @@ const handleCommand = (command) => {
       cancelButtonText: '取消',
       type: 'warning'
     }).then(async () => {
-      const logoutRedirect = userStore.role === ROLE_ENUM.PATIENT.value ? '/patient-login' : '/staff-login'
       await userStore.logout()
-      router.replace(logoutRedirect)
+      router.replace('/login')
       ElMessage.success('已退出登录')
     }).catch(() => {})
   }
@@ -447,13 +446,10 @@ const handleCommand = (command) => {
 /* 侧边栏 */
 .layout-aside {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0)),
-    #12384a;
+  background: #12304a;
   transition: width 0.2s;
   overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 10px 0 30px rgba(15, 35, 95, 0.12);
 }
 
 .logo-box {
@@ -464,11 +460,10 @@ const handleCommand = (command) => {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, .14);
-  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
 }
 
 .side-menu {
@@ -485,31 +480,24 @@ const handleCommand = (command) => {
 :deep(.el-menu-item),
 :deep(.el-sub-menu__title) {
   min-height: 44px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   margin: 4px 0;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-:deep(.el-menu-item:hover),
-:deep(.el-sub-menu__title:hover) {
-  background: rgba(255, 255, 255, .10) !important;
 }
 :deep(.el-menu-item.is-active) {
-  background: rgba(255, 255, 255, .18) !important;
-  box-shadow: inset 3px 0 0 rgba(103, 232, 249, .95), inset 0 0 0 1px rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .16) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16);
 }
 
 /* 顶部栏 */
 .layout-header {
-  background: rgba(255, 255, 255, .96);
-  border-bottom: 1px solid var(--border-light);
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
   height: 64px !important;
   min-width: 0;
-  box-shadow: 0 8px 24px rgba(15, 35, 95, 0.05);
-  backdrop-filter: blur(10px);
 }
 
 .header-left {
@@ -535,17 +523,14 @@ const handleCommand = (command) => {
   color: var(--text-regular);
   background: transparent;
   border: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .header-icon-button:hover {
   color: var(--primary-dark);
-  background: var(--bg-hover, #ecfeff);
-  border-color: var(--border-light);
-  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.10);
+  background: var(--bg-page, #f8fafc);
 }
 
 .header-icon-button:focus-visible,
@@ -572,9 +557,8 @@ const handleCommand = (command) => {
 }
 
 .notice-header {
-  padding: 14px 16px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-light);
-  background: #f8fbfd;
 }
 
 .notice-title {
@@ -603,7 +587,7 @@ const handleCommand = (command) => {
 }
 
 .notice-item:hover {
-  background-color: var(--bg-hover);
+  background-color: var(--bg-page);
 }
 
 .notice-item.unread .notice-content {
@@ -641,7 +625,6 @@ const handleCommand = (command) => {
   padding: 10px 16px;
   text-align: center;
   border-top: 1px solid var(--border-light);
-  background: #fbfdfe;
 }
 
 .notice-all {
@@ -664,19 +647,12 @@ const handleCommand = (command) => {
   align-items: center;
   min-height: 44px;
   gap: 8px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   color: inherit;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.user-info:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-light);
-  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.10);
 }
 
 .user-name {
@@ -694,7 +670,7 @@ const handleCommand = (command) => {
 }
 
 :global(.mobile-navigation-drawer) {
-  background: #12384a;
+  background: #12304a;
 }
 
 :global(.mobile-navigation-drawer .el-drawer__body) {

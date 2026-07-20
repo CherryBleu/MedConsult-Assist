@@ -164,23 +164,23 @@ onMounted(() => {
   overflow: hidden;
   background: var(--gradient-primary);
   color: #fff;
-  border-radius: 12px;
-  padding: 30px;
+  border-radius: 24px;
+  padding: 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  box-shadow: 0 22px 48px rgba(14, 116, 144, .18);
+  box-shadow: 0 24px 60px rgba(22, 119, 255, .22);
 }
 .banner-card::after {
   content: '';
   position: absolute;
-  width: 240px;
-  height: 240px;
-  right: -86px;
-  top: -92px;
-  border-radius: 48px;
-  background: rgba(255,255,255,.10);
+  width: 260px;
+  height: 260px;
+  right: -70px;
+  top: -80px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.18);
 }
 .banner-left {
   position: relative;
@@ -197,7 +197,7 @@ onMounted(() => {
   letter-spacing: .12em;
 }
 .banner-left h2 {
-  font-size: 30px;
+  font-size: 28px;
   margin-bottom: 8px;
 }
 .hero-copy {
@@ -224,7 +224,7 @@ onMounted(() => {
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .18);
   font-size: 13px;
 }
 .health-orbit {
@@ -232,13 +232,13 @@ onMounted(() => {
   z-index: 1;
   width: 104px;
   height: 104px;
-  border-radius: 20px;
+  border-radius: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,.14);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.22);
-  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.28);
+  backdrop-filter: blur(6px);
 }
 
 /* 板块标题 */
@@ -258,27 +258,26 @@ onMounted(() => {
 .quick-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 20px;
 }
 .quick-item {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  min-height: 144px;
+  min-height: 148px;
   cursor: pointer;
   padding: 18px 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,251,253,.96));
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,251,255,.92));
   border: 1px solid var(--border-lighter);
   color: var(--text-primary);
   text-align: center;
-  box-shadow: 0 8px 20px rgba(15, 35, 95, 0.04);
 }
 .quick-icon {
   width: 56px;
   height: 56px;
-  border-radius: 14px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -307,7 +306,7 @@ onMounted(() => {
 .dept-item {
   padding: 16px;
   border: 1px solid var(--border-light);
-  border-radius: 12px;
+  border-radius: var(--radius-base);
   cursor: pointer;
   transition: all 0.2s;
   background: #fff;
@@ -316,7 +315,7 @@ onMounted(() => {
 }
 .dept-item:hover {
   border-color: var(--primary-color);
-  box-shadow: 0 10px 24px rgba(14, 116, 144, 0.10);
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.1);
 }
 .dept-name {
   font-size: 15px;
@@ -341,8 +340,7 @@ onMounted(() => {
   gap: 16px;
   padding: 16px;
   border: 1px solid var(--border-light);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ffffff, #f8fbfd);
+  border-radius: var(--radius-base);
 }
 .doctor-avatar {
   background: var(--primary-color);
@@ -380,7 +378,7 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .banner-card {
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
     padding: 24px;
     align-items: flex-start;
   }
