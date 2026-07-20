@@ -29,7 +29,7 @@
                   <el-option
                     v-for="item in recordList"
                     :key="item.id"
-                    :label="`${item.recordNo} | ${item.patientName || '未知患者'} | ${item.deptName || ''} | ${item.chiefComplaint || '无主诉'}`"
+                    :label="`${item.recordNo} | ${item.patientName || '未知患者'}`"
                     :value="item.id"
                   >
                     <div class="record-option">
@@ -45,6 +45,9 @@
                     </div>
                   </el-option>
                 </el-select>
+                <p v-if="selectedRecordItem" class="selected-record-hint" data-testid="selected-record-complaint">
+                  {{ selectedRecordItem.chiefComplaint || '无主诉' }}
+                </p>
               </el-form-item>
 
               <el-form-item label="选择药品">
@@ -116,18 +119,14 @@
             class="stream-section"
             role="status"
             aria-live="polite"
-            aria-atomic="false"
           >
             <div class="stream-header">
               <span class="stream-dot" aria-hidden="true"></span>
               <div class="stream-copy">
-                <div class="stream-title">正在接收流式用药分析</div>
-                <div class="stream-stage">{{ streamStage }}</div>
+                <div class="stream-title">正在生成用药分析</div>
+                <div class="stream-stage">AI 正在分析用药风险，请稍候...</div>
               </div>
             </div>
-            <p class="stream-preview">
-              {{ streamText || '正在建立 AI 流式连接，请稍候...' }}
-            </p>
           </section>
 
           <PageState
@@ -229,7 +228,7 @@ import { CircleCheck } from '@element-plus/icons-vue'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
 import { getDrugListApi } from '@/api/drug'
-import { medicationAnalysisStreamApi } from '@/api/ai'
+import { medicationAnalysisApi } from '@/api/ai'
 import PageState from '@/components/common/PageState.vue'
 
 const selectedRecord = ref('')
@@ -243,8 +242,6 @@ const analysisResult = ref(null)
 const formError = ref('')
 const loadError = ref('')
 const analysisError = ref('')
-const streamText = ref('')
-const streamStage = ref('准备连接')
 
 const riskLabel = computed(() => {
   const map = { LOW: '低风险', MEDIUM: '中风险', HIGH: '高风险' }
@@ -314,17 +311,6 @@ const selectedPrescriptions = computed(() => {
     .filter(item => item.drugName)
 })
 
-const getStreamToken = (payload) => {
-  if (payload == null) return ''
-  if (typeof payload === 'string') return payload
-  return String(payload.token ?? payload.delta ?? payload.content ?? payload.text ?? payload.message ?? '')
-}
-
-const getStreamStage = (payload, fallback) => {
-  if (!payload || typeof payload === 'string') return fallback
-  return payload.stage || payload.message || fallback
-}
-
 const doAnalysis = async () => {
   formError.value = ''
   analysisError.value = ''
@@ -339,38 +325,19 @@ const doAnalysis = async () => {
     return
   }
   analyzing.value = true
-  streamText.value = ''
-  streamStage.value = '正在连接 AI 用药分析服务'
   try {
-    const res = await medicationAnalysisStreamApi({
+    // 用一次性 POST /ai/medication-analysis 接口，避免 LLM 流式结构化输出
+    // 带来的逐 token 渲染体验。后端返回完整 MedicationAnalysisResponse。
+    const res = await medicationAnalysisApi({
       recordId: selectedRecord.value,
       patientId: selectedRecordItem.value?.patientId ? String(selectedRecordItem.value.patientId) : undefined,
       prescriptions: selectedPrescriptions.value,
       patientContext: null
-    }, {
-      onStart: (payload) => {
-        streamStage.value = getStreamStage(payload, 'AI 已开始分析用药风险')
-      },
-      onDelta: (payload) => {
-        const token = getStreamToken(payload)
-        if (token) streamText.value += token
-      },
-      onResult: (payload) => {
-        analysisResult.value = payload
-      },
-      onDone: (payload) => {
-        streamStage.value = getStreamStage(payload, '用药分析完成')
-      },
-      onError: (payload) => {
-        analysisError.value = payload?.message || '用药分析失败'
-      }
     })
-    if (!analysisResult.value && res?.data) {
-      analysisResult.value = res.data
+    if (!res?.data) {
+      throw new Error('AI 未返回用药分析结果')
     }
-    if (!analysisResult.value) {
-      throw new Error('AI 流未返回用药分析结果')
-    }
+    analysisResult.value = res.data
     ElMessage.success('分析完成')
   } catch (e) {
     analysisResult.value = null
@@ -485,6 +452,18 @@ onMounted(() => {
 
 .field-control :deep(.el-select__wrapper) {
   min-height: var(--touch-target);
+}
+
+.selected-record-hint {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--primary-color, #0284c7);
+  background: rgba(2, 132, 199, 0.06);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .form-error {

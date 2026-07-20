@@ -306,8 +306,13 @@ export const mockImagingHistoryList = (role = 'patient') => {
 
 // 用药分析
 export const mockMedicationAnalysis = (recordId) => {
+  // 失败一次开关：保留 mock_medication_analysis_fail_once 与旧测试兼容
   if (consumeFailOnce('mock_medication_analysis_fail_once')) {
-    return Promise.reject(new Error('用药分析请求失败，请重试'))
+    return {
+      code: 500,
+      message: '用药分析请求失败，请重试',
+      data: null
+    }
   }
   return {
     code: 0,

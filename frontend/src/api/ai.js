@@ -304,7 +304,8 @@ const normalizeMedicationAnalysisPayload = (data) => {
 export const medicationAnalysisApi = (data) => {
   const payload = normalizeMedicationAnalysisPayload(data)
   if (USE_MOCK) {
-    return Promise.resolve(mockMedicationAnalysis(payload.recordId))
+    const res = mockMedicationAnalysis(payload.recordId)
+    return res.code === 0 ? Promise.resolve(res) : Promise.reject(new Error(res.message))
   }
   return request({
     url: '/ai/medication-analysis',

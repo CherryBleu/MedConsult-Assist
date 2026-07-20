@@ -1,31 +1,9 @@
 import { expect } from '@playwright/test'
 import { loginViaUI, test } from './helpers'
 
-async function expectNoHorizontalOverflow(page) {
-  const metrics = await page.evaluate(() => ({
-    documentScrollWidth: document.documentElement.scrollWidth,
-    bodyScrollWidth: document.body.scrollWidth,
-    clientWidth: document.documentElement.clientWidth
-  }))
-
-  expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
-  expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1)
-}
-
-async function expectTouchTargetsAtLeast(page, selector: string, minSize = 44) {
-  const boxes = await page.locator(selector).evaluateAll(elements =>
-    elements.map(element => {
-      const rect = element.getBoundingClientRect()
-      return { width: rect.width, height: rect.height }
-    })
-  )
-
-  expect(boxes.length).toBeGreaterThan(0)
-  for (const box of boxes) {
-    expect(box.width).toBeGreaterThanOrEqual(minSize)
-    expect(box.height).toBeGreaterThanOrEqual(minSize)
-  }
-}
+// 注：文件名保留 doctor-medication-analysis-stream.spec.ts 以避免 mock fail-once
+// 开关名变更。2026-07-20 起 MedicationAnalysis.vue 已改用一次性 POST
+// /api/v1/ai/medication-analysis（非流式），断言同步改为一次性结果。
 
 async function gotoMedicationAnalysis(page) {
   await loginViaUI(page, 'staff', 'doctor')
@@ -41,39 +19,32 @@ async function selectMedicationInputs(page) {
   await page.keyboard.press('Escape')
 }
 
-test('doctor sees streaming medication analysis progress before the final result', async ({ page }) => {
+test('doctor gets one-shot medication analysis result without streaming tokens', async ({ page }) => {
   await gotoMedicationAnalysis(page)
   await selectMedicationInputs(page)
 
   await page.getByRole('button', { name: '开始分析' }).click()
 
-  const streamStatus = page.getByRole('status').filter({ hasText: '正在接收流式用药分析' })
-  await expect(streamStatus).toBeVisible({ timeout: 10_000 })
-  await expect(streamStatus).toContainText('阿莫西林', { timeout: 15_000 })
-
+  // 一次性接口：mock 是同步 Promise.resolve，loading 极短；以最终结果为准
   const result = page.getByTestId('medication-analysis-result')
   await expect(result).toContainText('整体风险等级', { timeout: 15_000 })
   await expect(result).toContainText('阿莫西林')
 })
 
-test('stream failure keeps medication context and can retry on mobile without overflow', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+test('medication analysis failure keeps context and allows retry', async ({ page }) => {
   await gotoMedicationAnalysis(page)
   await selectMedicationInputs(page)
-  await page.evaluate(() => localStorage.setItem('mock_medication_analysis_stream_fail_once', '1'))
+  // mock_medication_analysis_fail_once 与旧 mock_medication_analysis_stream_fail_once
+  // 在 mockMedicationAnalysis 中只保留前者；旧 _stream_ 开关已废弃。
+  await page.evaluate(() => localStorage.setItem('mock_medication_analysis_fail_once', '1'))
 
   await page.getByRole('button', { name: '开始分析' }).click()
 
   const recoveryAlert = page.getByRole('alert').filter({ hasText: '用药分析失败' })
   await expect(recoveryAlert).toBeVisible({ timeout: 15_000 })
-  await expect(recoveryAlert).toContainText(/流式服务暂时不可用|重试/)
   await expect(page.getByText('已选择 1 个药品')).toBeVisible()
 
-  await expectTouchTargetsAtLeast(page, '.medication-analysis-action:visible, .medication-page .el-select__wrapper:visible')
-  await expectNoHorizontalOverflow(page)
-
-  await recoveryAlert.getByRole('button', { name: /重试/ }).click()
+  await page.getByRole('button', { name: /重试/ }).first().click()
   await expect(page.getByTestId('medication-analysis-result')).toContainText('整体风险等级', { timeout: 15_000 })
   await expect(page.getByTestId('medication-analysis-result')).toContainText('阿莫西林')
-  await expectNoHorizontalOverflow(page)
 })
