@@ -79,14 +79,30 @@ public class AiSseService {
         String userId = currentUserId();
         String streamId = "sse-" + UUID.randomUUID().toString().replace("-", "");
         sseEventBus.register(userId, streamId, emitter);
+        // 主线程捕获请求属性 + 身份，在异步线程传播，让 SecurityContext.getPayload()
+        // 在 triageService/medicationAnalysisService 等业务方法内可用——它们调用
+        // SecurityContext.requireUser() 读 RequestContextHolder（默认 ThreadLocal
+        // 不传播到线程池）。不传播则抛 "需要用户登录"，SSE 收到 error 事件。
+        org.springframework.web.context.request.RequestAttributes requestAttrs =
+                RequestContextHolder.getRequestAttributes();
+        JwtPayload actor = SecurityContext.getPayload();
         executor.submit(() -> {
             try {
+                if (requestAttrs != null) {
+                    RequestContextHolder.setRequestAttributes(requestAttrs, true);
+                }
+                if (actor != null) {
+                    SecurityContext.setPayload(actor);
+                }
                 publish(userId, streamId, "start", Map.of("status", "PROCESSING"));
                 Object result = task.run(userId, streamId);
                 publish(userId, streamId, "result", result);
                 publish(userId, streamId, "done", Map.of("status", "COMPLETED"));
             } catch (Exception ex) {
                 publish(userId, streamId, "error", Map.of("status", "FAILED", "message", ex.getMessage() == null ? "" : ex.getMessage()));
+            } finally {
+                // 清理异步线程的请求属性，避免线程池泄漏
+                RequestContextHolder.resetRequestAttributes();
             }
         });
         return emitter;
