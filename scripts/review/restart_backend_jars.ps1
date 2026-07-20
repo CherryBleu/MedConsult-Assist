@@ -17,28 +17,78 @@ $services = @(
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-$mainClasses = @(
-    'com.medconsult.auth.AuthServiceApplication',
-    'com.medconsult.patient.PatientServiceApplication',
-    'com.medconsult.outpatient.OutpatientServiceApplication',
-    'com.medconsult.medicalrecord.MedicalRecordServiceApplication',
-    'com.medconsult.drug.DrugServiceApplication',
-    'com.medconsult.ai.AiServiceApplication',
-    'com.medconsult.notification.NotificationServiceApplication',
-    'com.medconsult.gateway.GatewayApplication'
-)
-$workspaceToken = $backendRoot.Replace('\', '\\')
-$existing = Get-CimInstance Win32_Process |
-    Where-Object {
-        $cmd = $_.CommandLine
-        $_.Name -eq 'java.exe' -and (
-            $cmd -like "*$workspaceToken*" -or
-            ($mainClasses | Where-Object { $cmd -like "*$_*" } | Measure-Object).Count -gt 0
-        )
+function Get-ManagedJarProcesses {
+    param(
+        [array] $ServiceList,
+        [string] $BackendPath
+    )
+
+    $jarNames = $ServiceList | ForEach-Object { $_.Jar }
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $cmd = $_.CommandLine
+            $_.Name -eq 'java.exe' -and
+            -not [string]::IsNullOrWhiteSpace($cmd) -and
+            $cmd -like '*-jar*' -and
+            $cmd -like "*$BackendPath*" -and
+            ($jarNames | Where-Object { $cmd -like "*$_*" } | Measure-Object).Count -gt 0
+        }
+}
+
+function Wait-UntilProcessesExit {
+    param(
+        [int[]] $ProcessIds,
+        [int] $TimeoutSeconds = 20
+    )
+
+    if (-not $ProcessIds) {
+        return
     }
-if ($existing) {
-    $existing | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-    Start-Sleep -Seconds 3
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $running = Get-Process -Id $ProcessIds -ErrorAction SilentlyContinue
+        if (-not $running) {
+            return
+        }
+        Start-Sleep -Milliseconds 300
+    } while ((Get-Date) -lt $deadline)
+
+    $remaining = Get-Process -Id $ProcessIds -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id
+    if ($remaining) {
+        throw "Timed out waiting for prior jar processes to exit: $($remaining -join ', ')"
+    }
+}
+
+function Wait-UntilFileUnlocked {
+    param(
+        [string] $Path,
+        [int] $TimeoutSeconds = 15
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        try {
+            $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $stream.Close()
+            return
+        } catch {
+            Start-Sleep -Milliseconds 250
+        }
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Timed out waiting for log file to unlock: $Path"
+}
+
+$existing = @(Get-ManagedJarProcesses -ServiceList $services -BackendPath $backendRoot)
+if ($existing.Count -gt 0) {
+    $existingIds = @($existing | Select-Object -ExpandProperty ProcessId -Unique)
+    $existing | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Wait-UntilProcessesExit -ProcessIds $existingIds
 }
 
 $started = @()
@@ -51,8 +101,14 @@ foreach ($service in $services) {
 
     $stdoutLog = Join-Path $logDir ($service.Name + '.stdout.log')
     $stderrLog = Join-Path $logDir ($service.Name + '.stderr.log')
-    if (Test-Path $stdoutLog) { Remove-Item -LiteralPath $stdoutLog -Force }
-    if (Test-Path $stderrLog) { Remove-Item -LiteralPath $stderrLog -Force }
+    if (Test-Path $stdoutLog) {
+        Wait-UntilFileUnlocked -Path $stdoutLog
+        Remove-Item -LiteralPath $stdoutLog -Force
+    }
+    if (Test-Path $stderrLog) {
+        Wait-UntilFileUnlocked -Path $stderrLog
+        Remove-Item -LiteralPath $stderrLog -Force
+    }
 
     $proc = Start-Process -FilePath 'java' `
         -ArgumentList @('-jar', ('"{0}"' -f $jarPath)) `
