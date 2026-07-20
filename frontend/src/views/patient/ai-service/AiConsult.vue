@@ -904,10 +904,13 @@ onMounted(async () => {
 }
 
 .composer-shell {
-  width: min(100%, var(--chat-column-max));
-  margin-left: auto;
+  /* 输入框跟随整个 main 容器宽度伸缩（不受消息列最大 820px 限制），
+     让 textarea 在页面缩放时随之伸长缩短。 */
+  width: 100%;
   display: flex;
-  align-items: flex-end;
+  /* 与对话消息 .message-item 的 align-items: flex-start 一致，
+     让 composer 头像顶部与消息头像顶部视觉对齐。 */
+  align-items: flex-start;
   justify-content: flex-end;
   gap: 12px;
 }
@@ -923,7 +926,8 @@ onMounted(async () => {
 }
 
 .composer-avatar {
-  margin-bottom: 14px;
+  /* 与 composer-body 的 padding-top 对齐，让头像顶部和消息流头像顶部视觉齐平。 */
+  margin-top: 14px;
 }
 
 .composer-label {
