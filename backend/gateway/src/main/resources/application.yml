@@ -156,3 +156,9 @@ knife4j:
         url: /doc/ai/v3/api-docs/public-api
         service-name: ai-service
         order: 7
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
