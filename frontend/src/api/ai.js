@@ -426,7 +426,7 @@ export const getImagingHistoryListApi = (patientId) => {
 }
 
 // 提交 AI 结果反馈（patient/doctor 端调用，对齐后端 POST /ai/feedback）
-// body: { aiResultType, aiResultId, useful, adopted?, comment? }
+// body: { aiResultType, aiResultId, rating(1-5), comment? }
 // feedbackBy 由后端从 JWT 取，前端不传
 export const submitFeedbackApi = (data) => {
   if (USE_MOCK) {

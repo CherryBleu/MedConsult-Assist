@@ -666,6 +666,7 @@ export const mockProcessFeedback = (id, reply) => {
 }
 
 // 提交 AI 结果反馈（patient 端 AiConsult 调用，对齐后端 POST /ai/feedback）
+// body 字段：{ aiResultType, aiResultId, rating(1-5), comment? }
 export const mockSubmitFeedback = (data) => {
   return {
     code: 0,

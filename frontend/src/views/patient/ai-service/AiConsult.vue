@@ -98,34 +98,18 @@
                   <div class="ai-feedback-row" data-testid="ai-feedback-row">
                     <span class="ai-feedback-label">这条回答对您有帮助吗？</span>
                     <div class="ai-feedback-actions">
-                      <el-button
-                        :type="msg.feedbackValue === true ? 'primary' : 'default'"
-                        size="small"
-                        plain
-                        class="ai-feedback-btn"
+                      <el-rate
+                        v-model="msg.feedbackRating"
+                        :max="5"
                         :disabled="msg.feedbackSubmitted"
-                        :aria-label="'回答有用'"
-                        :data-testid="`ai-feedback-useful-${msg.id}`"
-                        @click="submitFeedback(msg, true)"
-                      >
-                        <el-icon><Select /></el-icon>
-                        <span>有用</span>
-                      </el-button>
-                      <el-button
-                        :type="msg.feedbackValue === false ? 'danger' : 'default'"
-                        size="small"
-                        plain
-                        class="ai-feedback-btn"
-                        :disabled="msg.feedbackSubmitted"
-                        :aria-label="'回答没用'"
-                        :data-testid="`ai-feedback-unhelpful-${msg.id}`"
-                        @click="submitFeedback(msg, false)"
-                      >
-                        <el-icon><CloseBold /></el-icon>
-                        <span>没用</span>
-                      </el-button>
+                        :texts="['很差', '一般', '还行', '有用', '非常有用']"
+                        show-text
+                        :aria-label="'为这条 AI 回答打分'"
+                        :data-testid="`ai-feedback-rate-${msg.id}`"
+                        @change="(val) => submitFeedback(msg, val)"
+                      />
                       <span v-if="msg.feedbackSubmitted" class="ai-feedback-thanks" role="status">
-                        {{ msg.feedbackValue ? '感谢您的反馈' : '已记录，我们会持续改进' }}
+                        感谢您的 {{ msg.feedbackRating }} 星评分
                       </span>
                     </div>
                   </div>
@@ -326,7 +310,7 @@ defineOptions({ name: 'AiConsult' })
 import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { Cpu, Document, Loading, Search, Select, CloseBold } from '@element-plus/icons-vue'
+import { Cpu, Document, Loading, Search } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
 import { submitFeedbackApi } from '@/api/ai'
@@ -392,18 +376,20 @@ const sendMessage = async () => {
 }
 
 // 提交反馈：联动后端 POST /ai/feedback，admin 在 AiFeedback.vue 中查看/回复
-// body 字段：aiResultType='SYMPTOM_CHAT'，aiResultId=msg.id，useful=true/false
-const submitFeedback = async (msg, useful) => {
+// body 字段：aiResultType='SYMPTOM_CHAT'，aiResultId=msg.id，rating=1-5
+const submitFeedback = async (msg, rating) => {
   if (!msg || msg.feedbackSubmitted) return
+  const value = Number(rating)
+  if (!Number.isInteger(value) || value < 1 || value > 5) return
   try {
     await submitFeedbackApi({
       aiResultType: 'SYMPTOM_CHAT',
       aiResultId: String(msg.id || ''),
-      useful: Boolean(useful)
+      rating: value
     })
-    msg.feedbackValue = useful
+    msg.feedbackRating = value
     msg.feedbackSubmitted = true
-    ElMessage.success(useful ? '感谢您的反馈' : '已记录您的反馈')
+    ElMessage.success('感谢您的评分')
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || e?.message || '反馈提交失败，请稍后重试')
   }
@@ -680,9 +666,12 @@ onMounted(async () => {
   color: var(--text-primary);
   background: #fff;
   border: 1px solid var(--border-lighter);
+  /* 圆角方向：左上小、其他大，标识"来自左侧 AI 头像方向" */
+  border-top-left-radius: 4px;
 }
 
-/* AI 回复反馈行：紧贴 message-bubble 下方，与现有色板契合 */
+/* AI 回复反馈行：紧贴 message-bubble 下方，与现有色板契合。
+   星级评分（el-rate）替换原 boolean 按钮，统一视觉权重。 */
 .ai-feedback-row {
   display: flex;
   flex-wrap: wrap;
@@ -704,13 +693,10 @@ onMounted(async () => {
   gap: 6px;
 }
 
-.ai-feedback-btn {
-  min-height: 28px;
-  padding: 0 10px;
-}
-
-.ai-feedback-btn :deep(.el-icon) {
-  margin-right: 4px;
+.ai-feedback-actions :deep(.el-rate) {
+  /* 与 .ai-feedback-label 文字基线对齐 */
+  display: inline-flex;
+  align-items: center;
 }
 
 .ai-feedback-thanks {
@@ -719,9 +705,14 @@ onMounted(async () => {
 }
 
 .user-bubble {
+  /* 限制最大 85%，让靠右对齐的短消息视觉对比明显（不被长消息占满整行） */
+  max-width: 85%;
   color: #fff;
   background: #0284c7;
+  /* 圆角方向：右上小、其他大，与 ai-bubble 左右对称（标识"来自右侧用户头像方向"） */
+  border-top-left-radius: 12px;
   border-top-right-radius: 4px;
+  border-bottom-right-radius: 12px;
 }
 
 .ai-avatar {
@@ -995,12 +986,12 @@ onMounted(async () => {
 }
 
 .composer-shell {
-  /* 输入框跟随整个 main 容器宽度伸缩（不受消息列最大 820px 限制），
-     让 textarea 在页面缩放时随之伸长缩短。 */
-  width: 100%;
+  /* 与对话消息 .message-item 同宽（--chat-column-max: 820px），并左对齐，
+     让 composer 宽度跟随窗口缩放、视觉与消息流严格对齐；
+     用户头像贴右边，与 user-message 头像位置对称。 */
+  width: min(100%, var(--chat-column-max));
+  margin-right: auto;
   display: flex;
-  /* 与对话消息 .message-item 的 align-items: flex-start 一致，
-     让 composer 头像顶部与消息头像顶部视觉对齐。 */
   align-items: flex-start;
   justify-content: flex-end;
   gap: 12px;
