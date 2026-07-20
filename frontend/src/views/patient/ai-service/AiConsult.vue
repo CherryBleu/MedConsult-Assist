@@ -95,6 +95,41 @@
 
                   <div class="message-bubble ai-bubble">{{ msg.content }}</div>
 
+                  <div class="ai-feedback-row" data-testid="ai-feedback-row">
+                    <span class="ai-feedback-label">这条回答对您有帮助吗？</span>
+                    <div class="ai-feedback-actions">
+                      <el-button
+                        :type="msg.feedbackValue === true ? 'primary' : 'default'"
+                        size="small"
+                        plain
+                        class="ai-feedback-btn"
+                        :disabled="msg.feedbackSubmitted"
+                        :aria-label="'回答有用'"
+                        :data-testid="`ai-feedback-useful-${msg.id}`"
+                        @click="submitFeedback(msg, true)"
+                      >
+                        <el-icon><Select /></el-icon>
+                        <span>有用</span>
+                      </el-button>
+                      <el-button
+                        :type="msg.feedbackValue === false ? 'danger' : 'default'"
+                        size="small"
+                        plain
+                        class="ai-feedback-btn"
+                        :disabled="msg.feedbackSubmitted"
+                        :aria-label="'回答没用'"
+                        :data-testid="`ai-feedback-unhelpful-${msg.id}`"
+                        @click="submitFeedback(msg, false)"
+                      >
+                        <el-icon><CloseBold /></el-icon>
+                        <span>没用</span>
+                      </el-button>
+                      <span v-if="msg.feedbackSubmitted" class="ai-feedback-thanks" role="status">
+                        {{ msg.feedbackValue ? '感谢您的反馈' : '已记录，我们会持续改进' }}
+                      </span>
+                    </div>
+                  </div>
+
                   <section v-if="hasEvidence(msg)" class="evidence-panel" aria-label="相关疾病依据">
                     <div class="evidence-title">
                       <span class="evidence-title-main">
@@ -290,9 +325,11 @@ defineOptions({ name: 'AiConsult' })
 
 import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Cpu, Document, Loading, Search } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Cpu, Document, Loading, Search, Select, CloseBold } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
+import { submitFeedbackApi } from '@/api/ai'
 
 const userStore = useUserStore()
 const aiChatStore = useAiChatStore()
@@ -352,6 +389,24 @@ const sendMessage = async () => {
   if (!text || loading.value) return
   inputText.value = ''
   await aiChatStore.sendMessage(text)
+}
+
+// 提交反馈：联动后端 POST /ai/feedback，admin 在 AiFeedback.vue 中查看/回复
+// body 字段：aiResultType='SYMPTOM_CHAT'，aiResultId=msg.id，useful=true/false
+const submitFeedback = async (msg, useful) => {
+  if (!msg || msg.feedbackSubmitted) return
+  try {
+    await submitFeedbackApi({
+      aiResultType: 'SYMPTOM_CHAT',
+      aiResultId: String(msg.id || ''),
+      useful: Boolean(useful)
+    })
+    msg.feedbackValue = useful
+    msg.feedbackSubmitted = true
+    ElMessage.success(useful ? '感谢您的反馈' : '已记录您的反馈')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '反馈提交失败，请稍后重试')
+  }
 }
 
 const retryMessage = async (text) => {
@@ -625,6 +680,42 @@ onMounted(async () => {
   color: var(--text-primary);
   background: #fff;
   border: 1px solid var(--border-lighter);
+}
+
+/* AI 回复反馈行：紧贴 message-bubble 下方，与现有色板契合 */
+.ai-feedback-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-feedback-label {
+  color: var(--text-secondary);
+}
+
+.ai-feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-feedback-btn {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.ai-feedback-btn :deep(.el-icon) {
+  margin-right: 4px;
+}
+
+.ai-feedback-thanks {
+  color: var(--primary-color, #0284c7);
+  font-size: 12px;
 }
 
 .user-bubble {

@@ -664,3 +664,15 @@ export const mockProcessFeedback = (id, reply) => {
     data: { id, status: 'PROCESSED', reply }
   }
 }
+
+// 提交 AI 结果反馈（patient 端 AiConsult 调用，对齐后端 POST /ai/feedback）
+export const mockSubmitFeedback = (data) => {
+  return {
+    code: 0,
+    message: 'success',
+    data: {
+      feedbackId: 'FB' + Date.now(),
+      aiResultId: data?.aiResultId || ''
+    }
+  }
+}

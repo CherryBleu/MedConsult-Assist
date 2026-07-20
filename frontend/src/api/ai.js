@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 import { getToken } from '@/utils/auth'
-import { mockTriageResult, mockCreateSession, mockSendMessage, mockSessionHistory } from '@/mock/ai'
+import { mockTriageResult, mockCreateSession, mockSendMessage, mockSessionHistory, mockSubmitFeedback } from '@/mock/ai'
 import { mockRecordSummary, mockRecordSummaryStream, mockRecordSummaryByText, mockMedicationAnalysis, mockMedicationAnalysisStream, mockImagingSubmit, mockImagingResult, mockConfirmSummary, mockReviewImagingDetection, mockImagingHistoryList } from '@/mock/ai'
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
@@ -422,5 +422,19 @@ export const getImagingHistoryListApi = (patientId) => {
     url: '/ai/imaging-detection/list',
     method: 'get',
     params: patientId ? { patientId } : {}
+  })
+}
+
+// 提交 AI 结果反馈（patient/doctor 端调用，对齐后端 POST /ai/feedback）
+// body: { aiResultType, aiResultId, useful, adopted?, comment? }
+// feedbackBy 由后端从 JWT 取，前端不传
+export const submitFeedbackApi = (data) => {
+  if (USE_MOCK) {
+    return Promise.resolve(mockSubmitFeedback(data))
+  }
+  return request({
+    url: '/ai/feedback',
+    method: 'post',
+    data
   })
 }
