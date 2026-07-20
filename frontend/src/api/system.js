@@ -128,28 +128,56 @@ export const getDoctorListApi = async (params) => {
   return res
 }
 
-// 新增医生（后端暂无医生创建接口；明确拒绝，避免「新增不生效」误导。后端接口待补）
+// 新增医生（对齐后端 POST /doctors，管理员创建医生档案接口）
+// 注意：后端 CreateRequest 字段为 { name, departmentId, title, specialties, introduction, enabled }，
+// 前端 form 还含 doctorNo/phone/password 等账号字段——这些字段后端 doctor 表不消费，
+// 由管理员通过 UserManage（POST /auth/users）单独建账号并关联 doctorId。
 export const addDoctorApi = (data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockAddDoctor(data))
   }
-  return Promise.reject(new Error('医生新增功能暂未提供（后端接口待补）'))
+  return request({
+    url: '/doctors',
+    method: 'post',
+    data: {
+      name: data.name,
+      departmentId: data.departmentId,
+      title: data.title,
+      specialties: data.specialties,
+      introduction: data.introduction,
+      enabled: data.status ? data.status !== 'DISABLED' : data.enabled
+    }
+  })
 }
 
-// 更新医生（后端暂无医生更新接口；明确拒绝，避免「改了不生效」误导。后端接口待补）
+// 更新医生（对齐后端 PATCH /doctors/{doctorId}）
 export const updateDoctorApi = (id, data) => {
   if (USE_MOCK) {
     return Promise.resolve(mockUpdateDoctor(id, data))
   }
-  return Promise.reject(new Error('医生更新功能暂未提供（后端接口待补）'))
+  return request({
+    url: `/doctors/${id}`,
+    method: 'patch',
+    data: {
+      name: data.name,
+      departmentId: data.departmentId,
+      title: data.title,
+      specialties: data.specialties,
+      introduction: data.introduction,
+      enabled: data.status ? data.status !== 'DISABLED' : data.enabled
+    }
+  })
 }
 
-// 删除医生（后端暂无医生删除接口；明确拒绝，避免「删了又回来」误导。后端接口待补）
+// 删除医生（对齐后端 DELETE /doctors/{doctorId}，逻辑删除）
 export const deleteDoctorApi = (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockDeleteDoctor(id))
   }
-  return Promise.reject(new Error('医生删除功能暂未提供（后端接口待补）'))
+  return request({
+    url: `/doctors/${id}`,
+    method: 'delete'
+  })
 }
 
 // ===== 修改密码 =====

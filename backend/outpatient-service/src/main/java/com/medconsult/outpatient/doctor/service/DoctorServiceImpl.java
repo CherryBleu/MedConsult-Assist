@@ -2,6 +2,7 @@ package com.medconsult.outpatient.doctor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -19,12 +20,16 @@ import com.medconsult.outpatient.doctor.mapper.DoctorMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 医生服务实现。
@@ -142,6 +147,100 @@ public class DoctorServiceImpl implements DoctorService {
             }
         }
         return nos;
+    }
+
+    // ===== 管理员维护（HOSPITAL_ADMIN） =====
+
+    @Override
+    @Transactional
+    public DoctorDTO.MutationResponse create(DoctorDTO.CreateRequest req) {
+        // 1. 校验 department_no 存在并解析为 BIGINT 主键
+        Department dept = departmentMapper.selectOne(
+                new QueryWrapper<Department>().eq("department_no", req.departmentId()));
+        if (dept == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + req.departmentId());
+        }
+        // 2. doctor_no 唯一性自检（uk_doctor_no 兜底，提前给出友好错误）
+        String doctorNo = generateDoctorNo();
+        // 3. 落库
+        Doctor d = new Doctor();
+        d.setDoctorNo(doctorNo);
+        d.setName(req.name());
+        d.setDepartmentId(dept.getId());
+        d.setTitle(req.title());
+        d.setSpecialties(toJsonArray(req.specialties()));
+        d.setIntroduction(req.introduction());
+        d.setEnabled(req.enabled() == null || req.enabled() ? 1 : 0);
+        doctorMapper.insert(d);
+        log.info("新增医生 doctorNo={}, name={}, departmentNo={}", d.getDoctorNo(), d.getName(), req.departmentId());
+        return new DoctorDTO.MutationResponse(d.getDoctorNo());
+    }
+
+    @Override
+    @Transactional
+    public DoctorDTO.MutationResponse update(String doctorNo, DoctorDTO.UpdateRequest req) {
+        Doctor d = requireByNo(doctorNo); // 复用：未找到抛 NOT_FOUND
+        if (StringUtils.hasText(req.name())) {
+            d.setName(req.name());
+        }
+        if (StringUtils.hasText(req.departmentId())) {
+            Department dept = departmentMapper.selectOne(
+                    new QueryWrapper<Department>().eq("department_no", req.departmentId()));
+            if (dept == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "科室不存在: " + req.departmentId());
+            }
+            d.setDepartmentId(dept.getId());
+        }
+        if (req.title() != null) {
+            d.setTitle(req.title());
+        }
+        if (req.specialties() != null) {
+            d.setSpecialties(toJsonArray(req.specialties()));
+        }
+        if (req.introduction() != null) {
+            d.setIntroduction(req.introduction());
+        }
+        if (req.enabled() != null) {
+            d.setEnabled(req.enabled() ? 1 : 0);
+        }
+        doctorMapper.updateById(d);
+        log.info("更新医生 doctorNo={}, name={}", d.getDoctorNo(), d.getName());
+        return new DoctorDTO.MutationResponse(d.getDoctorNo());
+    }
+
+    @Override
+    @Transactional
+    public void delete(String doctorNo) {
+        Doctor d = requireByNo(doctorNo);
+        // 逻辑删除（BaseEntity @TableLogic 自动处理 deleted 字段）
+        doctorMapper.deleteById(d.getId());
+        log.info("删除医生 doctorNo={}, name={}", d.getDoctorNo(), d.getName());
+    }
+
+    /** 生成医生业务编号：D + 雪花 ID base36 大写（对齐 department 生成范式） */
+    private static String generateDoctorNo() {
+        return "D" + Long.toUnsignedString(IdWorker.getId(), Character.MAX_RADIX).toUpperCase();
+    }
+
+    /**
+     * 逗号分隔字符串 → JSON 数组串。
+     * <p>前端 form.specialties 是 textarea 输入"高血压,冠心病"格式，后端存 JSON 数组串
+     * {@code ["高血压","冠心病"]} 以与现有 specialties 字段语义一致（list 接口反序列化展示）。
+     */
+    private String toJsonArray(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return "[]";
+        }
+        List<String> items = Arrays.stream(csv.split("[,，]"))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        try {
+            return objectMapper.writeValueAsString(items);
+        } catch (JsonProcessingException e) {
+            log.warn("序列化 specialties 失败，回退空数组: {}", csv, e);
+            return "[]";
+        }
     }
 
     // ===== 私有助手 =====

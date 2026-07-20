@@ -41,4 +41,22 @@ public interface DoctorService {
      * 再回查 department 拿 department_no（业务层组装，非 SQL JOIN）。
      */
     List<String> internalDepartmentNosWithDoctors();
+
+    /**
+     * 管理员新增医生：生成 doctor_no（D + 雪花 base36），校验 department_no 存在，
+     * 落 doctor 表。specialties 入参为逗号分隔字符串，service 层序列化为 JSON 数组串。
+     */
+    DoctorDTO.MutationResponse create(DoctorDTO.CreateRequest req);
+
+    /**
+     * 管理员更新医生：按 doctor_no 查现有记录后部分更新（仅非 null 字段覆盖）。
+     * departmentId 入参为 department_no，service 层解析为 BIGINT 主键。
+     */
+    DoctorDTO.MutationResponse update(String doctorNo, DoctorDTO.UpdateRequest req);
+
+    /**
+     * 管理员删除医生：逻辑删除（deleted=1）。如有未就诊的预约排班等业务约束，
+     * 由调用方自行校验，本方法仅做 doctor 表逻辑删除。
+     */
+    void delete(String doctorNo);
 }
