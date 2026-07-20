@@ -197,7 +197,7 @@
                 </div>
               </div>
 
-              <!-- 用药提醒（后端 reminders: List<Map>） -->
+              <!-- 用药提醒（后端 reminders: List<Map>，前端按 (drugName,reminder) 去重避免重复展示） -->
               <div class="analysis-block">
                 <h4 class="block-title">用药提醒</h4>
                 <div v-if="reminderCount === 0" class="safe-tip" role="status">
@@ -205,7 +205,7 @@
                   <span>暂无用药提醒</span>
                 </div>
                 <ul v-else class="reminder-list">
-                  <li v-for="(item, index) in analysisResult.reminders" :key="index">
+                  <li v-for="(item, index) in dedupedReminders" :key="index">
                     {{ typeof item === 'string' ? item : ((item.drugName ? item.drugName + '：' : '') + (item.reminder || item.content || item.message || '—')) }}
                   </li>
                 </ul>
@@ -251,7 +251,22 @@ const riskLabel = computed(() => {
 const riskClass = computed(() => normalizeRiskLevel(analysisResult.value?.overallRiskLevel).toLowerCase())
 const contraindicationCount = computed(() => analysisResult.value?.contraindicationRisks?.length || 0)
 const interactionCount = computed(() => analysisResult.value?.interactionRisks?.length || 0)
-const reminderCount = computed(() => analysisResult.value?.reminders?.length || 0)
+// 用药提醒按 (drugName, reminder 文本) 去重，避免后端偶发重复（LLM 复制 controlledFunctionResult）导致前端列出重复项
+const dedupedReminders = computed(() => {
+  const list = analysisResult.value?.reminders || []
+  const seen = new Set()
+  const result = []
+  for (const item of list) {
+    const drugName = (typeof item === 'string' ? '' : String(item?.drugName || '')).trim().toLowerCase()
+    const text = typeof item === 'string' ? item.trim() : String(item?.reminder || item?.content || item?.message || '').trim()
+    const key = `${drugName}|${text}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+  return result
+})
+const reminderCount = computed(() => dedupedReminders.value.length)
 const canAnalyze = computed(() => {
   return Boolean(selectedRecord.value && selectedPrescriptions.value.length > 0 && !loadError.value && !analyzing.value)
 })
@@ -740,9 +755,10 @@ onMounted(() => {
 .option-complaint {
   font-size: 12px;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-top: 2px;
 }
 
 @media (max-width: 960px) {

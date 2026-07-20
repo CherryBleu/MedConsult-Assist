@@ -399,9 +399,10 @@ onMounted(() => {
 .option-complaint {
   font-size: 12px;
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-top: 2px;
 }
 
 @keyframes stream-pulse {
