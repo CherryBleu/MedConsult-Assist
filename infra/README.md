@@ -1,7 +1,7 @@
 # MedConsult-Assist 基础设施（infra/）
 
-本目录用 `docker compose` 统一编排 **MySQL / Redis / Qdrant / RabbitMQ / Milvus / MinIO / Embedding** 等中间件。
-**Nacos 不在本 compose 内**（由独立脚本启动），见下文「启动 Nacos」。
+本目录用 `docker compose` 统一编排 **MySQL / Redis / Qdrant / RabbitMQ / Nacos / Milvus / MinIO / Embedding** 等中间件。
+Nacos 也已纳入 compose（standalone 模式），无需再单独脚本启动。
 
 ## 端口与凭据（本地冒烟用）
 
@@ -11,6 +11,7 @@
 | Redis 7 | 6379 | **16379**（避开本机 memurai 6379） | 无密码（本地） |
 | Qdrant | 6333(REST)/6334(gRPC) | 6333/6334 | 无密码（本地） |
 | RabbitMQ | 5672(AMQP)/15672(UI) | 5672/15672 | medconsult/medconsult123 |
+| Nacos | 8848(OpenAPI)/9848(gRPC) | 8848/9848 | 冒烟关鉴权（直接访问） |
 | Milvus 2.4 | 19530/9091 | 19530/9091 | root:Milvus |
 | MinIO | 9000/9001 | 9000/9001 | minioadmin/minioadmin |
 | Embedding | 7997 | 7997 | 无需 api-key（本地 Python 容器） |
@@ -36,16 +37,15 @@ docker compose -f infra/docker-compose.yml down
 docker compose -f infra/docker-compose.yml down -v
 ```
 
-## 启动 Nacos（独立）
+## Nacos（服务发现 + 配置中心）
 
-Nacos 配置中心/注册中心，由独立脚本启动（不入 compose 是既定约定）：
+Nacos 已纳入 docker-compose（standalone 模式 + 内置 derby），随 `docker compose up -d` 自动拉起，
+无需再单独跑 `startup.cmd`。各服务 `bootstrap.yml` 默认连 `127.0.0.1:8848`。
 
-```bash
-# Windows
-"D:\springcloudalibaba\nacos-server-2.3.0\nacos\bin\startup.cmd" -m standalone
-
-# 验证：http://localhost:8848/nacos  （默认 nacos/nacos）
-```
+- 控制台：http://localhost:8848/nacos （冒烟已关鉴权，直接访问）
+- 各服务 `import-check.enabled=false`：即使 Nacos 里没预置 `medconsult-common.yaml` 共享配置也能启动，
+  服务用本地 `application.yml` 的 datasource/redis/mq 兜底——故 Nacos 起来即可，无需手动灌配置。
+- 作用主要是**服务发现**：gateway 路由用 `lb://service-name`，靠 Nacos 找到下游实例。
 
 ## MySQL 多 Schema 设计（架构文档 §1.2）
 

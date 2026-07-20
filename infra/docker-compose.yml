@@ -127,6 +127,37 @@ services:
       start_period: 30s
     networks: [medconsult-net]
 
+  # ============== Nacos（服务发现 + 配置中心）==============
+  # 架构文档 §7.3：gateway 靠 Nacos 服务发现做 lb:// 路由；bootstrap.yml 默认连 127.0.0.1:8848。
+  # 原设计 Nacos 走本机独立脚本（README §启动 Nacos），但对未装本机 Nacos 的环境，
+  # 加进 compose 一键起更省事。standalone 模式 + 内置 derby（冒烟够用，配置不持久化到外部 DB）。
+  # 各服务 bootstrap.yml 的 import-check.enabled=false，允许 Nacos 里没预置 medconsult-common.yaml
+  # 也能启动（用本地 application.yml 的 datasource/redis 兜底）——故 Nacos 起来即可，无需灌配置。
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: medconsult-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      # 单机内置 derby，不走外置 MySQL（冒烟用；生产应配 MYSQL_*= 指向业务库）
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      JVM_XMN: 128m
+      NACOS_AUTH_ENABLE: "false"   # 冒烟关闭鉴权，省得登录；生产必须开 + 改默认口令
+    ports:
+      - "127.0.0.1:8848:8848"     # Nacos OpenAPI / 控制台
+      - "127.0.0.1:9848:9848"     # gRPC（服务发现/配置客户端默认用）
+    volumes:
+      - nacos_data:/home/nacos/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks: [medconsult-net]
+
   # ============== Milvus 元数据存储（etcd，Milvus 独占）==============
   # Milvus standalone 三件套之一：etcd 存 collection/schema 元数据。
   # 仅容器内部可见，不暴露宿主机端口。
@@ -257,6 +288,7 @@ volumes:
   redis_data:
   qdrant_data:
   rabbitmq_data:
+  nacos_data:
   milvus_etcd_data:
   milvus_minio_data:
   minio_data:
