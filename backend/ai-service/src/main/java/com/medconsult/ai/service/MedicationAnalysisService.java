@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -199,7 +200,8 @@ public class MedicationAnalysisService {
         return result;
     }
 
-    private static Map<String, Object> enforceControlledFunctionResult(
+    // package-private 以便单元测试直接覆盖"controlled 覆盖 + reminders 去重"逻辑。
+    static Map<String, Object> enforceControlledFunctionResult(
             Map<String, Object> llmResult,
             MedicationFunctionService.FunctionResult functionResult
     ) {
@@ -226,16 +228,33 @@ public class MedicationAnalysisService {
         };
     }
 
-    private static List<Map<String, Object>> mergeReminders(List<Map<String, Object>> controlled,
-                                                            List<Map<String, Object>> generated) {
-        List<Map<String, Object>> merged = new ArrayList<>();
+    // package-private 以便单元测试直接覆盖去重逻辑（无需反射）。
+    static List<Map<String, Object>> mergeReminders(List<Map<String, Object>> controlled,
+                                                    List<Map<String, Object>> generated) {
+        // LLM 看到 payload 里包含 controlledFunctionResult.reminders 时会原样复制返回，
+        // 简单 addAll 会让每种药品的提醒文本翻倍（用户视角：4 条相同的"阿莫西林胶囊：..."）。
+        // 按 (drugName, reminder 文本) 元组去重，controlled 优先保留（规则侧是 source of truth）。
+        LinkedHashMap<String, Map<String, Object>> deduped = new LinkedHashMap<>();
         if (controlled != null) {
-            merged.addAll(controlled);
+            for (Map<String, Object> item : controlled) {
+                deduped.putIfAbsent(reminderKey(item), item);
+            }
         }
         if (generated != null) {
-            merged.addAll(generated);
+            for (Map<String, Object> item : generated) {
+                deduped.putIfAbsent(reminderKey(item), item);
+            }
         }
-        return merged;
+        return new ArrayList<>(deduped.values());
+    }
+
+    private static String reminderKey(Map<String, Object> item) {
+        if (item == null) {
+            return "|";
+        }
+        String drugName = String.valueOf(item.getOrDefault("drugName", "")).trim().toLowerCase(Locale.ROOT);
+        String reminder = String.valueOf(item.getOrDefault("reminder", item.getOrDefault("content", item.getOrDefault("message", "")))).trim().toLowerCase(Locale.ROOT);
+        return drugName + "\u0001" + reminder;
     }
 
     private static String string(Object value) {

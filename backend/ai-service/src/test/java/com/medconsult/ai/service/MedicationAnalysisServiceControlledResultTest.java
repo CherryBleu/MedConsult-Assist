@@ -76,6 +76,64 @@ class MedicationAnalysisServiceControlledResultTest {
         assertTrue(entityCaptor.getValue().getFunctionTrace().contains("queryDrugRiskInfo"));
     }
 
+    @Test
+    void mergeRemindersShouldDeduplicateByDrugNameAndText() {
+        // controlled（规则侧）和 generated（LLM 侧）含相同 (drugName, reminder) 时，去重保留一条；
+        // LLM 独有的额外项保留。
+        Map<String, Object> controlledRemider = Map.of(
+                "drugName", "阿莫西林胶囊",
+                "reminder", "请按医嘱规定的剂量和频次服用；如出现不适请及时就诊或咨询药师。"
+        );
+        Map<String, Object> llmDuplicate = Map.of(
+                "drugName", "阿莫西林胶囊",
+                "reminder", "请按医嘱规定的剂量和频次服用；如出现不适请及时就诊或咨询药师。"
+        );
+        Map<String, Object> llmExtra = Map.of(
+                "drugName", "氨溴索口服溶液",
+                "reminder", "服药期间注意多饮水。"
+        );
+
+        List<Map<String, Object>> merged = MedicationAnalysisService.mergeReminders(
+                List.of(controlledRemider),
+                List.of(llmDuplicate, llmExtra)
+        );
+
+        assertEquals(2, merged.size());
+        // controlled 优先
+        assertEquals("阿莫西林胶囊", merged.get(0).get("drugName"));
+        // LLM 独有项保留
+        assertEquals("氨溴索口服溶液", merged.get(1).get("drugName"));
+    }
+
+    @Test
+    void enforceControlledFunctionResultShouldDeduplicateRemindersFromLlm() {
+        // 场景：LLM 看到输入 payload 里的 controlledFunctionResult.reminders，
+        // 在输出里原样复制了一份，触发条目翻倍。enforceControlledFunctionResult
+        // 必须去重，否则前端会看到 4 条相同的"阿莫西林胶囊：..."。
+        List<Map<String, Object>> controlledReminders = List.of(
+                Map.of("drugName", "阿莫西林胶囊", "reminder", "请按医嘱服用。")
+        );
+        Map<String, Object> llmResult = Map.of(
+                "overallRiskLevel", "LOW",
+                "contraindicationRisks", List.of(),
+                "interactionRisks", List.of(),
+                "reminders", List.of(
+                        Map.of("drugName", "阿莫西林胶囊", "reminder", "请按医嘱服用。"),
+                        Map.of("drugName", "阿莫西林胶囊", "reminder", "请按医嘱服用。")
+                ),
+                "functionTrace", List.of()
+        );
+        MedicationFunctionService.FunctionResult functionResult = new MedicationFunctionService.FunctionResult(
+                "LOW", List.of(), List.of(), controlledReminders, List.of(), null
+        );
+
+        Map<String, Object> enforced = MedicationAnalysisService.enforceControlledFunctionResult(llmResult, functionResult);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> reminders = (List<Map<String, Object>>) enforced.get("reminders");
+        assertEquals(1, reminders.size(), "LLM 复制的重复 reminder 必须被去重");
+    }
+
     private static MedicationAnalysisRequest request() {
         return new MedicationAnalysisRequest(
                 "1001",
