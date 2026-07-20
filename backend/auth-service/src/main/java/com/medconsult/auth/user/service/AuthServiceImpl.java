@@ -231,11 +231,11 @@ public class AuthServiceImpl implements AuthService {
                     || "HOSPITAL_ADMIN".equals(primaryRole) || "PHARMACY_ADMIN".equals(primaryRole);
             if ("PATIENT".equals(ct) && !isPatient) {
                 writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
-                throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是患者账号，请从工作人员入口登录");
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号适用于工作人员登录页，请切换入口后再试");
             }
             if ("STAFF".equals(ct) && !isStaff) {
                 writeLoginLog(u.getId(), req.getAccount(), ip, userAgent, "PASSWORD", "ENTRY_MISMATCH");
-                throw new BusinessException(ErrorCode.FORBIDDEN, "该账号不是工作人员账号，请从患者入口登录");
+                throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号适用于患者登录页，请切换入口后再试");
             }
         }
 

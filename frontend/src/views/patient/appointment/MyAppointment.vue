@@ -37,7 +37,7 @@
                 {{ getPaymentTagLabel(item) }}
               </el-tag>
             </div>
-            <span class="fee">挂号费：¥{{ item.fee }}</span>
+            <span class="fee">挂号费：¥{{ formatFee(item.fee) }}</span>
           </div>
           <div class="item-body">
             <div class="doctor-info">
@@ -124,7 +124,7 @@
         <el-descriptions-item label="就诊日期">{{ currentDetail.scheduleDate }}</el-descriptions-item>
         <el-descriptions-item label="时段">{{ currentDetail.period === 'MORNING' ? '上午' : '下午' }}</el-descriptions-item>
         <el-descriptions-item label="序号" v-if="currentDetail.queueNo">第{{ currentDetail.queueNo }}号</el-descriptions-item>
-        <el-descriptions-item label="挂号费">¥{{ currentDetail.fee }}</el-descriptions-item>
+        <el-descriptions-item label="挂号费">¥{{ formatFee(currentDetail.fee) }}</el-descriptions-item>
         <el-descriptions-item label="支付状态">
           <el-tag :type="getPaymentTagType(currentDetail)" size="small">
             {{ getPaymentTagLabel(currentDetail) }}
@@ -204,9 +204,16 @@ const showDetail = async (item) => {
 
 const appointmentKey = (item) => item?.appointmentNo || item?.appointmentId || item?.id
 
-const canApplyRefund = (item) => item?.paymentStatus === 'PAID'
+const formatFee = (value) => Number(value || 0).toFixed(2)
 
-const shouldShowPaymentTag = (item) => item?.paymentStatus && item.paymentStatus !== 'PAID'
+const canApplyRefund = (item) => {
+  return item?.paymentStatus === 'PAID' && ['BOOKED', 'CANCELLED'].includes(item?.appointmentStatus)
+}
+
+const shouldShowPaymentTag = (item) => {
+  if (!item?.paymentStatus || item.paymentStatus === 'PAID') return false
+  return !(item.appointmentStatus === 'CANCELLED' && item.paymentStatus === 'UNPAID')
+}
 
 const getPaymentTagLabel = (item) => {
   if (item?.refundStatus === 'FAILED') return '退款失败'
@@ -219,7 +226,7 @@ const getPaymentTagType = (item) => {
 }
 
 const payAppointment = (item) => {
-  ElMessageBox.confirm(`将支付挂号费 ¥${item.fee}，是否继续？`, '支付确认', {
+  ElMessageBox.confirm(`将支付挂号费 ¥${formatFee(item.fee)}，是否继续？`, '支付确认', {
     confirmButtonText: '确认支付',
     cancelButtonText: '取消',
     type: 'info'

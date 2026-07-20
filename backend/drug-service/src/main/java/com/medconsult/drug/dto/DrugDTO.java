@@ -232,11 +232,14 @@ public class DrugDTO {
     public record AlertItem(
             @Schema(description = "药品编号") String drugId,          // drug_no
             @Schema(description = "药品名称") String drugName,        // generic_name
+            @Schema(description = "规格") String specification,
+            @Schema(description = "单位") String unit,
             @Schema(description = "预警类型：LOW_STOCK / NEAR_EXPIRY") String alertType,       // LOW_STOCK / NEAR_EXPIRY
             @Schema(description = "当前库存") Integer currentStock,
             @Schema(description = "阈值") Integer threshold,
             @Schema(description = "批次号") String batchNo,         // 近效期预警才有：相关批次号
-            @Schema(description = "过期日期") LocalDate expireDate    // 近效期预警才有：批次过期日
+            @Schema(description = "过期日期") LocalDate expireDate,   // 近效期预警才有：批次过期日
+            @Schema(description = "剩余天数") Long daysLeft
     ) {}
 
     // ===== 内部接口（/internal/drugs）=====

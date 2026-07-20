@@ -14,7 +14,7 @@
           >
             <el-radio-button value="">全部</el-radio-button>
             <el-radio-button value="LOW_STOCK" data-testid="admin-stock-warning-filter-low">库存不足</el-radio-button>
-            <el-radio-button value="EXPIRED_WARNING">临期预警</el-radio-button>
+            <el-radio-button value="NEAR_EXPIRY">临期预警</el-radio-button>
           </el-radio-group>
           <el-button
             class="warning-action"
@@ -79,19 +79,9 @@
                     <span :class="{ 'text-danger': row.daysLeft < 30 }">{{ daysLeftText(row) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="176" fixed="right" align="center">
+                <el-table-column label="操作" width="112" fixed="right" align="center">
                   <template #default="{ row }">
                     <div class="table-actions">
-                      <el-button
-                        class="table-action"
-                        size="small"
-                        type="success"
-                        link
-                        :aria-label="`处理${row.drugName || '药品'}库存预警`"
-                        @click="goStockIn(row)"
-                      >
-                        立即入库
-                      </el-button>
                       <el-button
                         class="table-action"
                         size="small"
@@ -148,7 +138,6 @@
               </dl>
 
               <div class="warning-card__actions">
-                <el-button type="success" plain @click="goStockIn(row)">立即入库</el-button>
                 <el-button type="primary" plain @click="viewFlow(row)">查看流水</el-button>
               </div>
             </article>
@@ -194,12 +183,11 @@ const getWarningList = async () => {
   }
 }
 
-const goStockIn = () => {
-  router.push('/admin/stock')
-}
-
-const viewFlow = () => {
-  router.push('/admin/stock')
+const viewFlow = (row) => {
+  router.push({
+    path: '/admin/stock',
+    query: row?.drugId ? { drugNo: row.drugId } : undefined
+  })
 }
 
 const warningTypeLabel = (type) => type === 'LOW_STOCK' ? '库存不足' : '临期预警'
@@ -384,7 +372,7 @@ onMounted(() => {
 
 .warning-card__actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 

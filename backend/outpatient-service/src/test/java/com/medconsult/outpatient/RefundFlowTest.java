@@ -143,6 +143,31 @@ class RefundFlowTest {
     }
 
     @Test
+    void completedAppointmentRefundIsRejected() throws Exception {
+        String appointmentNo = createPaidAppointment("9106");
+
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/check-in"), "9106")
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isOk());
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
+                        .contentType("application/json")
+                        .content("{\"appointmentStatus\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(withDoctor(patch("/api/v1/appointments/" + appointmentNo + "/status"))
+                        .contentType("application/json")
+                        .content("{\"appointmentStatus\":\"COMPLETED\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(withPatient(post("/api/v1/appointments/" + appointmentNo + "/refund"), "9106")
+                        .contentType("application/json")
+                        .content("{\"reason\":\"已完成退款\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(409001))
+                .andExpect(jsonPath("$.message").value(containsString("仅未就诊或已取消预约可申请退款")));
+    }
+
+    @Test
     void refundedDuplicateReturnsOriginalRefundOrder() throws Exception {
         String appointmentNo = createPaidAppointment("9104");
 
@@ -248,5 +273,12 @@ class RefundFlowTest {
                 .header("X-User-Primary-Role", "PATIENT")
                 .header("X-User-Roles", "PATIENT")
                 .header("X-User-Patient-Id", patientId);
+    }
+
+    private MockHttpServletRequestBuilder withDoctor(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "5001")
+                .header("X-User-Primary-Role", "DOCTOR")
+                .header("X-User-Roles", "DOCTOR")
+                .header("X-User-Doctor-Id", String.valueOf(doctorId));
     }
 }

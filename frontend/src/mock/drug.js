@@ -90,9 +90,9 @@ export const mockStockWarningList = () => {
     code: 0,
     message: 'success',
     data: [
-      { id: 3, drugName: '硝苯地平缓释片', specification: '20mg*30片', batchNo: '20251201', stockQuantity: 120, warningQuantity: 200, unit: '盒', warningType: 'LOW_STOCK', expireDate: '2027-12-01', daysLeft: 510 },
-      { id: 5, drugName: '布洛芬缓释胶囊', specification: '0.3g*20粒', batchNo: '20250601', stockQuantity: 300, warningQuantity: 100, unit: '盒', warningType: 'EXPIRED_WARNING', expireDate: '2026-08-01', daysLeft: 23 },
-      { id: 7, drugName: '维生素C片', specification: '0.1g*100片', batchNo: '20240901', stockQuantity: 50, warningQuantity: 100, unit: '瓶', warningType: 'LOW_STOCK', expireDate: '2026-09-01', daysLeft: 54 }
+      { id: 3, drugId: 'DRG003', drugName: '硝苯地平缓释片', specification: '20mg*30片', batchNo: '20251201', stockQuantity: 120, warningQuantity: 200, unit: '盒', warningType: 'LOW_STOCK', expireDate: '2027-12-01', daysLeft: 510 },
+      { id: 5, drugId: 'DRG005', drugName: '布洛芬缓释胶囊', specification: '0.3g*20粒', batchNo: '20250601', stockQuantity: 300, warningQuantity: 100, unit: '盒', warningType: 'NEAR_EXPIRY', expireDate: '2026-08-01', daysLeft: 23 },
+      { id: 7, drugId: 'DRG007', drugName: '维生素C片', specification: '0.1g*100片', batchNo: '20240901', stockQuantity: 50, warningQuantity: 100, unit: '瓶', warningType: 'LOW_STOCK', expireDate: '2026-09-01', daysLeft: 54 }
     ],
     total: 3
   }

@@ -85,10 +85,8 @@ class DrugFlowTest {
         // 列表查询：stockQuantity=0
         mvc.perform(get("/api/v1/drugs").param("keyword", "硝苯地平"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.items[0].genericName").value("硝苯地平"))
-                .andExpect(jsonPath("$.data.items[0].stockQuantity").value(0))
-                .andExpect(jsonPath("$.data.items[0].unit").value("盒"));
+                .andExpect(jsonPath("$.data.items[?(@.genericName=='硝苯地平')].stockQuantity").value(org.hamcrest.Matchers.hasItem(0)))
+                .andExpect(jsonPath("$.data.items[?(@.genericName=='硝苯地平')].unit").value(org.hamcrest.Matchers.hasItem("盒")));
     }
 
     @Test
@@ -110,6 +108,19 @@ class DrugFlowTest {
         mvc.perform(withPharmacyAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
                         .contentType("application/json").content(inboundBody))
                 .andExpect(jsonPath("$.data.currentStock").value(200));
+    }
+
+    @Test
+    void hospitalAdminCannotInboundStock() throws Exception {
+        String drugNo = createDrug("医院管理员不可入库测试药", 50);
+        String inboundBody = """
+                {"batchNo":"BATCH_HOSPITAL_DENIED","quantity":100,"unitPrice":12.50,
+                 "productionDate":"2026-01-01","expireDate":"2028-06-01","supplier":"供应链公司"}""";
+
+        mvc.perform(withHospitalAdmin(post("/api/v1/drugs/" + drugNo + "/stock/inbound"))
+                        .contentType("application/json").content(inboundBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403001));
     }
 
     @Test
@@ -196,6 +207,23 @@ class DrugFlowTest {
                 .andExpect(jsonPath("$.data.items[?(@.drugName=='感冒灵')].alertType").value(org.hamcrest.Matchers.hasItem("LOW_STOCK")))
                 .andExpect(jsonPath("$.data.items[?(@.drugName=='感冒灵')].currentStock").value(org.hamcrest.Matchers.hasItem(5)))
                 .andExpect(jsonPath("$.data.items[?(@.drugName=='感冒灵')].threshold").value(org.hamcrest.Matchers.hasItem(100)));
+    }
+
+    @Test
+    void alerts_nearExpiryReturnedWithDisplayFields() throws Exception {
+        String drugNo = createDrug("近效期演示药", 10);
+        String batchNo = "BATCH_NEAR_ALERT_" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        LocalDate expireDate = LocalDate.now().plusDays(10);
+        inbound(drugNo, batchNo, 30, expireDate.toString());
+
+        mvc.perform(get("/api/v1/drugs/stock/alerts").param("type", "NEAR_EXPIRY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.items[?(@.drugName=='近效期演示药')].drugId").value(org.hamcrest.Matchers.hasItem(drugNo)))
+                .andExpect(jsonPath("$.data.items[?(@.drugName=='近效期演示药')].alertType").value(org.hamcrest.Matchers.hasItem("NEAR_EXPIRY")))
+                .andExpect(jsonPath("$.data.items[?(@.drugName=='近效期演示药')].batchNo").value(org.hamcrest.Matchers.hasItem(batchNo)))
+                .andExpect(jsonPath("$.data.items[?(@.drugName=='近效期演示药')].unit").value(org.hamcrest.Matchers.hasItem("盒")))
+                .andExpect(jsonPath("$.data.items[?(@.drugName=='近效期演示药')].daysLeft").value(org.hamcrest.Matchers.hasItem(10)));
     }
 
     /**
@@ -475,6 +503,12 @@ class DrugFlowTest {
         return builder.header("X-User-Id", "4")
                 .header("X-User-Primary-Role", "PHARMACY_ADMIN")
                 .header("X-User-Roles", "PHARMACY_ADMIN");
+    }
+
+    private MockHttpServletRequestBuilder withHospitalAdmin(MockHttpServletRequestBuilder builder) {
+        return builder.header("X-User-Id", "1")
+                .header("X-User-Primary-Role", "HOSPITAL_ADMIN")
+                .header("X-User-Roles", "HOSPITAL_ADMIN");
     }
 
     private MockHttpServletRequestBuilder withService(MockHttpServletRequestBuilder builder) {

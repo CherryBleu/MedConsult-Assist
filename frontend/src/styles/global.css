@@ -42,15 +42,20 @@
   padding: 24px;
   background: var(--gradient-soft);
   min-height: 100%;
-  overflow-x: clip;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .card-box {
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg-glass);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 18px;
   padding: 22px;
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(14px);
+  overflow-wrap: anywhere;
 }
 .interactive-card {
   transition: transform var(--motion-base) ease, box-shadow var(--motion-base) ease, border-color var(--motion-base) ease;

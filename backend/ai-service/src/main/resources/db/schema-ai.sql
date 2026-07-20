@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS ai_feedback (
     ai_result_type VARCHAR(50) NOT NULL,
     ai_result_id VARCHAR(64) NOT NULL,
     feedback_by BIGINT NOT NULL,
-    useful TINYINT NOT NULL,
+    useful TINYINT NOT NULL DEFAULT 0,
     rating TINYINT NOT NULL DEFAULT 0,
     adopted TINYINT NOT NULL DEFAULT 0,
     comment VARCHAR(1000) NULL,

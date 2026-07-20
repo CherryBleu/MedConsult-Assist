@@ -106,10 +106,29 @@
                         show-text
                         :aria-label="'为这条 AI 回答打分'"
                         :data-testid="`ai-feedback-rate-${msg.id}`"
-                        @change="(val) => submitFeedback(msg, val)"
                       />
+                      <div v-if="!msg.feedbackSubmitted" class="ai-feedback-comment">
+                        <el-input
+                          v-model="msg.feedbackComment"
+                          type="textarea"
+                          :rows="2"
+                          maxlength="200"
+                          show-word-limit
+                          placeholder="可以补充一句您的使用感受"
+                          :aria-label="'补充这条 AI 回答的文字反馈'"
+                        />
+                        <el-button
+                          type="primary"
+                          size="small"
+                          class="ai-consult-action ai-feedback-submit"
+                          :disabled="!msg.feedbackRating || !(msg.feedbackComment || '').trim()"
+                          @click="submitFeedback(msg)"
+                        >
+                          提交反馈
+                        </el-button>
+                      </div>
                       <span v-if="msg.feedbackSubmitted" class="ai-feedback-thanks" role="status">
-                        感谢您的 {{ msg.feedbackRating }} 星评分
+                        感谢您的 {{ msg.feedbackRating }} 星评分和文字反馈
                       </span>
                     </div>
                   </div>
@@ -265,9 +284,6 @@
                 </el-button>
               </div>
             </div>
-            <el-avatar :size="36" class="user-avatar composer-avatar" aria-hidden="true">
-              {{ userInitial }}
-            </el-avatar>
           </div>
         </form>
       </main>
@@ -376,20 +392,30 @@ const sendMessage = async () => {
 }
 
 // 提交反馈：联动后端 POST /ai/feedback，admin 在 AiFeedback.vue 中查看/回复
-// body 字段：aiResultType='SYMPTOM_CHAT'，aiResultId=msg.id，rating=1-5
-const submitFeedback = async (msg, rating) => {
+// body 字段：aiResultType='SYMPTOM_CHAT'，aiResultId=msg.id，rating=1-5，comment=文字反馈
+const submitFeedback = async (msg) => {
   if (!msg || msg.feedbackSubmitted) return
-  const value = Number(rating)
-  if (!Number.isInteger(value) || value < 1 || value > 5) return
+  const value = Number(msg.feedbackRating)
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    ElMessage.warning('请先选择评分')
+    return
+  }
+  const comment = String(msg.feedbackComment || '').trim()
+  if (!comment) {
+    ElMessage.warning('请补充文字反馈')
+    return
+  }
   try {
     await submitFeedbackApi({
       aiResultType: 'SYMPTOM_CHAT',
       aiResultId: String(msg.id || ''),
-      rating: value
+      rating: value,
+      comment
     })
     msg.feedbackRating = value
     msg.feedbackSubmitted = true
-    ElMessage.success('感谢您的评分')
+    msg.feedbackComment = comment
+    ElMessage.success('感谢您的反馈')
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || e?.message || '反馈提交失败，请稍后重试')
   }
@@ -635,7 +661,7 @@ onMounted(async () => {
 }
 
 .message-item.user-message {
-  flex-direction: row-reverse;
+  justify-content: flex-end;
   margin-left: auto;
 }
 
@@ -675,7 +701,7 @@ onMounted(async () => {
 .ai-feedback-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 4px 0;
   font-size: 13px;
@@ -688,15 +714,30 @@ onMounted(async () => {
 
 .ai-feedback-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex: 1 1 320px;
+  min-width: min(100%, 260px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .ai-feedback-actions :deep(.el-rate) {
   /* 与 .ai-feedback-label 文字基线对齐 */
   display: inline-flex;
   align-items: center;
+}
+
+.ai-feedback-comment {
+  width: min(100%, 420px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.ai-feedback-submit {
+  min-width: 88px;
+  min-height: var(--touch-target);
 }
 
 .ai-feedback-thanks {
@@ -987,8 +1028,7 @@ onMounted(async () => {
 
 .composer-shell {
   /* 与对话消息 .message-item 同宽（--chat-column-max: 820px），并左对齐，
-     让 composer 宽度跟随窗口缩放、视觉与消息流严格对齐；
-     用户头像贴右边，与 user-message 头像位置对称。 */
+     让 composer 宽度跟随窗口缩放、视觉与消息流严格对齐。 */
   width: min(100%, var(--chat-column-max));
   margin-right: auto;
   display: flex;
@@ -999,17 +1039,12 @@ onMounted(async () => {
 
 .composer-body {
   flex: 1 1 auto;
-  max-width: calc(100% - 48px);
+  max-width: 100%;
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border-light);
   border-radius: 12px;
   background: #fff;
-}
-
-.composer-avatar {
-  /* 与 composer-body 的 padding-top 对齐，让头像顶部和消息流头像顶部视觉齐平。 */
-  margin-top: 14px;
 }
 
 .composer-label {
@@ -1155,13 +1190,18 @@ onMounted(async () => {
   }
 
   .safety-grid,
-  .composer-row {
+  .composer-row,
+  .ai-feedback-comment {
     grid-template-columns: 1fr;
   }
 
   .send-button {
     width: 100%;
     height: 44px;
+  }
+
+  .ai-feedback-submit {
+    width: 100%;
   }
 
   .chat-error,
@@ -1188,9 +1228,6 @@ onMounted(async () => {
     max-width: 100%;
   }
 
-  .composer-avatar {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

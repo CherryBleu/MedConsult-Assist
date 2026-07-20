@@ -34,26 +34,28 @@
             </el-table-column>
             <el-table-column label="操作" width="200" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  size="small"
-                  type="primary"
-                  link
-                  class="department-manage-action"
-                  :aria-label="`编辑科室 ${row.name}`"
-                  @click="handleEdit(row)"
-                >
-                  编辑
-                </el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  link
-                  class="department-manage-action"
-                  :aria-label="`删除科室 ${row.name}`"
-                  @click="handleDelete(row)"
-                >
-                  删除
-                </el-button>
+                <div class="table-actions">
+                  <el-button
+                    size="small"
+                    type="primary"
+                    link
+                    class="department-manage-action"
+                    :aria-label="`编辑科室 ${row.name}`"
+                    @click="handleEdit(row)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    link
+                    class="department-manage-action"
+                    :aria-label="`删除科室 ${row.name}`"
+                    @click="handleDelete(row)"
+                  >
+                    删除
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -196,6 +198,17 @@ getDeptList()
 .department-manage-action {
   min-height: 32px;
   min-width: 88px;
+}
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+.table-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .department-table-shell {
   width: 100%;

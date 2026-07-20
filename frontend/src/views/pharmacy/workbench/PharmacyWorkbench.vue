@@ -43,8 +43,8 @@
               <div class="warning-info">
                 <div class="warning-header">
                   <span class="drug-name">{{ item.drugName }}</span>
-                  <el-tag :type="item.warningType === 'LOW_STOCK' ? 'warning' : 'danger'" size="small">
-                    {{ item.warningType === 'LOW_STOCK' ? '库存不足' : '近效期' }}
+                  <el-tag :type="warningTypeTag(item.warningType)" size="small">
+                    {{ warningTypeLabel(item.warningType) }}
                   </el-tag>
                 </div>
                 <div class="warning-detail">
@@ -106,7 +106,7 @@ const drugList = ref([])
 
 const totalDrugs = computed(() => drugList.value.length)
 const lowStockCount = computed(() => warningList.value.filter(i => i.warningType === 'LOW_STOCK').length)
-const expireWarningCount = computed(() => warningList.value.filter(i => i.warningType === 'EXPIRED_WARNING').length)
+const expireWarningCount = computed(() => warningList.value.filter(i => i.warningType === 'NEAR_EXPIRY').length)
 const todayInOut = ref(12)
 
 // 从分页或数组响应中取数组（后端 PageResult {items,total} 或直接数组）
@@ -135,6 +135,10 @@ const getWarningList = async () => {
 const goStockIn = (item) => {
   router.push('/pharmacy/stock')
 }
+
+const warningTypeLabel = (type) => type === 'LOW_STOCK' ? '库存不足' : '近效期'
+
+const warningTypeTag = (type) => type === 'LOW_STOCK' ? 'warning' : 'danger'
 
 const navigateTo = (path) => {
   router.push(path)

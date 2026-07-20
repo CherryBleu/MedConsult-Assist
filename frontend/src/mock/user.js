@@ -19,10 +19,10 @@ export const mockLogin = (payload) => {
   const clientType = typeof payload === 'string' ? null : payload?.clientType
   const user = getUserByAccount(account)
   if (clientType === 'PATIENT' && user.role !== 'PATIENT') {
-    return Promise.reject(new Error('该账号不是患者账号，请从工作人员入口登录'))
+    return Promise.reject(new Error('当前账号适用于工作人员登录页，请切换入口后再试'))
   }
   if (clientType === 'STAFF' && user.role === 'PATIENT') {
-    return Promise.reject(new Error('该账号不是工作人员账号，请从患者入口登录'))
+    return Promise.reject(new Error('当前账号适用于患者登录页，请切换入口后再试'))
   }
   localStorage.setItem(LOGIN_ACCOUNT_KEY, account || '')
   return Promise.resolve({

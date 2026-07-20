@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -260,9 +261,12 @@ public class DrugServiceImpl implements DrugService {
                 items.add(new DrugDTO.AlertItem(
                         d.getDrugNo(),
                         d.getGenericName(),
+                        d.getSpecification(),
+                        d.getUnit(),
                         "LOW_STOCK",
                         d.getCurrentStock() == null ? 0 : d.getCurrentStock(),
                         d.getMinStockThreshold() == null ? 0 : d.getMinStockThreshold(),
+                        null,
                         null,
                         null));
             }
@@ -291,11 +295,14 @@ public class DrugServiceImpl implements DrugService {
                 items.add(new DrugDTO.AlertItem(
                         d != null ? d.getDrugNo() : null,
                         d != null ? d.getGenericName() : null,
+                        d != null ? d.getSpecification() : null,
+                        d != null ? d.getUnit() : null,
                         "NEAR_EXPIRY",
                         b.getQuantity(),
                         NEAR_EXPIRY_DAYS, // 近效期阈值天数
                         b.getBatchNo(),
-                        b.getExpireDate()));
+                        b.getExpireDate(),
+                        b.getExpireDate() == null ? null : ChronoUnit.DAYS.between(today, b.getExpireDate())));
             }
             return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
         } else {

@@ -127,7 +127,13 @@
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入11位手机号" />
+          <el-input
+            v-model="form.phone"
+            placeholder="请输入11位手机号"
+            maxlength="11"
+            inputmode="numeric"
+            @input="form.phone = normalizePhoneInput($event)"
+          />
         </el-form-item>
         <el-form-item label="默认密码" prop="password">
           <el-input v-model="form.password" type="password" placeholder="请输入初始密码" />
@@ -194,13 +200,15 @@ const rules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^\d{11}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/, message: '密码须8-64位且至少含字母和数字', trigger: 'blur' }
   ]
 }
+
+const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 11)
 
 const getUserList = async () => {
   loading.value = true

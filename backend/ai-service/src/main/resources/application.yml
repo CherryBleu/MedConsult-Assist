@@ -39,6 +39,9 @@ spring:
   sql:
     init:
       mode: always
+      schema-locations:
+        - classpath:db/schema-ai.sql
+        - classpath:db/dev-schema-patch.sql
   # 文件上传限制（医学影像可能较大）
   servlet:
     multipart:

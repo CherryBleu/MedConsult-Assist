@@ -44,7 +44,7 @@
 
         <!-- 登录表单界面 -->
         <template v-else>
-          <button type="button" class="back-entry" @click="backToEntrySelect">
+          <button v-if="!fixedEntryMode" type="button" class="back-entry" @click="backToEntrySelect">
             <el-icon><ArrowLeft /></el-icon>
             <span>返回选择</span>
           </button>
@@ -126,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Document, Cpu, Suitcase, ArrowLeft } from '@element-plus/icons-vue'
@@ -136,16 +136,25 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const selectedEntry = ref(null)
+const props = defineProps({
+  fixedEntry: {
+    type: String,
+    default: ''
+  }
+})
+
+const initialEntry = props.fixedEntry || route.meta.entry || null
+const selectedEntry = ref(initialEntry)
 const loginFormRef = ref(null)
 const loading = ref(false)
 const isMockMode = import.meta.env.VITE_USE_MOCK === 'true'
+const fixedEntryMode = computed(() => Boolean(props.fixedEntry || route.meta.entry))
 
 const loginForm = reactive({
   account: '',
   password: '',
   remember: false,
-  clientType: null      // 登录入口：'PATIENT'/'STAFF'，与后端 clientType 契约一致
+  clientType: initialEntry ? initialEntry.toUpperCase() : null      // 登录入口：'PATIENT'/'STAFF'，与后端 clientType 契约一致
 })
 
 const selectEntry = (entry) => {
@@ -173,6 +182,9 @@ const loginRules = {
 
 // 记住账号回显
 onMounted(() => {
+  if (route.meta.entry) {
+    selectEntry(route.meta.entry)
+  }
   const rememberAccount = localStorage.getItem('remember_account')
   if (rememberAccount) {
     loginForm.account = rememberAccount

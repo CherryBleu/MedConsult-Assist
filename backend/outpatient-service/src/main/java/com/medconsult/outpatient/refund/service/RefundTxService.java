@@ -29,6 +29,8 @@ public class RefundTxService {
     private static final String PROVIDER_MOCK = "MOCK";
     private static final String CHANNEL_ORIGINAL = "ORIGINAL";
     private static final String STATUS_SUCCEEDED = "SUCCEEDED";
+    private static final String APPOINTMENT_BOOKED = "BOOKED";
+    private static final String APPOINTMENT_CANCELLED = "CANCELLED";
 
     private final AppointmentMapper appointmentMapper;
     private final RefundOrderMapper refundOrderMapper;
@@ -39,6 +41,12 @@ public class RefundTxService {
         RefundOrder existing = findByAppointmentId(a.getId());
         if (existing != null) {
             return toResponse(existing, a.getPaymentStatus());
+        }
+
+        if (!APPOINTMENT_BOOKED.equals(a.getAppointmentStatus())
+                && !APPOINTMENT_CANCELLED.equals(a.getAppointmentStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "仅未就诊或已取消预约可申请退款，当前预约状态: " + a.getAppointmentStatus());
         }
 
         if (!"PAID".equals(a.getPaymentStatus())) {

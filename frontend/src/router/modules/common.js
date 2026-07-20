@@ -1,12 +1,24 @@
 const commonRoutes = [
   {
     path: '/',
-    redirect: '/login'
+    redirect: '/patient-login'
+  },
+  {
+    path: '/patient-login',
+    name: 'PatientLogin',
+    component: () => import('@/views/common/PatientLogin.vue'),
+    meta: { title: '患者登录' }
+  },
+  {
+    path: '/staff-login',
+    name: 'StaffLogin',
+    component: () => import('@/views/common/StaffLogin.vue'),
+    meta: { title: '工作人员登录' }
   },
   {
     path: '/login',
     name: 'Login',
-    component: () => import('@/views/common/Login.vue'),
+    redirect: to => ({ path: '/patient-login', query: to.query }),
     meta: { title: '登录' }
   },
   {

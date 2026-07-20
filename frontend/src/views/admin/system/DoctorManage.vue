@@ -42,10 +42,12 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="180" fixed="right">
+                <el-table-column label="操作" width="200" fixed="right">
                   <template #default="{ row }">
-                    <el-button size="small" type="primary" link class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
-                    <el-button size="small" type="danger" link class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
+                    <div class="table-actions">
+                      <el-button size="small" type="primary" link class="doctor-manage-action" :aria-label="`编辑医生 ${row.name}`" @click="handleEdit(row)">编辑</el-button>
+                      <el-button size="small" type="danger" link class="doctor-manage-action" :aria-label="`删除医生 ${row.name}`" @click="handleDelete(row)">删除</el-button>
+                    </div>
                   </template>
                 </el-table-column>
               </el-table>
@@ -110,7 +112,7 @@
           <el-input v-model="form.doctorNo" placeholder="请输入医生工号" :disabled="isEdit" />
         </el-form-item>
         <el-form-item label="姓名" prop="name">
-          <el-input v-model="form.name" placeholder="请输入姓名" />
+          <el-input v-model="form.name" placeholder="请输入姓名" :disabled="isEdit" />
         </el-form-item>
         <el-form-item label="性别">
           <el-radio-group v-model="form.gender" :disabled="isEdit">
@@ -140,7 +142,13 @@
           <el-input v-model="form.specialties" type="textarea" :rows="2" placeholder="请输入擅长领域" />
         </el-form-item>
         <el-form-item label="联系电话" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入11位手机号" />
+          <el-input
+            v-model="form.phone"
+            placeholder="请输入11位手机号"
+            maxlength="11"
+            inputmode="numeric"
+            @input="form.phone = normalizePhoneInput($event)"
+          />
         </el-form-item>
         <el-form-item label="挂号费">
           <el-input-number v-model="form.registrationFee" :min="0" :precision="0" />
@@ -204,13 +212,15 @@ const rules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^\d{11}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/, message: '密码须8-64位且至少含字母和数字', trigger: 'blur' }
   ]
 }
+
+const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 11)
 
 const getDoctorList = async () => {
   loading.value = true
@@ -320,6 +330,19 @@ onMounted(() => {
   touch-action: manipulation;
 }
 
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.table-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .admin-doctor-table-shell {
   width: 100%;
   max-width: 100%;
@@ -331,7 +354,7 @@ onMounted(() => {
 }
 
 .admin-doctor-table {
-  min-width: 1240px;
+  min-width: 1260px;
 }
 
 .admin-doctor-table-shell:focus-visible {

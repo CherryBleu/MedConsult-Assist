@@ -91,14 +91,33 @@ export const stockOutApi = (id, quantity, remark) => {
 
 // 库存预警列表（对齐后端 GET /drugs/stock/alerts）
 // 后端库存预警/流水字段 → 前端期望字段映射
+const normalizeAlertType = (type) => {
+  if (type === 'EXPIRED_WARNING') return 'NEAR_EXPIRY'
+  return type
+}
+
+const daysLeftFromExpireDate = (expireDate) => {
+  if (!expireDate) return undefined
+  const expire = new Date(`${expireDate}T00:00:00`)
+  if (Number.isNaN(expire.getTime())) return undefined
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.ceil((expire.getTime() - today.getTime()) / 86400000)
+}
+
 const mapStockWarning = (w) => ({
+  ...w,
   id: w.alertId ?? w.id,
-  drugId: w.drugId,
+  drugId: w.drugId ?? w.drugNo,
+  drugNo: w.drugNo ?? w.drugId,
   drugName: w.drugName ?? w.genericName,
-  warningType: w.alertType ?? w.warningType,
+  warningType: normalizeAlertType(w.alertType ?? w.warningType),
+  stockQuantity: w.stockQuantity ?? w.currentStock ?? w.quantity,
+  warningQuantity: w.warningQuantity ?? w.threshold,
+  daysLeft: w.daysLeft ?? daysLeftFromExpireDate(w.expireDate),
+  unit: w.unit ?? '',
   level: w.level ?? w.severity,
-  message: w.message ?? w.reason,
-  ...w
+  message: w.message ?? w.reason
 })
 const mapStockFlow = (f) => ({
   // 兼容两种后端 ListItem：单药品流水用 stockFlowId，全局流水用 stockFlowId/drugNo
@@ -121,7 +140,19 @@ export const getStockWarningApi = async (params) => {
   if (USE_MOCK) {
     return Promise.resolve(mockStockWarningList())
   }
-  const res = await request({ url: '/drugs/stock/alerts', method: 'get', params })
+  if (!params || Object.keys(params).length === 0) {
+    const [lowRes, expiryRes] = await Promise.all([
+      request({ url: '/drugs/stock/alerts', method: 'get', params: { type: 'LOW_STOCK' } }),
+      request({ url: '/drugs/stock/alerts', method: 'get', params: { type: 'NEAR_EXPIRY' } })
+    ])
+    const lowList = lowRes.data?.items ?? lowRes.data?.records ?? (Array.isArray(lowRes.data) ? lowRes.data : [])
+    const expiryList = expiryRes.data?.items ?? expiryRes.data?.records ?? (Array.isArray(expiryRes.data) ? expiryRes.data : [])
+    lowRes.data = [...lowList, ...expiryList].map(mapStockWarning)
+    return lowRes
+  }
+  const normalizedParams = { ...params }
+  if (normalizedParams.type) normalizedParams.type = normalizeAlertType(normalizedParams.type)
+  const res = await request({ url: '/drugs/stock/alerts', method: 'get', params: normalizedParams })
   const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
   res.data = list.map(mapStockWarning)
   return res

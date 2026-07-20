@@ -23,7 +23,7 @@
             <div class="doctor-intro">{{ doctor.introduction }}</div>
           </div>
           <div class="doctor-action">
-            <div class="fee-text">挂号费：¥{{ doctor.registrationFee }}</div>
+            <div class="fee-text">{{ feeText(doctor.registrationFee) }}</div>
             <el-button type="primary" @click="goToSchedule(doctor.id)">
               预约挂号
             </el-button>
@@ -48,6 +48,9 @@ const router = useRouter()
 const loading = ref(false)
 const deptName = ref('')
 const doctorList = ref([])
+const feeText = (value) => value == null || value === ''
+  ? '挂号费以排班为准'
+  : `挂号费：¥${Number(value || 0).toFixed(2)}`
 
 // 获取医生列表
 const getDoctorList = async () => {

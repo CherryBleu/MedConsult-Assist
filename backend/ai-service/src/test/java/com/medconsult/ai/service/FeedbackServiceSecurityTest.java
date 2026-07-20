@@ -54,6 +54,7 @@ class FeedbackServiceSecurityTest {
         AiFeedbackEntity entity = entityCaptor.getValue();
         assertEquals(7L, entity.getFeedbackBy());
         assertEquals(5, entity.getRating());
+        assertEquals(1, entity.getUseful());
     }
 
     @Test
@@ -88,6 +89,8 @@ class FeedbackServiceSecurityTest {
 
         assertEquals(1, items.size());
         assertEquals("FB-1", items.get(0).feedbackId());
+        assertEquals("SUMMARY", items.get(0).aiResultType());
+        assertEquals("SUM-1", items.get(0).aiResultId());
         assertEquals("7", items.get(0).feedbackBy());
         assertEquals(5, items.get(0).rating());
         assertEquals("thanks", items.get(0).adminReply());
@@ -119,6 +122,8 @@ class FeedbackServiceSecurityTest {
                                              String comment, String reply) {
         AiFeedbackEntity entity = new AiFeedbackEntity();
         entity.setFeedbackNo(feedbackNo);
+        entity.setAiResultType("SUMMARY");
+        entity.setAiResultId("SUM-1");
         entity.setFeedbackBy(feedbackBy);
         entity.setRating(rating);
         entity.setComment(comment);

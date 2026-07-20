@@ -22,40 +22,51 @@
       >
         <ResponsiveTable aria-label="AI反馈列表">
           <template #table>
-            <el-table :data="filteredList" border stripe>
-              <el-table-column prop="feedbackNo" label="反馈编号" width="160" />
-              <el-table-column prop="serviceType" label="服务类型" width="120" />
-              <el-table-column prop="userName" label="反馈用户" width="120" />
-              <el-table-column label="评分" width="120">
-                <template #default="{ row }">
-                  <el-rate v-model="row.rating" disabled show-score />
-                </template>
-              </el-table-column>
-              <el-table-column prop="content" label="反馈内容" min-width="220" show-overflow-tooltip />
-              <el-table-column label="状态" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.status === 'PENDING' ? 'warning' : 'success'" size="small">
-                    {{ statusLabel(row.status) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="createdAt" label="提交时间" width="180" />
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="row.status === 'PENDING'"
-                    size="small"
-                    type="primary"
-                    link
-                    data-testid="ai-feedback-process-button"
-                    @click="openProcessDialog(row)"
-                  >
-                    处理
-                  </el-button>
-                  <el-button size="small" link @click="viewDetail(row)">查看</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div
+              class="ai-feedback-table-shell"
+              data-testid="ai-feedback-table-shell"
+              aria-label="AI反馈宽表横向滚动区域"
+              tabindex="0"
+            >
+                <el-table :data="filteredList" border stripe class="ai-feedback-table">
+                  <el-table-column prop="feedbackNo" label="反馈编号" width="170" />
+                  <el-table-column prop="serviceType" label="服务类型" width="130" />
+                  <el-table-column prop="submittedData" label="提交数据" min-width="180" show-overflow-tooltip />
+                  <el-table-column prop="userName" label="反馈用户" width="140" />
+                <el-table-column label="评分" width="140">
+                  <template #default="{ row }">
+                    <el-rate v-model="row.rating" disabled show-score />
+                  </template>
+                </el-table-column>
+                <el-table-column prop="content" label="反馈内容" min-width="260" show-overflow-tooltip />
+                <el-table-column label="状态" width="110">
+                  <template #default="{ row }">
+                    <el-tag :type="row.status === 'PENDING' ? 'warning' : 'success'" size="small">
+                      {{ statusLabel(row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="createdAt" label="提交时间" width="180" />
+                <el-table-column label="操作" width="200" fixed="right">
+                  <template #default="{ row }">
+                    <div class="ai-feedback-table-actions">
+                      <el-button
+                        v-if="row.status === 'PENDING'"
+                        size="small"
+                        type="primary"
+                        link
+                        class="ai-feedback-action"
+                        data-testid="ai-feedback-process-button"
+                        @click="openProcessDialog(row)"
+                      >
+                        处理
+                      </el-button>
+                      <el-button size="small" link class="ai-feedback-action" @click="viewDetail(row)">查看</el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </template>
 
           <template #card>
@@ -85,6 +96,10 @@
                   <dd>{{ row.serviceType || '-' }}</dd>
                 </div>
                 <div>
+                  <dt>提交数据</dt>
+                  <dd>{{ row.submittedData || '-' }}</dd>
+                </div>
+                <div>
                   <dt>用户</dt>
                   <dd>{{ row.userName || '-' }}</dd>
                 </div>
@@ -99,12 +114,13 @@
                   v-if="row.status === 'PENDING'"
                   type="primary"
                   plain
-                  data-testid="ai-feedback-process-button"
-                  @click="openProcessDialog(row)"
-                >
+                class="ai-feedback-action"
+                data-testid="ai-feedback-process-button"
+                @click="openProcessDialog(row)"
+              >
                   处理反馈
                 </el-button>
-                <el-button plain @click="viewDetail(row)">查看详情</el-button>
+                <el-button plain class="ai-feedback-action" @click="viewDetail(row)">查看详情</el-button>
               </div>
             </article>
           </template>
@@ -119,6 +135,25 @@
       destroy-on-close
       class="ai-feedback-dialog"
     >
+      <dl class="feedback-dialog-meta">
+        <div>
+          <dt>服务类型</dt>
+          <dd>{{ currentFeedback?.serviceType || '-' }}</dd>
+        </div>
+        <div>
+          <dt>提交数据</dt>
+          <dd>{{ currentFeedback?.submittedData || '-' }}</dd>
+        </div>
+        <div>
+          <dt>反馈用户</dt>
+          <dd>{{ currentFeedback?.userName || '-' }}</dd>
+        </div>
+        <div>
+          <dt>评分</dt>
+          <dd>{{ currentFeedback?.rating || '-' }}</dd>
+        </div>
+      </dl>
+
       <div class="feedback-content">
         <div class="label">反馈内容</div>
         <div class="text">{{ currentFeedback?.content || '-' }}</div>
@@ -224,7 +259,7 @@ const submitProcess = async () => {
   submitting.value = true
   dialogError.value = ''
   try {
-    await processFeedbackApi(currentFeedback.value.id, replyContent.value)
+    await processFeedbackApi(currentFeedback.value.feedbackId || currentFeedback.value.id, replyContent.value)
     ElMessage.success('处理成功')
     dialogVisible.value = false
     getFeedbackList()
@@ -274,6 +309,45 @@ onMounted(() => {
 
 .status-tabs {
   max-width: 100%;
+}
+
+.ai-feedback-action {
+  min-height: var(--touch-target);
+  min-width: 88px;
+  touch-action: manipulation;
+}
+
+.ai-feedback-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.ai-feedback-table-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.ai-feedback-table-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+
+.ai-feedback-table-shell:focus-visible {
+  outline: 2px solid rgba(2, 132, 199, .18);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+.ai-feedback-table {
+  min-width: 1510px;
 }
 
 .feedback-card {
@@ -362,6 +436,38 @@ onMounted(() => {
   margin-left: 0;
 }
 
+.feedback-dialog-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.feedback-dialog-meta div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-lighter);
+  border-radius: var(--radius-base);
+  background: #fff;
+}
+
+.feedback-dialog-meta dt,
+.feedback-dialog-meta dd {
+  margin: 0;
+}
+
+.feedback-dialog-meta dt {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.feedback-dialog-meta dd {
+  margin-top: 4px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 .feedback-content {
   padding: 12px;
   background: var(--bg-page);
@@ -417,6 +523,10 @@ onMounted(() => {
   .dialog-actions {
     grid-template-columns: 1fr;
     flex-direction: column-reverse;
+  }
+
+  .feedback-dialog-meta {
+    grid-template-columns: 1fr;
   }
 
   .dialog-actions .el-button {

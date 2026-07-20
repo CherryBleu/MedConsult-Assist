@@ -159,7 +159,6 @@ export const updateDoctorApi = (id, data) => {
     url: `/doctors/${id}`,
     method: 'patch',
     data: {
-      name: data.name,
       departmentId: data.departmentId,
       title: data.title,
       specialties: data.specialties,

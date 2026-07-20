@@ -141,11 +141,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getDrugListApi, getStockFlowApi } from '@/api/drug'
 import PageState from '@/components/common/PageState.vue'
 import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 
+const route = useRoute()
 const loading = ref(false)
 const errorMessage = ref('')
 const flowList = ref([])
@@ -154,7 +156,7 @@ const typeFilter = ref('')
 // 药品选择
 const drugLoading = ref(false)
 const drugOptions = ref([])
-const selectedDrugId = ref('')
+const selectedDrugId = ref(route.query.drugId ? String(route.query.drugId) : '')
 
 const normalizeDrugId = (drug) => drug?.drugId ?? drug?.id ?? drug?.drugNo ?? ''
 const formatDrugLabel = (drug) => {
@@ -242,8 +244,11 @@ const resetFilter = () => {
   if (selectedDrugId.value) getFlowList()
 }
 
-onMounted(() => {
-  searchDrugs('')
+onMounted(async () => {
+  await searchDrugs('')
+  if (selectedDrugId.value) {
+    getFlowList()
+  }
 })
 </script>
 

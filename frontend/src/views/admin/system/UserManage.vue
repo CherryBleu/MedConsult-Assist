@@ -15,30 +15,46 @@
       >
         <ResponsiveTable aria-label="医院管理员列表">
           <template #table>
-            <el-table :data="userList" border stripe>
-              <el-table-column prop="userNo" label="用户编号" width="120" />
-              <el-table-column prop="account" label="账号" width="140" />
-              <el-table-column prop="name" label="姓名" width="120" />
-              <el-table-column prop="phone" label="手机号" width="140" />
-              <el-table-column label="角色" width="140">
-                <template #default="{ row }">
-                  <el-tag>{{ getRoleLabel(row.role) }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="状态" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'">
-                    {{ row.status === 'ACTIVE' ? '正常' : '禁用' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="createdAt" label="创建时间" width="180" />
-              <el-table-column label="操作" width="120" fixed="right">
-                <template #default="{ row }">
-                  <el-button size="small" type="danger" link @click="handleDelete(row)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div
+              class="admin-user-table-shell"
+              data-testid="admin-user-table-shell"
+              aria-label="医院管理员宽表横向滚动区域"
+              tabindex="0"
+            >
+              <el-table :data="userList" border stripe class="admin-user-table">
+                <el-table-column prop="userNo" label="用户编号" width="150" />
+                <el-table-column prop="account" label="账号" width="180" />
+                <el-table-column prop="name" label="姓名" width="160" />
+                <el-table-column prop="phone" label="手机号" width="170" />
+                <el-table-column label="角色" width="160">
+                  <template #default="{ row }">
+                    <el-tag>{{ getRoleLabel(row.role) }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="120">
+                  <template #default="{ row }">
+                    <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
+                      {{ row.status === 'ACTIVE' ? '正常' : '禁用' }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="createdAt" label="创建时间" min-width="220" />
+                <el-table-column label="操作" width="160" fixed="right">
+                  <template #default="{ row }">
+                    <el-button
+                      size="small"
+                      type="danger"
+                      link
+                      class="admin-user-action"
+                      :aria-label="`删除医院管理员 ${row.name}`"
+                      @click="handleDelete(row)"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </template>
 
           <template #card>
@@ -71,7 +87,7 @@
                   <dd>{{ row.createdAt }}</dd>
                 </div>
               </dl>
-              <el-button class="user-card__action" type="danger" plain @click="handleDelete(row)">
+              <el-button class="admin-user-action user-card__action" type="danger" plain @click="handleDelete(row)">
                 删除
               </el-button>
             </article>
@@ -90,7 +106,13 @@
           <el-input v-model="form.name" placeholder="请输入姓名" />
         </el-form-item>
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入11位手机号" />
+          <el-input
+            v-model="form.phone"
+            placeholder="请输入11位手机号"
+            maxlength="11"
+            inputmode="numeric"
+            @input="form.phone = normalizePhoneInput($event)"
+          />
         </el-form-item>
         <el-form-item label="默认密码" prop="password">
           <el-input v-model="form.password" type="password" placeholder="请输入初始密码" />
@@ -146,13 +168,15 @@ const rules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^\d{11}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/, message: '密码须8-64位且至少含字母和数字', trigger: 'blur' }
   ]
 }
+
+const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 11)
 
 const getUserList = async () => {
   loading.value = true
@@ -221,6 +245,32 @@ getUserList()
   color: var(--text-primary);
   margin: 0;
 }
+
+.admin-user-action {
+  min-height: var(--touch-target);
+  min-width: 88px;
+  touch-action: manipulation;
+}
+
+.admin-user-table-shell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+
+.admin-user-table-shell:focus-visible {
+  outline: 2px solid rgba(2, 132, 199, .18);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring);
+}
+
+.admin-user-table {
+  min-width: 1360px;
+}
 .form-tip {
   margin-top: 8px;
 }
@@ -233,7 +283,7 @@ getUserList()
   gap: 14px;
   padding: 16px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-base);
   background: rgba(255, 255, 255, .84);
   box-shadow: 0 12px 30px rgba(15, 35, 95, .06);
 }

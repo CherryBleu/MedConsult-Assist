@@ -16,7 +16,7 @@ const mapDoctor = (d) => {
     // 后端无 introduction 字段时，复用 specialties 文本作为简介（已 join 成字符串，不会再渲染成裸 JSON）
     introduction: d.introduction ?? specialtiesText,
     // registrationFee 与 fee 双写：模板用 registrationFee，其它页用 fee，都保留避免逐页改
-    registrationFee: d.registrationFee ?? d.fee ?? 0,
+    registrationFee: d.registrationFee ?? d.fee ?? null,
     fee: d.registrationFee ?? d.fee,
     enabled: d.enabled
   }

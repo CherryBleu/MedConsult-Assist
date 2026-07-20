@@ -10,8 +10,8 @@
           <el-input
             v-model="searchKey"
             class="filter-control search-control"
-            aria-label="搜索药品名称"
-            placeholder="搜索药品名称"
+            aria-label="按药品编号筛选"
+            placeholder="输入药品编号"
             clearable
             :disabled="loading"
             @keyup.enter="handleSearch"
@@ -125,15 +125,17 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { getStockFlowListApi } from '@/api/drug'
 import PageState from '@/components/common/PageState.vue'
 
+const route = useRoute()
 const loading = ref(false)
 const errorMessage = ref('')
 const flowList = ref([])
 const total = ref(0)
-const searchKey = ref('')
+const searchKey = ref(route.query.drugNo ? String(route.query.drugNo) : '')
 const typeFilter = ref('')
 const dateRange = ref([])
 
@@ -172,7 +174,7 @@ const getFlowList = async () => {
   errorMessage.value = ''
   try {
     const params = { ...queryParams }
-    if (searchKey.value) params.keyword = searchKey.value
+    if (searchKey.value) params.drugNo = searchKey.value
     if (typeFilter.value) params.type = typeFilter.value
     if (dateRange.value && dateRange.value.length === 2) {
       params.startDate = dateRange.value[0]

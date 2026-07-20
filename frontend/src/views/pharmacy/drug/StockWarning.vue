@@ -12,7 +12,7 @@
           >
             <el-radio-button value="">全部</el-radio-button>
             <el-radio-button value="LOW_STOCK" data-testid="stock-warning-filter-low">库存不足</el-radio-button>
-            <el-radio-button value="EXPIRED_WARNING">近效期</el-radio-button>
+            <el-radio-button value="NEAR_EXPIRY">近效期</el-radio-button>
           </el-radio-group>
           <el-tag type="danger" effect="dark">共 {{ filteredList.length }} 条预警</el-tag>
         </div>
@@ -27,7 +27,12 @@
       >
         <ResponsiveTable aria-label="库存预警列表">
           <template #table>
-            <el-table :data="filteredList" border stripe>
+            <section
+              class="pharmacy-table-scroll"
+              data-testid="pharmacy-stock-warning-table-scroll"
+              aria-label="库存预警横向滚动区域"
+            >
+              <el-table class="pharmacy-stock-warning-table" :data="filteredList" border stripe>
               <el-table-column type="index" label="#" width="50" align="center" />
               <el-table-column prop="drugName" label="药品名称" min-width="180" />
               <el-table-column prop="specification" label="规格" width="150" />
@@ -53,7 +58,7 @@
               <el-table-column label="剩余天数" width="100" align="center">
                 <template #default="{ row }">
                   <el-progress
-                    v-if="row.warningType === 'EXPIRED_WARNING'"
+                    v-if="row.warningType === 'NEAR_EXPIRY'"
                     :percentage="daysLeftPercent(row.daysLeft)"
                     :color="row.daysLeft < 30 ? '#f56c6c' : '#e6a23c'"
                     :stroke-width="16"
@@ -63,13 +68,16 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right" align="center">
+              <el-table-column label="操作" width="176" fixed="right" align="center">
                 <template #default="{ row }">
-                  <el-button size="small" type="success" link @click="goStockIn(row)">立即入库</el-button>
-                  <el-button size="small" type="primary" link @click="viewFlow(row)">查看流水</el-button>
+                  <div class="table-actions">
+                    <el-button class="table-action" size="small" type="success" link @click="goStockIn(row)">立即入库</el-button>
+                    <el-button class="table-action" size="small" type="primary" link @click="viewFlow(row)">查看流水</el-button>
+                  </div>
                 </template>
               </el-table-column>
-            </el-table>
+              </el-table>
+            </section>
           </template>
 
           <template #card>
@@ -145,9 +153,10 @@ const getWarningList = async () => {
   errorMessage.value = ''
   try {
     const res = await getStockWarningApi()
-    warningList.value = res.data
+    warningList.value = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
   } catch (error) {
-    errorMessage.value = error?.message || '库存预警加载失败，请重试'
+    warningList.value = []
+    errorMessage.value = error?.response?.data?.message || error?.message || '库存预警加载失败，请重试'
   } finally {
     loading.value = false
   }
@@ -157,8 +166,11 @@ const goStockIn = () => {
   router.push('/pharmacy/stock')
 }
 
-const viewFlow = () => {
-  router.push('/pharmacy/stock-flow')
+const viewFlow = (row) => {
+  router.push({
+    path: '/pharmacy/stock-flow',
+    query: row?.drugId ? { drugId: row.drugId } : undefined
+  })
 }
 
 const warningTypeLabel = (type) => type === 'LOW_STOCK' ? '库存不足' : '近效期预警'
@@ -195,6 +207,36 @@ onMounted(() => {
 .text-danger {
   color: var(--danger-color);
   font-weight: 600;
+}
+
+.pharmacy-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  scrollbar-gutter: stable;
+}
+
+.pharmacy-stock-warning-table {
+  min-width: 1040px;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.table-actions .el-button {
+  margin-left: 0;
+}
+
+.table-action {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
 }
 
 .warning-card {

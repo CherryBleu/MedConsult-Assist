@@ -29,14 +29,15 @@ router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   let hasToken = userStore.token
 
-  const whiteList = ['/login', '/register', '/404']
+  const loginPaths = ['/login', '/patient-login', '/staff-login']
+  const whiteList = [...loginPaths, '/register', '/404']
 
   if (hasToken) {
-    if (to.path === '/login') {
+    if (loginPaths.includes(to.path)) {
       // 访问登录页时清除已有登录状态，确保能看到完整登录流程（方便测试）
       userStore.logout()
       hasToken = false
-      next('/login')
+      next(to.path)
     } else {
       if (!userStore.role) {
         try {

@@ -52,8 +52,11 @@ service.interceptors.response.use(
     if (error.response?.status === 401 && !isAuthEndpoint) {
       return handleTokenRefresh(error.config)
     }
+    const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
+    if (isAuthEndpoint) {
+      return Promise.reject(new Error(message))
+    }
     if (!isLogoutEndpoint) {
-      const message = error.response?.data?.message || error.message || '网络异常，请稍后重试'
       ElMessage.error(message)
     }
     return Promise.reject(error)

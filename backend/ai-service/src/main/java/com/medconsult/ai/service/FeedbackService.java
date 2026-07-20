@@ -39,6 +39,7 @@ public class FeedbackService {
         entity.setAiResultId(request.aiResultId());
         entity.setFeedbackBy(actor.userId());
         entity.setRating(request.rating());
+        entity.setUseful(request.rating() >= 4 ? 1 : 0);
         entity.setComment(request.comment());
         entity.setCreatedAt(LocalDateTime.now());
         feedbackMapper.insert(entity);
@@ -54,10 +55,14 @@ public class FeedbackService {
                 .stream()
                 .map(item -> new FeedbackItem(
                         item.getFeedbackNo(),
+                        item.getAiResultType(),
+                        item.getAiResultId(),
                         String.valueOf(item.getFeedbackBy()),
                         item.getRating(),
                         item.getComment(),
-                        item.getAdminReply()
+                        item.getAdminReply(),
+                        item.getCreatedAt(),
+                        item.getRepliedAt()
                 ))
                 .toList();
     }

@@ -290,10 +290,14 @@ public final class AiModels {
 
     public record FeedbackItem(
             String feedbackId,
+            String aiResultType,
+            String aiResultId,
             String feedbackBy,
             Integer rating,
             String comment,
-            String adminReply
+            String adminReply,
+            LocalDateTime createdAt,
+            LocalDateTime repliedAt
     ) {
     }
 

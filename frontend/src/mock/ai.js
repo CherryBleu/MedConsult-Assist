@@ -648,9 +648,9 @@ export const mockAiFeedbackList = () => {
     code: 0,
     message: 'success',
     data: [
-      { id: 1, feedbackNo: 'FB20260709001', serviceType: '智能分诊', userId: 1001, userName: '测试患者', rating: 4, content: '分诊结果比较准确，推荐的科室符合预期', status: 'PENDING', createdAt: '2026-07-09 10:30:00' },
-      { id: 2, feedbackNo: 'FB20260708002', serviceType: 'AI问诊', userId: 1002, userName: '李患者', rating: 2, content: '回答太笼统，没有实际帮助', status: 'PROCESSED', processedBy: '管理员', processedAt: '2026-07-08 17:00:00', reply: '感谢反馈，已同步优化模型', createdAt: '2026-07-08 15:20:00' },
-      { id: 3, feedbackNo: 'FB20260707003', serviceType: '病历摘要', userId: 1, userName: '张明', rating: 5, content: '摘要提取很精准，节省了很多时间', status: 'PENDING', createdAt: '2026-07-07 14:10:00' }
+      { id: 1, feedbackNo: 'FB20260709001', serviceType: '智能分诊', submittedData: 'TRIAGE-20260709-001', userId: 1001, userName: '测试患者', rating: 4, content: '分诊结果比较准确，推荐的科室符合预期', status: 'PENDING', createdAt: '2026-07-09 10:30:00' },
+      { id: 2, feedbackNo: 'FB20260708002', serviceType: 'AI问诊', submittedData: 'CHAT-MSG-20260708-002', userId: 1002, userName: '李患者', rating: 2, content: '回答太笼统，没有实际帮助', status: 'PROCESSED', processedBy: '管理员', processedAt: '2026-07-08 17:00:00', reply: '感谢反馈，已同步优化模型', createdAt: '2026-07-08 15:20:00' },
+      { id: 3, feedbackNo: 'FB20260707003', serviceType: '病历摘要', submittedData: 'SUM-20260707-003', userId: 1, userName: '张明', rating: 5, content: '摘要提取很精准，节省了很多时间', status: 'PENDING', createdAt: '2026-07-07 14:10:00' }
     ],
     total: 3
   }

@@ -17,7 +17,7 @@
           <span class="info-text">{{ formData.time }}</span>
         </el-form-item>
         <el-form-item label="挂号费用">
-          <span class="fee-text">¥{{ formData.fee }}</span>
+          <span class="fee-text">¥{{ formatFee(formData.fee) }}</span>
         </el-form-item>
       </el-form>
 
@@ -53,6 +53,8 @@ const formData = reactive({
   time: '',
   fee: 0
 })
+
+const formatFee = (value) => Number(value || 0).toFixed(2)
 
 onMounted(() => {
   Object.assign(formData, route.query)
