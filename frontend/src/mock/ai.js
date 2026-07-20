@@ -10,6 +10,14 @@ const consumeFailOnce = (key) => {
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 export const mockRecordSummary = (recordId) => {
+  // 失败一次的开关：保留原 mock_summary_stream_fail_once 以便旧测试兼容
+  if (consumeFailOnce('mock_summary_stream_fail_once')) {
+    return {
+      code: 500,
+      message: 'AI 摘要服务暂时不可用，请稍后重试',
+      data: null
+    }
+  }
   return {
     code: 0,
     message: 'success',

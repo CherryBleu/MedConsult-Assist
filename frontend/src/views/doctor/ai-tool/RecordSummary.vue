@@ -49,18 +49,14 @@
         class="stream-section"
         role="status"
         aria-live="polite"
-        aria-atomic="false"
       >
         <div class="stream-header">
           <span class="stream-dot" aria-hidden="true"></span>
           <div>
-            <div class="stream-title">正在接收流式摘要</div>
-            <div class="stream-subtitle">{{ streamStage }}</div>
+            <div class="stream-title">正在生成摘要</div>
+            <div class="stream-subtitle">AI 正在分析病历内容，请稍候...</div>
           </div>
         </div>
-        <p class="stream-preview">
-          {{ streamText || '正在建立 AI 流式连接，请稍候...' }}
-        </p>
       </div>
 
       <div v-if="summaryResult" class="result-section">
@@ -135,14 +131,12 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
 import { getRecordListApi } from '@/api/record'
-import { generateSummaryByRecordStreamApi } from '@/api/ai'
+import { generateSummaryByRecordApi } from '@/api/ai'
 
 const selectedRecord = ref('')
 const generating = ref(false)
 const recordList = ref([])
 const summaryResult = ref(null)
-const streamText = ref('')
-const streamStage = ref('准备连接')
 // 接口失败时的错误信息（非空则显示错误提示而非空 el-empty，让用户知道是失败了而非"返回空"）
 const errorMsg = ref('')
 
@@ -169,47 +163,22 @@ const getRecordList = async () => {
   recordList.value = res.data?.records ?? res.data ?? []
 }
 
-const getStreamToken = (payload) => {
-  if (payload == null) return ''
-  if (typeof payload === 'string') return payload
-  return payload.token == null ? '' : String(payload.token)
-}
-
 const generateSummary = async () => {
   if (!selectedRecord.value) {
     ElMessage.warning('请先选择病历')
     return
   }
   generating.value = true
-  streamText.value = ''
-  streamStage.value = '正在连接 AI 服务'
   errorMsg.value = ''
   summaryResult.value = null
   try {
-    const res = await generateSummaryByRecordStreamApi(selectedRecord.value, {
-      onStart: () => {
-        streamStage.value = 'AI 已开始生成摘要'
-      },
-      onDelta: (payload) => {
-        const token = getStreamToken(payload)
-        if (token) streamText.value += token
-      },
-      onResult: (payload) => {
-        summaryResult.value = payload
-      },
-      onDone: () => {
-        streamStage.value = '摘要生成完成'
-      },
-      onError: (payload) => {
-        errorMsg.value = payload?.message || '病历摘要生成失败'
-      }
-    })
-    if (!summaryResult.value && res?.data) {
-      summaryResult.value = res.data
+    // 用一次性 POST /ai/summary/by-record/{recordNo} 接口，避免 LLM 流式结构化输出
+    // 带来的逐 token 渲染体验。后端返回完整 MedicalRecordSummaryResponse。
+    const res = await generateSummaryByRecordApi(selectedRecord.value)
+    if (!res?.data) {
+      throw new Error('AI 未返回摘要结果')
     }
-    if (!summaryResult.value) {
-      throw new Error('AI 流未返回摘要结果')
-    }
+    summaryResult.value = res.data
     ElMessage.success('摘要生成完成')
   } catch (e) {
     // 接口失败（403/404/500/网络异常/LLM 不可用）时不再静默吞异常回到 el-empty
@@ -217,7 +186,7 @@ const generateSummary = async () => {
     // request 拦截器已弹 toast，这里取后端 message 显示在页面内（持久可见）。
     console.error('生成病历摘要失败', e)
     summaryResult.value = null
-    errorMsg.value = errorMsg.value || e?.response?.data?.message || e?.message || '病历摘要生成失败'
+    errorMsg.value = e?.response?.data?.message || e?.message || '病历摘要生成失败'
   } finally {
     generating.value = false
   }
@@ -230,8 +199,6 @@ const applyToRecord = () => {
 const reset = () => {
   summaryResult.value = null
   errorMsg.value = ''
-  streamText.value = ''
-  streamStage.value = '准备连接'
   selectedRecord.value = ''
 }
 

@@ -209,7 +209,8 @@ export const getSessionHistoryApi = (sessionId) => {
 // 生成病历摘要（按病历号）
 export const generateSummaryByRecordApi = (recordNo) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockRecordSummary(recordNo))
+    const res = mockRecordSummary(recordNo)
+    return res.code === 0 ? Promise.resolve(res) : Promise.reject(new Error(res.message))
   }
   return request({
     url: `/ai/summary/by-record/${recordNo}`,
