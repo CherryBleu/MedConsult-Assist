@@ -119,10 +119,13 @@ const handleTokenRefresh = async (config) => {
 }
 
 const forceLogout = () => {
+  const currentPath = router.currentRoute.value.path
+  const loginPath = currentPath.startsWith('/patient') ? '/patient-login' : '/staff-login'
+
   removeToken()
   removeRefreshToken()
-  if (router.currentRoute.value.path !== '/login') {
-    router.replace('/login')
+  if (!['/login', '/patient-login', '/staff-login'].includes(currentPath)) {
+    router.replace(loginPath)
   }
 }
 

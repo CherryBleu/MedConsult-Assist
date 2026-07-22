@@ -12,7 +12,6 @@ const routes = [
   ...doctorRoutes,
   ...adminRoutes,
   ...pharmacyRoutes,
-  // 404兜底
   {
     path: '/:pathMatch(.*)*',
     redirect: '/404'
@@ -24,47 +23,55 @@ const router = createRouter({
   routes
 })
 
-// 全局前置守卫
+const getLoginPathForRole = (role) => role === 'PATIENT' ? '/patient-login' : '/staff-login'
+
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
-  let hasToken = userStore.token
+  const hasToken = userStore.token
 
   const loginPaths = ['/login', '/patient-login', '/staff-login']
   const whiteList = [...loginPaths, '/register', '/404']
 
   if (hasToken) {
     if (loginPaths.includes(to.path)) {
-      // 访问登录页时清除已有登录状态，确保能看到完整登录流程（方便测试）
-      userStore.logout()
-      hasToken = false
-      next(to.path)
-    } else {
-      if (!userStore.role) {
-        try {
-          await userStore.getUserInfo()
-        } catch (e) {
-          userStore.logout()
-          next(`/login?redirect=${to.path}`)
-          return
-        }
-      }
-      const requiredRole = to.matched.find(record => record.meta && record.meta.role)?.meta?.role
-      if (requiredRole) {
-        const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
-        if (!roles.includes(userStore.role)) {
-          next('/home')
-          return
-        }
-      }
+      await userStore.logout()
       next()
+      return
     }
-  } else {
-    if (whiteList.includes(to.path)) {
-      next()
-    } else {
-      next(`/login?redirect=${to.path}`)
+
+    if (!userStore.role) {
+      try {
+        await userStore.getUserInfo()
+      } catch (e) {
+        const requiredRole = to.matched.find(record => record.meta && record.meta.role)?.meta?.role
+        const loginPath = getLoginPathForRole(requiredRole)
+        await userStore.logout()
+        next(`${loginPath}?redirect=${to.path}`)
+        return
+      }
     }
+
+    const requiredRole = to.matched.find(record => record.meta && record.meta.role)?.meta?.role
+    if (requiredRole) {
+      const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
+      if (!roles.includes(userStore.role)) {
+        next('/home')
+        return
+      }
+    }
+
+    next()
+    return
   }
+
+  if (whiteList.includes(to.path)) {
+    next()
+    return
+  }
+
+  const requiredRole = to.matched.find(record => record.meta && record.meta.role)?.meta?.role
+  const loginPath = getLoginPathForRole(requiredRole)
+  next(`${loginPath}?redirect=${to.path}`)
 })
 
 export default router

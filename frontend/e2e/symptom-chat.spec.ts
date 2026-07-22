@@ -58,12 +58,16 @@ test('患者发送症状描述后收到 AI 回复', async ({ page }) => {
   // 证明走通了"发送→后端(mock)→渲染回复"的完整链路，不是空兜底。
   await expect(page.getByText('呼吸道感染').first()).toBeVisible({ timeout: 20_000 })
 
-  // 行为断言3：RAG 可追溯证据随 AI 回复一起展示，避免前端只渲染 answer 丢失 citations/vectorMatches。
-  await expect(page.getByText('检索证据').first()).toBeVisible()
-  await expect(page.getByText('急性支气管炎').first()).toBeVisible()
-  await expect(page.getByText('向量匹配').first()).toBeVisible()
-  await expect(page.getByText('症状表现').first()).toBeVisible()
-  await expect(page.getByText('日常预防').first()).toBeVisible()
+  // 行为断言3：RAG 可追溯证据随 AI 回复一起折叠展示，避免 citations/vectorMatches 重复占用页面。
+  const evidenceToggle = page.getByTestId('evidence-toggle').first()
+  await expect(evidenceToggle).toBeVisible()
+  await expect(page.getByText('向量匹配')).toHaveCount(0)
+  const evidenceContent = page.getByTestId('evidence-content').first()
+  await expect(evidenceContent).toBeHidden()
+  await evidenceToggle.click()
+  await expect(evidenceContent.getByText('急性支气管炎').first()).toBeVisible()
+  await expect(evidenceContent.getByText('症状表现').first()).toBeVisible()
+  await expect(evidenceContent.getByText('日常预防').first()).toBeVisible()
   await expect(page.getByText('symptom')).toHaveCount(0)
   await expect(page.getByText('prevent')).toHaveCount(0)
   await expect(page.getByText('DISEASE_JSON')).toHaveCount(0)
@@ -149,7 +153,7 @@ test('键盘可聚焦并切换 RAG 证据 disclosure', async ({ page }) => {
   await evidenceToggle.focus()
   await expect(evidenceToggle).toBeFocused()
   await evidenceToggle.press('Enter')
-  await expect(page.getByText('证据字段：症状表现').first()).toBeVisible()
+  await expect(page.getByText('症状表现').first()).toBeVisible()
   await expect(page.getByText('知识库疾病信息').first()).toBeVisible()
   await expect(page.getByText('vec_mock_001')).toHaveCount(0)
   await expect(page.getByText('cure_department')).toHaveCount(0)

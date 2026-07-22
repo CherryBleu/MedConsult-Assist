@@ -35,74 +35,7 @@ export default defineConfig({
           }
 
           if (normalizedId.includes('/node_modules/element-plus/')) {
-            const elementPlusGroups = [
-              [
-                'element-plus-form',
-                [
-                  '/components/checkbox',
-                  '/components/date-picker',
-                  '/components/form',
-                  '/components/input',
-                  '/components/input-number',
-                  '/components/option',
-                  '/components/radio',
-                  '/components/select',
-                  '/components/time-picker',
-                  '/components/upload'
-                ]
-              ],
-              [
-                'element-plus-data',
-                [
-                  '/components/descriptions',
-                  '/components/empty',
-                  '/components/pagination',
-                  '/components/progress',
-                  '/components/rate',
-                  '/components/table',
-                  '/components/tag'
-                ]
-              ],
-              [
-                'element-plus-overlay',
-                [
-                  '/components/dialog',
-                  '/components/drawer',
-                  '/components/dropdown',
-                  '/components/loading',
-                  '/components/message',
-                  '/components/message-box',
-                  '/components/popover',
-                  '/components/tooltip'
-                ]
-              ],
-              [
-                'element-plus-layout',
-                [
-                  '/components/alert',
-                  '/components/aside',
-                  '/components/avatar',
-                  '/components/badge',
-                  '/components/breadcrumb',
-                  '/components/button',
-                  '/components/card',
-                  '/components/col',
-                  '/components/container',
-                  '/components/header',
-                  '/components/icon',
-                  '/components/main',
-                  '/components/menu',
-                  '/components/row',
-                  '/components/tabs'
-                ]
-              ]
-            ]
-
-            const matchedGroup = elementPlusGroups.find(([, paths]) => {
-              return paths.some((componentPath) => normalizedId.includes(componentPath))
-            })
-
-            return matchedGroup ? matchedGroup[0] : 'element-plus-core'
+            return 'element-plus'
           }
 
           if (

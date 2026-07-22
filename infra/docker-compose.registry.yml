@@ -1,32 +1,48 @@
-# MedConsult-Assist 基础设施本地编排（架构文档 §1.1 §10）
-#
-# 范围：编排 8 个服务 ——
-#   核心业务：MySQL / Redis / RabbitMQ
-#   AI 域：Qdrant（备用向量库）/ Milvus（向量检索，含 etcd + 内置 minio 依赖）/ MinIO（影像存储）
-#   AI 域：Embedding（bge-small-zh-v1.5，OpenAI 兼容 /v1/embeddings，随 compose 自动拉起）
-#
-#   Nacos 由独立脚本启动（D:\springcloudalibaba\nacos-server-2.3.0\nacos\bin\startup.cmd），
-#   因为它有 GUI 启动习惯且部分配置走本地文件，不入 compose。
-#   MongoDB 由用户本机安装（不走容器，便于复用已有实例）。
-#
-# 端口选择（避开 Windows 主机原生服务）：
-#   - 3306 被本机 mysqld.exe 占用 → MySQL 容器走 3307
-#   - 6379 被本机 memurai.exe 占用 → Redis 容器走 16379
-#   - 27017 本机 MongoDB 已占用 → 不再起容器（由本机实例提供）
-#   - 其余保持官方默认
-#
-# 启动：  docker compose -f infra/docker-compose.yml up -d
-# 停止：  docker compose -f infra/docker-compose.yml down
-# 重置：  docker compose -f infra/docker-compose.yml down -v   # 删数据卷
-#
-# 红线 1 合规：MySQL 8.0 / Redis / RabbitMQ / Qdrant 版本严格锁定（见 medconsult-parent pom.xml）。
-#           Milvus / MinIO 为 AI 域依赖，版本锁定见各自 image 标签。
-
 name: medconsult
 
-services:
+x-backend-env: &backend-env
+  NACOS_ADDR: medconsult-nacos:8848
+  NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
+  NACOS_GROUP: ${NACOS_GROUP:-DEFAULT_GROUP}
+  MYSQL_HOST: medconsult-mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: ${MYSQL_USER:-medconsult}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:-medconsult123}
+  REDIS_HOST: medconsult-redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  RABBITMQ_HOST: medconsult-rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: ${RABBITMQ_USER:-medconsult}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medconsult123}
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
 
-  # ============== Nacos（注册中心 / 配置中心）==============
+x-ai-env: &ai-env
+  MONGODB_URI: ${MONGODB_URI:-mongodb://medconsult-mongodb:27017}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-medconsult}
+  MONGODB_COLLECTION: ${MONGODB_COLLECTION:-diseases}
+  MILVUS_URI: ${MILVUS_URI:-http://medconsult-milvus:19530}
+  MILVUS_TOKEN: ${MILVUS_TOKEN:-root:Milvus}
+  MILVUS_DATABASE: ${MILVUS_DATABASE:-medical}
+  MILVUS_COLLECTION: ${MILVUS_COLLECTION:-data}
+  MILVUS_MIN_SCORE: ${MILVUS_MIN_SCORE:-0.60}
+  MILVUS_METRIC_TYPE: ${MILVUS_METRIC_TYPE:-COSINE}
+  MILVUS_SEARCH_TIMEOUT_SECONDS: ${MILVUS_SEARCH_TIMEOUT_SECONDS:-15}
+  MINIO_ENDPOINT: http://medconsult-minio:9000
+  MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-medconsult}
+  EMBEDDING_BASE_URL: http://medconsult-embedding:7997/v1
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-not-needed}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+  EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-512}
+  ALIYUNBAILIAN_BASE_URL: ${ALIYUNBAILIAN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+  ALIYUNBAILIAN_APIKEY: ${ALIYUNBAILIAN_APIKEY:-sk-placeholder}
+  ALIYUNBAILIAN_MODEL: ${ALIYUNBAILIAN_MODEL:-qwen3.7-plus}
+  ALIYUNBAILIAN_TIMEOUT_SECONDS: ${ALIYUNBAILIAN_TIMEOUT_SECONDS:-60}
+
+services:
   nacos:
     image: nacos/nacos-server:v2.3.0
     container_name: medconsult-nacos
@@ -48,27 +64,21 @@ services:
       start_period: 60s
     networks: [medconsult-net]
 
-  # ============== MySQL 8.0 ==============
-  # 按 §1.2 表归属矩阵为每个服务建独立 schema，禁止跨 schema join（架构红线）。
   mysql:
     image: mysql:8.0
     container_name: medconsult-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
-      # 业务库账号（与 ai-service / 各服务 application.yml 读取的 MYSQL_USER/MYSQL_PASSWORD 对齐，
-      # 避免运维改了 .env 的密码但服务仍用默认值连不上库）
       MYSQL_USER: ${MYSQL_USER:-medconsult}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-medconsult123}
       TZ: Asia/Shanghai
     command:
-      # 红线 1：utf8mb4_0900_ai_ci 是 MySQL 8.0 默认，匹配数据库设计文档 §1 通用约定
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-time-zone=+08:00
       - --max-connections=200
     ports:
-      # 绑定 127.0.0.1：开发端口不对外暴露（避免不可信网段直连弱口令的 MySQL/Redis/MQ）
       - "127.0.0.1:3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
@@ -83,8 +93,6 @@ services:
       start_period: 30s
     networks: [medconsult-net]
 
-  # ============== Redis 7（缓存 / 分布式锁 / SSE 广播 / 限流）==============
-  # 架构文档 §7：业务并发禁止用 JVM 锁，所有锁/限流/SSE 广播走 Redis（多实例一致）
   redis:
     image: redis:7-alpine
     container_name: medconsult-redis
@@ -101,33 +109,6 @@ services:
       retries: 5
     networks: [medconsult-net]
 
-  # ============== Qdrant（向量库 / RAG 检索）==============
-  # 需求文档 §4.2.0：疾病 JSON 切片向量存 Qdrant/Milvus，仅存索引，原始 JSON 是唯一知识来源。
-  # 选择 Qdrant（轻量，单容器即可；Milvus 需要 etcd+minio 三件套，过重）。
-  # ai-service 独占访问。
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    container_name: medconsult-qdrant
-    restart: unless-stopped
-    environment:
-      QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-info}
-    ports:
-      # REST / gRPC（gRPC 性能更好，Spring AI Qdrant 客户端优先用 gRPC）
-      - "127.0.0.1:6333:6333"   # REST
-      - "127.0.0.1:6334:6334"   # gRPC
-    volumes:
-      - qdrant_data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nhost: localhost\\r\\n\\r' >&3 && cat <&3 | head -1 | grep -q 200"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    networks: [medconsult-net]
-
-  # ============== RabbitMQ（异步解耦 / 可靠投递 / SSE 跨实例广播）==============
-  # 架构文档 §6：本地消息表 + RabbitMQ + 消费幂等（最终一致性，不用 Seata）
-  # §9.2：多实例 SSE 广播靠 RabbitMQ fanout → 每实例订阅自己的临时队列
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: medconsult-rabbitmq
@@ -137,8 +118,8 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-medconsult123}
       TZ: Asia/Shanghai
     ports:
-      - "127.0.0.1:5672:5672"     # AMQP
-      - "127.0.0.1:15672:15672"   # 管理控制台
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -149,9 +130,25 @@ services:
       start_period: 30s
     networks: [medconsult-net]
 
-  # ============== Milvus 元数据存储（etcd，Milvus 独占）==============
-  # Milvus standalone 三件套之一：etcd 存 collection/schema 元数据。
-  # 仅容器内部可见，不暴露宿主机端口。
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: medconsult-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && echo -e 'GET /readyz HTTP/1.1\\r\\nhost: localhost\\r\\n\\r' >&3 && cat <&3 | head -1 | grep -q 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [medconsult-net]
+
   milvus-etcd:
     image: quay.io/coreos/etcd:v3.5.5
     container_name: medconsult-milvus-etcd
@@ -171,9 +168,6 @@ services:
       retries: 3
     networks: [medconsult-net]
 
-  # ============== Milvus 内置对象存储（MinIO，Milvus 独占，与下方 app MinIO 隔离）==============
-  # Milvus standalone 三件套之二：存 segment 数据文件。
-  # 用独立容器名 + 独立卷 + 不暴露端口，避免与影像存储的 medconsult-minio 冲突。
   milvus-minio:
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     container_name: medconsult-milvus-minio
@@ -191,10 +185,6 @@ services:
       retries: 3
     networks: [medconsult-net]
 
-  # ============== Milvus standalone（向量检索 / RAG）==============
-  # 架构文档 §需求 4.2.0：疾病 JSON 切片向量存 Milvus，仅存索引。
-  # ai-service 的 MilvusRestClient 调 REST /v2/vectordb/entities/search。
-  # 版本：2.4.x 是首个提供完整 REST v2 API 的稳定线；锁定 2.4.13。
   milvus:
     image: milvusdb/milvus:v2.4.13
     container_name: medconsult-milvus
@@ -205,8 +195,8 @@ services:
       MINIO_REGION: ${MILVUS_REGION:-us-east-1}
     command: ["milvus", "run", "standalone"]
     ports:
-      - "127.0.0.1:19530:19530"   # gRPC（Milvus SDK 用）
-      - "127.0.0.1:9091:9091"     # 健康/metrics
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
     depends_on:
       milvus-etcd:
         condition: service_healthy
@@ -220,10 +210,6 @@ services:
       start_period: 90s
     networks: [medconsult-net]
 
-  # ============== MinIO（影像文件存储 / FileUploadService 用）==============
-  # 需求文档 §4.2.x：医学影像上传 MinIO，ai-service 通过 minio 8.5.x SDK 访问。
-  # 与 Milvus 内置 minio 物理隔离（独立容器名、独立卷、独立端口）。
-  # auto-create-bucket=true 时 ai-service 首次启动自动建 medconsult bucket。
   minio:
     image: minio/minio:RELEASE.2024-08-03T04-33-23Z
     container_name: medconsult-minio
@@ -234,8 +220,8 @@ services:
       MINIO_BROWSER: "on"
     command: server /data --console-address ":9001"
     ports:
-      - "127.0.0.1:9000:9000"   # S3 API（ai-service 访问）
-      - "127.0.0.1:9001:9001"   # Web 控制台
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -245,16 +231,8 @@ services:
       retries: 3
     networks: [medconsult-net]
 
-  # ============== Embedding 服务（Python + sentence-transformers）==============
-  # ai-service RAG 链路的 embedding 组件，提供 OpenAI 兼容 /v1/embeddings。
-  # 模型 BAAI/bge-small-zh-v1.5（95MB，512 维，CPU 推理单条几十 ms）。
-  # 随 docker compose up 自动拉起；ai-service 的 EMBEDDING_BASE_URL 指向 http://localhost:7997/v1。
-  # 首次启动从 HuggingFace 下载模型（走 hf-mirror.com 镜像），缓存在命名卷内。
   embedding:
-    build:
-      context: ./embedding-server
-      dockerfile: Dockerfile
-    image: medconsult-embedding:local
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:embedding-${MEDCONSULT_IMAGE_TAG:-latest}
     container_name: medconsult-embedding
     restart: unless-stopped
     environment:
@@ -274,7 +252,6 @@ services:
       start_period: 120s
     networks: [medconsult-net]
 
-  # ============== MongoDB（疾病知识库原始 JSON）==============
   mongodb:
     image: mongo:7
     container_name: medconsult-mongodb
@@ -291,18 +268,81 @@ services:
       start_period: 20s
     networks: [medconsult-net]
 
-  # ============== Frontend Nginx ==============
-  # 静态前端 + /api、/doc 反向代理，浏览器同源访问，避免依赖 CORS。
+  auth-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:auth-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-auth-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  patient-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:patient-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-patient-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  outpatient-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:outpatient-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-outpatient-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  medical-record-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:medical-record-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-medical-record-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  drug-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:drug-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-drug-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  notification-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:notification-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-notification-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  ai-service:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:ai-service-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-ai-service
+    restart: unless-stopped
+    environment:
+      <<: [*backend-env, *ai-env]
+    networks: [medconsult-net]
+
+  gateway:
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:gateway-${MEDCONSULT_IMAGE_TAG:-latest}
+    container_name: medconsult-gateway
+    restart: unless-stopped
+    environment:
+      NACOS_ADDR: medconsult-nacos:8848
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
+      NACOS_GROUP: ${NACOS_GROUP:-DEFAULT_GROUP}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [medconsult-net]
+
   frontend:
-    profiles: ["legacy-frontend"]
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    image: medconsult-frontend:local
+    image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:frontend-${MEDCONSULT_IMAGE_TAG:-latest}
     container_name: medconsult-frontend
     restart: unless-stopped
     environment:
-      GATEWAY_UPSTREAM: "${GATEWAY_UPSTREAM:-host.docker.internal:8080}"
+      GATEWAY_UPSTREAM: medconsult-gateway:8080
     ports:
       - "127.0.0.1:3000:80"
     networks: [medconsult-net]

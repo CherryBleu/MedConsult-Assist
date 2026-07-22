@@ -133,18 +133,26 @@
                     </div>
                   </div>
 
-                  <section v-if="hasEvidence(msg)" class="evidence-panel" aria-label="相关疾病依据">
-                    <div class="evidence-title">
+                  <details v-if="hasEvidence(msg)" class="evidence-panel" aria-label="相关疾病依据">
+                    <summary
+                      class="evidence-title ai-consult-action"
+                      aria-label="展开或收起检索证据"
+                      data-testid="evidence-toggle"
+                      tabindex="0"
+                    >
                       <span class="evidence-title-main">
                         <el-icon><Document /></el-icon>
                         检索证据
                       </span>
-                      <el-tag v-if="msg.answerSource" size="small" type="success" effect="plain">
-                        {{ answerSourceLabel(msg.answerSource) }}
-                      </el-tag>
-                    </div>
+                      <span class="evidence-summary-meta">
+                        <span class="summary-count">{{ evidenceCount(msg) }} 条</span>
+                        <el-tag v-if="msg.answerSource" size="small" type="success" effect="plain">
+                          {{ answerSourceLabel(msg.answerSource) }}
+                        </el-tag>
+                      </span>
+                    </summary>
 
-                    <div v-if="msg.citations?.length" class="evidence-section">
+                    <div v-if="msg.citations?.length" class="evidence-section" data-testid="evidence-content">
                       <div class="evidence-section-title">引用片段</div>
                       <article
                         v-for="citation in msg.citations"
@@ -174,42 +182,10 @@
                         </div>
                       </article>
                     </div>
-
-                    <details v-if="msg.vectorMatches?.length" class="vector-details">
-                      <summary
-                        class="ai-consult-action"
-                        data-testid="evidence-toggle"
-                        tabindex="0"
-                      >
-                        <span class="summary-main">
-                          <el-icon><Search /></el-icon>
-                          向量匹配
-                        </span>
-                        <span class="summary-count">{{ msg.vectorMatches.length }} 条</span>
-                      </summary>
-                      <div class="vector-list">
-                        <article
-                          v-for="match in msg.vectorMatches"
-                          :key="vectorMatchKey(match)"
-                          class="vector-item"
-                        >
-                          <div class="vector-head">
-                            <div class="citation-title">
-                              <strong>{{ displayDiseaseName(match) }}</strong>
-                              <span class="citation-source">{{ evidenceSourceLabel(match.sourceId) }}</span>
-                            </div>
-                            <span v-if="typeof match.score === 'number'" class="score-pill">
-                              {{ formatScore(match.score) }}
-                            </span>
-                          </div>
-                          <div class="vector-meta">
-                            <span>证据字段：{{ fieldLabel(match.fieldName) }}</span>
-                          </div>
-                          <p v-if="match.chunkText" class="vector-snippet">{{ match.chunkText }}</p>
-                        </article>
-                      </div>
-                    </details>
-                  </section>
+                    <div v-else class="evidence-empty" aria-live="polite">
+                      本次回答未返回引用片段。
+                    </div>
+                  </details>
 
                   <section v-else class="evidence-empty" aria-live="polite">
                     本次回答未返回可展示证据，请结合线下就医和医生判断。
@@ -326,7 +302,7 @@ defineOptions({ name: 'AiConsult' })
 import { computed, ref, nextTick, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
-import { Cpu, Document, Loading, Search } from '@element-plus/icons-vue'
+import { Cpu, Document, Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useAiChatStore } from '@/store/modules/aiChat'
 import { submitFeedbackApi } from '@/api/ai'
@@ -433,7 +409,11 @@ const quickSend = (text) => {
 }
 
 const hasEvidence = (msg) => {
-  return Boolean(msg?.citations?.length || msg?.vectorMatches?.length)
+  return Boolean(msg?.citations?.length)
+}
+
+const evidenceCount = (msg) => {
+  return Array.isArray(msg?.citations) ? msg.citations.length : 0
 }
 
 const hasSafetySummary = (msg) => {
@@ -537,15 +517,6 @@ const citationKey = (citation) => {
     citation.sourceId,
     citation.diseaseName,
     citation.snippet
-  ].filter(Boolean).join('|')
-}
-
-const vectorMatchKey = (match) => {
-  return [
-    match.vectorId,
-    match.sourceId,
-    match.fieldName,
-    match.chunkText
   ].filter(Boolean).join('|')
 }
 
@@ -848,7 +819,6 @@ onMounted(async () => {
 
 .summary-label,
 .field-label,
-.vector-meta,
 .summary-count {
   display: inline-block;
   color: var(--text-secondary);
@@ -894,16 +864,32 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin: -2px 0 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.evidence-title::-webkit-details-marker {
+  display: none;
+}
+
+.evidence-panel[open] .evidence-title {
   margin-bottom: 12px;
 }
 
-.evidence-title-main,
-.summary-main {
+.evidence-title-main {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--text-primary);
   font-weight: 700;
+}
+
+.evidence-summary-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .evidence-section-title {
@@ -913,21 +899,18 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-.citation-card,
-.vector-item {
+.citation-card {
   padding: 12px;
   border: 1px solid var(--border-lighter);
   border-radius: 8px;
   background: #fff;
 }
 
-.citation-card + .citation-card,
-.vector-item + .vector-item {
+.citation-card + .citation-card {
   margin-top: 8px;
 }
 
-.citation-head,
-.vector-head {
+.citation-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -949,8 +932,7 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
-.citation-snippet,
-.vector-snippet {
+.citation-snippet {
   margin: 8px 0 0;
   color: var(--text-regular);
   font-size: 14px;
@@ -965,16 +947,6 @@ onMounted(async () => {
   margin-top: 10px;
 }
 
-.vector-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .score-pill {
   flex-shrink: 0;
   padding: 2px 8px;
@@ -985,34 +957,10 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-.vector-details {
-  margin-top: 10px;
-}
-
-.vector-details summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 10px;
-  border-radius: 8px;
-  color: var(--text-primary);
-  cursor: pointer;
-  list-style: none;
-}
-
-.vector-details summary::-webkit-details-marker {
-  display: none;
-}
-
-.vector-details summary:focus-visible,
+.evidence-title:focus-visible,
 .ai-consult-action:focus-visible {
   outline: 3px solid #0ea5e9;
   outline-offset: 2px;
-}
-
-.vector-list {
-  padding-top: 8px;
 }
 
 .evidence-empty {
@@ -1206,10 +1154,14 @@ onMounted(async () => {
 
   .chat-error,
   .evidence-title,
-  .citation-head,
-  .vector-head {
+  .citation-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .evidence-summary-meta {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .consult-composer {

@@ -405,8 +405,9 @@ const handleCommand = (command) => {
       cancelButtonText: '取消',
       type: 'warning'
     }).then(async () => {
+      const loginPath = userStore.role === ROLE_ENUM.PATIENT.value ? '/patient-login' : '/staff-login'
       await userStore.logout()
-      router.replace('/login')
+      router.replace(loginPath)
       ElMessage.success('已退出登录')
     }).catch(() => {})
   }

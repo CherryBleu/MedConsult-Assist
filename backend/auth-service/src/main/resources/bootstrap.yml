@@ -10,9 +10,6 @@ spring:
         server-addr: ${NACOS_ADDR:127.0.0.1:8848}
         namespace: ${NACOS_NAMESPACE:public}
         group: ${NACOS_GROUP:DEFAULT_GROUP}
-        # 本机冒烟：强制注册 IP 为 127.0.0.1（否则可能注册到 VirtualBox 192.168.56.1，
-        # gateway 的 LoadBalancer 取该 IP 后连不上）。生产环境删掉此行，让 Nacos 自动探测。
-        ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
       # 配置中心（先拉 medconsult-common.yaml 公共配置，再拉本服务私有配置）
       config:
         server-addr: ${NACOS_ADDR:127.0.0.1:8848}

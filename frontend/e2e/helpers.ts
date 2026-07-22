@@ -16,11 +16,14 @@ import { test as base, expect, type Page } from '@playwright/test'
  * @param account mock 账号（patient/doctor/admin/pharmacy）
  */
 export async function loginViaUI(page: Page, entry: 'patient' | 'staff', account: string) {
-  await page.goto('/login')
+  await page.goto(entry === 'patient' ? '/patient-login' : '/staff-login')
   // 第一步：选择入口卡片。Login.vue 已把入口卡片语义化为 button，
-  // 因此这里用 role+name 定位，既稳定也能覆盖可访问性回归。
+  // 因此这里用 role+name 定位，既稳定也能覆盖可访问性回归；固定入口页则直接进入表单。
   const entryName = entry === 'patient' ? '患者入口' : '工作人员入口'
-  await page.getByRole('button', { name: entryName }).click()
+  const entryButton = page.getByRole('button', { name: entryName })
+  if (await entryButton.isVisible()) {
+    await entryButton.click()
+  }
   // 第二步：填写账号密码并提交
   await page.getByPlaceholder(entry === 'patient' ? '请输入患者账号' : '请输入工号/账号').fill(account)
   await page.getByPlaceholder('请输入登录密码').fill('123456')

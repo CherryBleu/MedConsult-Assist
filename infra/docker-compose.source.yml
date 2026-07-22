@@ -1,0 +1,145 @@
+name: medconsult-source
+
+x-backend-env: &backend-env
+  NACOS_ADDR: medconsult-nacos:8848
+  NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
+  NACOS_GROUP: ${NACOS_GROUP:-DEFAULT_GROUP}
+  MYSQL_HOST: medconsult-mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: ${MYSQL_USER:-medconsult}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:-medconsult123}
+  REDIS_HOST: medconsult-redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  RABBITMQ_HOST: medconsult-rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: ${RABBITMQ_USER:-medconsult}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medconsult123}
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+
+x-ai-env: &ai-env
+  MONGODB_URI: ${MONGODB_URI:-mongodb://medconsult-mongodb:27017}
+  MONGODB_DATABASE: ${MONGODB_DATABASE:-medconsult}
+  MONGODB_COLLECTION: ${MONGODB_COLLECTION:-diseases}
+  MILVUS_URI: ${MILVUS_URI:-http://medconsult-milvus:19530}
+  MILVUS_TOKEN: ${MILVUS_TOKEN:-root:Milvus}
+  MILVUS_DATABASE: ${MILVUS_DATABASE:-medical}
+  MILVUS_COLLECTION: ${MILVUS_COLLECTION:-data}
+  MILVUS_MIN_SCORE: ${MILVUS_MIN_SCORE:-0.60}
+  MILVUS_METRIC_TYPE: ${MILVUS_METRIC_TYPE:-COSINE}
+  MILVUS_SEARCH_TIMEOUT_SECONDS: ${MILVUS_SEARCH_TIMEOUT_SECONDS:-15}
+  MINIO_ENDPOINT: http://medconsult-minio:9000
+  MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_BUCKET: ${MINIO_BUCKET:-medconsult}
+  EMBEDDING_BASE_URL: http://medconsult-embedding:7997/v1
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-not-needed}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+  EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-512}
+  ALIYUNBAILIAN_BASE_URL: ${ALIYUNBAILIAN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+  ALIYUNBAILIAN_APIKEY: ${ALIYUNBAILIAN_APIKEY:-sk-placeholder}
+  ALIYUNBAILIAN_MODEL: ${ALIYUNBAILIAN_MODEL:-qwen3.7-plus}
+  ALIYUNBAILIAN_TIMEOUT_SECONDS: ${ALIYUNBAILIAN_TIMEOUT_SECONDS:-60}
+
+services:
+  source-builder:
+    image: eclipse-temurin:21-jdk
+    container_name: medconsult-source-builder
+    working_dir: /workspace/backend
+    volumes:
+      - ../backend:/workspace/backend
+      - maven_cache:/root/.m2
+    command: ["./mvnw", "clean", "package", "-DskipTests"]
+    networks: [medconsult-net]
+    profiles: ["build"]
+
+  auth-service:
+    image: medconsult-auth-service:local
+    container_name: medconsult-auth-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  patient-service:
+    image: medconsult-patient-service:local
+    container_name: medconsult-patient-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  outpatient-service:
+    image: medconsult-outpatient-service:local
+    container_name: medconsult-outpatient-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  medical-record-service:
+    image: medconsult-medical-record-service:local
+    container_name: medconsult-medical-record-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  drug-service:
+    image: medconsult-drug-service:local
+    container_name: medconsult-drug-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  notification-service:
+    image: medconsult-notification-service:local
+    container_name: medconsult-notification-service
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+    networks: [medconsult-net]
+
+  ai-service:
+    image: medconsult-ai-service:local
+    container_name: medconsult-ai-service
+    restart: unless-stopped
+    environment:
+      <<: [*backend-env, *ai-env]
+    networks: [medconsult-net]
+
+  gateway:
+    image: medconsult-gateway:local
+    container_name: medconsult-gateway
+    restart: unless-stopped
+    environment:
+      NACOS_ADDR: medconsult-nacos:8848
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
+      NACOS_GROUP: ${NACOS_GROUP:-DEFAULT_GROUP}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks: [medconsult-net]
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    image: medconsult-frontend:local
+    container_name: medconsult-frontend
+    restart: unless-stopped
+    environment:
+      GATEWAY_UPSTREAM: medconsult-gateway:8080
+    ports:
+      - "127.0.0.1:3000:80"
+    networks: [medconsult-net]
+
+volumes:
+  maven_cache:
+
+networks:
+  medconsult-net:
+    external: true
+    name: medconsult-net
