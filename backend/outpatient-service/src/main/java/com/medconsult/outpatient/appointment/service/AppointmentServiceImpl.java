@@ -7,7 +7,6 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
-import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.common.security.JwtPayload;
@@ -25,7 +24,6 @@ import com.medconsult.outpatient.schedule.service.ScheduleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -121,12 +119,18 @@ public class AppointmentServiceImpl implements AppointmentService {
         // 越权防护（IDOR）：PATIENT 只能查本人，DOCTOR 只能查本人接诊的
         enforceAppointmentOwnership(a);
         // 业务层组装医生名/科室名（同 schema，不跨表 join）。
-        // 患者名跨服务（patient-service），本服务不直查；返回 null 占位，由前端或网关聚合。
+        // 患者名跨服务（patient-service）回填，兼容 patient_id 与历史 patient_no。
         Doctor doctor = a.getDoctorId() != null ? doctorMapper.selectById(a.getDoctorId()) : null;
         Department dept = a.getDepartmentId() != null ? departmentMapper.selectById(a.getDepartmentId()) : null;
+        String patientName = resolvePatientName(
+                a,
+                resolvePatientNames(a.getPatientId() == null ? Set.of() : Set.of(a.getPatientId())),
+                resolvePatientNamesByNos(a.getPatientNo() == null || a.getPatientNo().isBlank()
+                        ? Set.of()
+                        : Set.of(a.getPatientNo())));
         return new AppointmentDTO.DetailResponse(
                 a.getAppointmentNo(),
-                null, // 患者名跨服务，占位
+                patientName,
                 doctor != null ? doctor.getName() : null,
                 dept != null ? dept.getName() : null,
                 a.getAppointmentDate(),
@@ -180,10 +184,12 @@ public class AppointmentServiceImpl implements AppointmentService {
         Set<Long> doctorIdSet = new java.util.LinkedHashSet<>();
         Set<Long> deptIdSet = new java.util.LinkedHashSet<>();
         Set<Long> patientIdSet = new java.util.LinkedHashSet<>();
+        Set<String> patientNoSet = new java.util.LinkedHashSet<>();
         for (Appointment a : result.getRecords()) {
             if (a.getDoctorId() != null) doctorIdSet.add(a.getDoctorId());
             if (a.getDepartmentId() != null) deptIdSet.add(a.getDepartmentId());
             if (a.getPatientId() != null) patientIdSet.add(a.getPatientId());
+            if (a.getPatientNo() != null && !a.getPatientNo().isBlank()) patientNoSet.add(a.getPatientNo());
         }
         // 空集合时跳过 selectBatchIds：MyBatis-Plus 对空 IN () 会生成非法 SQL 抛异常（500）。
         Map<Long, Doctor> doctorMap = doctorIdSet.isEmpty()
@@ -194,6 +200,7 @@ public class AppointmentServiceImpl implements AppointmentService {
                 : toDeptMap(departmentMapper.selectBatchIds(new ArrayList<>(deptIdSet)));
         // 批量查患者姓名（Feign 调 patient-service），失败降级为空 Map 不阻断列表
         Map<Long, String> patientNameMap = resolvePatientNames(patientIdSet);
+        Map<String, String> patientNoNameMap = resolvePatientNamesByNos(patientNoSet);
 
         List<AppointmentDTO.ListItem> items = new ArrayList<>();
         for (Appointment a : result.getRecords()) {
@@ -202,7 +209,7 @@ public class AppointmentServiceImpl implements AppointmentService {
             items.add(new AppointmentDTO.ListItem(
                     a.getAppointmentNo(),
                     a.getPatientNo(),
-                    patientNameMap.get(a.getPatientId()),
+                    resolvePatientName(a, patientNameMap, patientNoNameMap),
                     dept != null ? dept.getName() : null,
                     doctor != null ? doctor.getName() : null,
                     a.getAppointmentDate(),
@@ -243,60 +250,41 @@ public class AppointmentServiceImpl implements AppointmentService {
     // ===== §2.5.5 更新支付状态 =====
 
     @Override
-    @Transactional
-    @AuditLog(
-            resourceType = "APPOINTMENT",
-            action = "PAYMENT",
-            resourceId = "#result.appointmentId()",
-            detail = "'paymentStatus=' + #result.paymentStatus()")
     public AppointmentDTO.PaymentResponse updatePayment(String appointmentNo, AppointmentDTO.PaymentUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能支付本人预约
         enforceAppointmentOwnership(a);
-        if ("REFUNDING".equals(req.getPaymentStatus()) || "REFUNDED".equals(req.getPaymentStatus())) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "退款状态只能通过退款流程更新");
+        String lockKey = lockKey(a.getScheduleId());
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.updatePaymentInTx(appointmentNo, req, ALLOWED_PAYMENT_STATUS));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "号源操作繁忙，请稍后重试: " + appointmentNo);
         }
-        if (!ALLOWED_PAYMENT_STATUS.contains(req.getPaymentStatus())) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "非法支付状态: " + req.getPaymentStatus());
-        }
-        a.setPaymentStatus(req.getPaymentStatus());
-        if (req.getPaymentNo() != null) {
-            a.setPaymentNo(req.getPaymentNo());
-        }
-        if (req.getPaidAmount() != null) {
-            a.setPaidAmount(req.getPaidAmount());
-        }
-        appointmentMapper.updateById(a);
-        return new AppointmentDTO.PaymentResponse(a.getAppointmentNo(), a.getPaymentStatus());
     }
 
     // ===== 患者签到（专用 SELF 动作）=====
 
     @Override
-    @Transactional
-    @AuditLog(
-            resourceType = "APPOINTMENT",
-            action = "CHECK_IN",
-            resourceId = "#result.appointmentId()",
-            detail = "'status=' + #result.appointmentStatus()")
     public AppointmentDTO.StatusResponse checkIn(String appointmentNo) {
         Appointment a = requireByNo(appointmentNo);
         enforceAppointmentOwnership(a);
         if (!"PAID".equals(a.getPaymentStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "预约未支付，不能签到");
         }
-        return transitionStatus(a, "CHECKED_IN");
+        String lockKey = lockKey(a.getScheduleId());
+        try {
+            return distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.checkInInTx(a.getAppointmentNo(),
+                            STATUS_TRANSITIONS, ALLOWED_APPOINTMENT_STATUS));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "号源操作繁忙，请稍后重试: " + appointmentNo);
+        }
     }
 
     // ===== §2.5.6 更新就诊状态（状态机）=====
 
     @Override
-    @Transactional
-    @AuditLog(
-            resourceType = "APPOINTMENT",
-            action = "STATUS_CHANGE",
-            resourceId = "#result.appointmentId()",
-            detail = "'status=' + #result.appointmentStatus()")
     public AppointmentDTO.StatusResponse updateStatus(String appointmentNo, AppointmentDTO.StatusUpdateRequest req) {
         Appointment a = requireByNo(appointmentNo);
         // 越权防护（IDOR）：PATIENT 只能改本人预约状态，DOCTOR 只能改本人接诊的
@@ -325,10 +313,17 @@ public class AppointmentServiceImpl implements AppointmentService {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "非法状态流转: " + current + " → " + newStatus);
         }
-        a.setAppointmentStatus(newStatus);
-        appointmentMapper.updateById(a);
+        AppointmentDTO.StatusResponse response;
+        String lockKey = lockKey(a.getScheduleId());
+        try {
+            response = distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.transitionStatusInTx(a.getAppointmentNo(), newStatus,
+                            STATUS_TRANSITIONS, ALLOWED_APPOINTMENT_STATUS));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "号源操作繁忙，请稍后重试: " + a.getAppointmentNo());
+        }
         log.info("预约状态流转: appointmentNo={} {} → {}", a.getAppointmentNo(), current, newStatus);
-        return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), newStatus);
+        return response;
     }
 
     // ===== 越权防护（IDOR，架构 §4.3 SELF 数据范围 / 修改建议 §2.3 权限矩阵）=====
@@ -452,6 +447,43 @@ public class AppointmentServiceImpl implements AppointmentService {
             log.warn("批量查患者姓名失败，降级为空: {}", e.getMessage());
         }
         return java.util.Collections.emptyMap();
+    }
+
+    private Map<String, String> resolvePatientNamesByNos(Set<String> patientNos) {
+        if (patientNos == null || patientNos.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        try {
+            com.medconsult.common.core.Result<java.util.Map<String, String>> resp =
+                    patientFeignClient.namesByNos(new ArrayList<>(patientNos));
+            if (resp != null && resp.data() != null) {
+                return resp.data();
+            }
+        } catch (Exception e) {
+            log.warn("按患者编号批量查患者姓名失败，降级为空: {}", e.getMessage());
+        }
+        return java.util.Collections.emptyMap();
+    }
+
+    private static String resolvePatientName(Appointment a, Map<Long, String> patientNameMap,
+                                             Map<String, String> patientNoNameMap) {
+        String name = patientNameMap.get(a.getPatientId());
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        if (a.getPatientNo() != null && !a.getPatientNo().isBlank()) {
+            name = patientNoNameMap.get(a.getPatientNo());
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+        }
+        if (a.getPatientId() != null) {
+            name = patientNoNameMap.get(String.valueOf(a.getPatientId()));
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+        }
+        return null;
     }
 
     /** 锁 key：复用 RedisKey.SCHEDULE_QUOTA_LOCK 常量，避免锁键字符串漂移 */

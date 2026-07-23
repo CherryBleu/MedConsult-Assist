@@ -526,4 +526,37 @@ public class PatientServiceImpl implements PatientService {
         }
         return result;
     }
+
+    @Override
+    public java.util.Map<String, String> internalNamesByNos(java.util.Collection<String> patientNos) {
+        if (patientNos == null || patientNos.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.Set<String> nos = patientNos.stream()
+                .filter(no -> no != null && !no.isBlank())
+                .map(String::trim)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (nos.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.Set<Long> numericIds = nos.stream()
+                .filter(no -> no.chars().allMatch(Character::isDigit))
+                .map(Long::parseLong)
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+
+        QueryWrapper<Patient> qw = new QueryWrapper<>();
+        qw.in("patient_no", nos);
+        if (!numericIds.isEmpty()) {
+            qw.or().in("id", numericIds);
+        }
+        List<Patient> patients = patientMapper.selectList(qw);
+        java.util.Map<String, String> result = new java.util.HashMap<>();
+        for (Patient p : patients) {
+            if (p.getPatientNo() != null) {
+                result.put(p.getPatientNo(), p.getName());
+            }
+            result.put(String.valueOf(p.getId()), p.getName());
+        }
+        return result;
+    }
 }

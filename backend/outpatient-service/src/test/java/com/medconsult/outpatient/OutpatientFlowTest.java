@@ -178,15 +178,24 @@ class OutpatientFlowTest {
         String appointmentNo = om.readTree(createResult.getResponse().getContentAsString())
                 .at("/data/appointmentId").asText();
 
-        // 验证 schedule.booked 增加 + remaining 减少
+        // 待支付预约不占用号源，支付成功后才占号
+        mvc.perform(get("/api/v1/schedules").param("departmentId", DEPT_NO))
+                .andExpect(jsonPath("$.data.items[0].bookedQuota").value(0))
+                .andExpect(jsonPath("$.data.items[0].remainingQuota").value(5));
+
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/payment"), "9001")
+                        .contentType("application/json")
+                        .content("{\"paymentStatus\":\"PAID\",\"paymentNo\":\"PAY-9001\",\"paidAmount\":50.00}"))
+                .andExpect(status().isOk());
+
         mvc.perform(get("/api/v1/schedules").param("departmentId", DEPT_NO))
                 .andExpect(jsonPath("$.data.items[0].bookedQuota").value(1))
                 .andExpect(jsonPath("$.data.items[0].remainingQuota").value(4));
 
-        // 重复预约（同 patient + 同 schedule 未取消）→ 409
+        // 重复预约（同 patient + 同 schedule 已支付且未结束）→ 409
         mvc.perform(withPatient(post("/api/v1/appointments"), "9001").contentType("application/json").content(createBody))
                 .andExpect(jsonPath("$.code").value(409001))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已有未取消预约")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("已有预约或未取消")));
 
         // 查询预约详情
         mvc.perform(withPatient(get("/api/v1/appointments/" + appointmentNo), "9001"))
@@ -197,7 +206,7 @@ class OutpatientFlowTest {
                 .andExpect(jsonPath("$.data.appointmentDate").value("2026-07-15"))
                 .andExpect(jsonPath("$.data.period").value("MORNING"))
                 .andExpect(jsonPath("$.data.queueNo").value(1))
-                .andExpect(jsonPath("$.data.paymentStatus").value("UNPAID"))
+                .andExpect(jsonPath("$.data.paymentStatus").value("PAID"))
                 .andExpect(jsonPath("$.data.appointmentStatus").value("BOOKED"));
 
         // 分页查询预约
@@ -230,6 +239,10 @@ class OutpatientFlowTest {
     void appointmentCancel_releasesQuota() throws Exception {
         String scheduleNo = createSchedule(5);
         String appointmentNo = createAppointment(scheduleNo, "9002");
+        mvc.perform(withPatient(patch("/api/v1/appointments/" + appointmentNo + "/payment"), "9002")
+                        .contentType("application/json")
+                        .content("{\"paymentStatus\":\"PAID\",\"paymentNo\":\"PAY-CANCEL\",\"paidAmount\":50.00}"))
+                .andExpect(status().isOk());
 
         // 验证 booked=1
         mvc.perform(get("/api/v1/schedules").param("departmentId", DEPT_NO))

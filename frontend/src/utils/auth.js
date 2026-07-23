@@ -1,32 +1,62 @@
 const TOKEN_KEY = 'hospital_token'
 const REFRESH_TOKEN_KEY = 'hospital_refresh_token'
 
-// 存储token
+const getSessionValue = (key) => {
+  try {
+    const sessionValue = sessionStorage.getItem(key)
+    if (sessionValue) return sessionValue
+
+    const legacyValue = localStorage.getItem(key)
+    if (legacyValue) {
+      sessionStorage.setItem(key, legacyValue)
+      localStorage.removeItem(key)
+      return legacyValue
+    }
+  } catch (e) {
+    return ''
+  }
+  return ''
+}
+
+const setSessionValue = (key, value) => {
+  try {
+    sessionStorage.setItem(key, value)
+    localStorage.removeItem(key)
+  } catch (e) {
+    // The Pinia store still keeps the token for the current page lifecycle.
+  }
+}
+
+const removeSessionValue = (key) => {
+  try {
+    sessionStorage.removeItem(key)
+    localStorage.removeItem(key)
+  } catch (e) {
+    // Ignore storage failures.
+  }
+}
+
+// Store auth tokens per browser tab so patient/staff pages can be opened side by side.
 export const setToken = (token) => {
-  localStorage.setItem(TOKEN_KEY, token)
+  setSessionValue(TOKEN_KEY, token)
 }
 
-// 获取token
 export const getToken = () => {
-  return localStorage.getItem(TOKEN_KEY) || ''
+  return getSessionValue(TOKEN_KEY)
 }
 
-// 删除token
 export const removeToken = () => {
-  localStorage.removeItem(TOKEN_KEY)
+  removeSessionValue(TOKEN_KEY)
 }
 
-// 存储refreshToken
 export const setRefreshToken = (refreshToken) => {
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+  setSessionValue(REFRESH_TOKEN_KEY, refreshToken)
 }
 
-// 获取refreshToken
 export const getRefreshToken = () => {
-  return localStorage.getItem(REFRESH_TOKEN_KEY) || ''
+  return getSessionValue(REFRESH_TOKEN_KEY)
 }
 
-// 删除refreshToken
 export const removeRefreshToken = () => {
-  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  removeSessionValue(REFRESH_TOKEN_KEY)
 }

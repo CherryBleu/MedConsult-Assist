@@ -17,8 +17,9 @@ const mapAppointment = (a) => ({
   id: a.appointmentId ?? a.id,
   appointmentId: a.appointmentId ?? a.id,
   appointmentNo: a.appointmentNo ?? a.appointmentId ?? a.id,
+  patientId: a.patientId,
   patientNo: a.patientNo,
-  patientName: a.patientName,
+  patientName: a.patientName ?? a.patient?.name ?? a.name ?? a.realName,
   deptName: a.departmentName ?? a.deptName,
   departmentName: a.departmentName,
   doctorName: a.doctorName,
@@ -44,36 +45,26 @@ export const getScheduleListApi = async (doctorId, params) => {
   const res = await request({ url: '/schedules/available', method: 'get', params: { doctorId, ...(params || {}) } })
   // 后端 /schedules/available 直接返回数组（非分页）
   const list = Array.isArray(res.data) ? res.data : (res.data?.items ?? res.data?.records ?? [])
-  // 后端排班无 scheduleDate 字段（通用可用排班），适配为前端期望结构并展开到近 7 天：
-  // 每个排班在展示的每一天都可用，避免"暂无排班"导致预约流程断链。
   const periodTime = { MORNING: { start: '08:00', end: '12:00' }, AFTERNOON: { start: '14:00', end: '17:00' }, EVENING: { start: '18:00', end: '21:00' } }
-  const today = new Date()
-  const expanded = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(today)
-    d.setDate(d.getDate() + i)
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    for (const s of list) {
-      const remaining = s.remainingQuota ?? 0
-      expanded.push({
-        id: s.scheduleId ?? s.id,
-        scheduleId: s.scheduleId,
-        scheduleDate: dateStr,
-        doctorId: s.doctorId,
-        doctorName: s.doctorName,
-        period: s.period,
-        status: remaining > 0 ? 'AVAILABLE' : 'FULL',
-        totalQuota: remaining,
-        bookedQuota: 0,
-        remainingQuota: remaining,
-        registrationFee: s.registrationFee ?? s.fee,
-        fee: s.registrationFee ?? s.fee,
-        startTime: periodTime[s.period]?.start ?? '08:00',
-        endTime: periodTime[s.period]?.end ?? '12:00'
-      })
+  res.data = list.map((s) => {
+    const remaining = s.remainingQuota ?? Math.max(0, (s.totalQuota ?? 0) - (s.bookedQuota ?? 0))
+    return {
+      id: s.scheduleId ?? s.id,
+      scheduleId: s.scheduleId ?? s.id,
+      scheduleDate: s.scheduleDate,
+      doctorId: s.doctorId,
+      doctorName: s.doctorName,
+      period: s.period,
+      status: s.status ?? (remaining > 0 ? 'AVAILABLE' : 'FULL'),
+      totalQuota: s.totalQuota ?? remaining,
+      bookedQuota: s.bookedQuota ?? 0,
+      remainingQuota: remaining,
+      registrationFee: s.registrationFee ?? s.fee,
+      fee: s.registrationFee ?? s.fee,
+      startTime: s.startTime ?? periodTime[s.period]?.start ?? '08:00',
+      endTime: s.endTime ?? periodTime[s.period]?.end ?? '12:00'
     }
-  }
-  res.data = expanded
+  })
   return res
 }
 

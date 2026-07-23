@@ -71,4 +71,10 @@ public interface PatientService {
      * <p>返回 patientId → name 映射；不存在的 ID 不含在结果中。
      */
     java.util.Map<Long, String> internalNamesByIds(java.util.Collection<Long> patientIds);
+
+    /**
+     * 内部接口：按 patient_no 或兼容的数字主键字符串批量查询患者姓名。
+     * <p>返回入参字符串 -> name 映射；不存在的编号不包含在结果中。
+     */
+    java.util.Map<String, String> internalNamesByNos(java.util.Collection<String> patientNos);
 }

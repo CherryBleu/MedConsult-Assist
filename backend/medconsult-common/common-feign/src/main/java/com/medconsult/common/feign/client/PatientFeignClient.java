@@ -58,4 +58,11 @@ public interface PatientFeignClient {
      */
     @GetMapping("/internal/patients/names")
     Result<java.util.Map<Long, String>> namesByIds(@RequestParam("ids") List<Long> ids);
+
+    /**
+     * 内部：按 patient_no 或兼容的数字主键字符串批量查患者姓名。
+     * <p>供预约历史数据里 patient_no 与 patient_id 不一致时兜底回填姓名。
+     */
+    @GetMapping("/internal/patients/names-by-nos")
+    Result<java.util.Map<String, String>> namesByNos(@RequestParam("nos") List<String> nos);
 }

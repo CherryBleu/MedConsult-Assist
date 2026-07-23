@@ -301,6 +301,7 @@ services:
     image: medconsult-frontend:local
     container_name: medconsult-frontend
     restart: unless-stopped
+    mem_limit: 64m
     environment:
       GATEWAY_UPSTREAM: "${GATEWAY_UPSTREAM:-host.docker.internal:8080}"
     ports:

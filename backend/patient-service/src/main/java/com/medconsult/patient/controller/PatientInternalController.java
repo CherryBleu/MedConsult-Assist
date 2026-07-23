@@ -86,4 +86,13 @@ public class PatientInternalController {
         SecurityContext.requireService("patient:read");
         return Result.ok(patientService.internalNamesByIds(ids));
     }
+
+    /**
+     * 内部接口：按 patient_no 或兼容的数字主键字符串批量查询患者姓名。
+     */
+    @GetMapping("/names-by-nos")
+    public Result<java.util.Map<String, String>> namesByNos(@RequestParam("nos") List<String> nos) {
+        SecurityContext.requireService("patient:read");
+        return Result.ok(patientService.internalNamesByNos(nos));
+    }
 }

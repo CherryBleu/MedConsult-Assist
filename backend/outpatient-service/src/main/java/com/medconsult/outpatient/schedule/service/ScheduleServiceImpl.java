@@ -285,9 +285,9 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         List<ScheduleDTO.AvailableItem> items = new ArrayList<>();
         for (DoctorSchedule s : schedules) {
-            int booked = s.getBookedQuota() == null ? 0 : s.getBookedQuota();
             int total = s.getTotalQuota() == null ? 0 : s.getTotalQuota();
-            int remaining = total - booked;
+            int occupied = countOccupiedAppointments(s.getId());
+            int remaining = total - occupied;
             if (remaining <= 0) {
                 continue; // 剩余 0 不展示
             }
@@ -296,9 +296,13 @@ public class ScheduleServiceImpl implements ScheduleService {
                     s.getScheduleNo(),
                     doc != null ? doc.getDoctorNo() : null,
                     doc != null ? doc.getName() : null,
+                    s.getScheduleDate(),
                     s.getPeriod(),
+                    s.getStartTime(),
+                    s.getEndTime(),
                     remaining,
-                    s.getRegistrationFee()));
+                    s.getRegistrationFee(),
+                    s.getStatus()));
         }
         return items;
     }
@@ -351,6 +355,15 @@ public class ScheduleServiceImpl implements ScheduleService {
         Long count = appointmentMapper.selectCount(new QueryWrapper<Appointment>()
                 .eq("schedule_id", scheduleId)
                 .notIn("appointment_status", List.of("CANCELLED", "COMPLETED", "NO_SHOW")));
+        return count == null ? 0 : count.intValue();
+    }
+
+    /** 统计真实占用号源的预约数：已支付且处于待诊/签到/接诊中。 */
+    private int countOccupiedAppointments(Long scheduleId) {
+        Long count = appointmentMapper.selectCount(new QueryWrapper<Appointment>()
+                .eq("schedule_id", scheduleId)
+                .eq("payment_status", "PAID")
+                .in("appointment_status", List.of("BOOKED", "CHECKED_IN", "IN_PROGRESS")));
         return count == null ? 0 : count.intValue();
     }
 

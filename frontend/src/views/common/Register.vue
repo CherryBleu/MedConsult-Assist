@@ -145,7 +145,7 @@ const handleRegister = async () => {
     ElMessage.success('注册成功，请登录')
     router.push('/login')
   } catch (e) {
-    // 错误消息已由 request 拦截器 ElMessage.error 展示
+    ElMessage.error(e?.message || '注册失败，请稍后重试')
   } finally {
     submitting.value = false
   }

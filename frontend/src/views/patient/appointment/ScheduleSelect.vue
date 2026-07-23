@@ -114,7 +114,7 @@ const morningList = computed(() => {
     .filter(i => i.scheduleDate === selectedDate.value && i.period === 'MORNING')
     .map(item => ({
       ...item,
-      remain: item.totalQuota - item.bookedQuota,
+      remain: item.remainingQuota ?? (item.totalQuota - item.bookedQuota),
       statusClass: item.status === SCHEDULE_STATUS.AVAILABLE.value
         ? 'available'
         : item.status === SCHEDULE_STATUS.FULL.value
@@ -129,7 +129,7 @@ const afternoonList = computed(() => {
     .filter(i => i.scheduleDate === selectedDate.value && i.period === 'AFTERNOON')
     .map(item => ({
       ...item,
-      remain: item.totalQuota - item.bookedQuota,
+      remain: item.remainingQuota ?? (item.totalQuota - item.bookedQuota),
       statusClass: item.status === SCHEDULE_STATUS.AVAILABLE.value
         ? 'available'
         : item.status === SCHEDULE_STATUS.FULL.value

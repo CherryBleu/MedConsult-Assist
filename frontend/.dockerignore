@@ -4,3 +4,6 @@ dist
 playwright-report
 test-results
 coverage
+e2e
+*.log
+*.local

@@ -357,6 +357,7 @@ const queryParams = reactive({
 
 const form = reactive({
   doctorId: '',
+  departmentId: '',
   scheduleDate: '',
   period: 'MORNING',
   startTime: '08:00',
@@ -395,6 +396,14 @@ const scheduleStatusType = (status) => {
 const remainingQuota = (row) => {
   if (Number.isFinite(Number(row.remainingQuota))) return Number(row.remainingQuota)
   return Number(row.totalQuota || 0) - Number(row.bookedQuota || 0)
+}
+
+const findDoctor = (doctorId) => {
+  return allDoctors.value.find(d => String(d.id) === String(doctorId))
+}
+
+const doctorDepartmentId = (doctorId) => {
+  return findDoctor(doctorId)?.departmentId || ''
 }
 
 const getList = async () => {
@@ -440,8 +449,9 @@ const handleDeptChange = async (val) => {
 }
 
 const handleDoctorChange = (val) => {
-  const doctor = allDoctors.value.find(d => d.id === val)
+  const doctor = findDoctor(val)
   if (doctor) {
+    form.departmentId = doctor.departmentId || ''
     // 映射后的医生对象用 fee 字段（mapDoctor 中 registrationFee → fee）
     form.registrationFee = doctor.registrationFee ?? doctor.fee ?? 50
   }
@@ -467,6 +477,7 @@ const openAddDialog = () => {
   currentId.value = null
   Object.assign(form, {
     doctorId: '',
+    departmentId: '',
     scheduleDate: '',
     period: 'MORNING',
     startTime: '08:00',
@@ -483,6 +494,7 @@ const handleEdit = (row) => {
   currentId.value = row.id
   Object.assign(form, {
     doctorId: row.doctorId,
+    departmentId: row.departmentId,
     scheduleDate: row.scheduleDate,
     period: row.period,
     startTime: row.startTime,
@@ -498,11 +510,19 @@ const submitForm = async () => {
   await formRef.value.validate()
   submitting.value = true
   try {
+    const payload = {
+      ...form,
+      departmentId: form.departmentId || doctorDepartmentId(form.doctorId)
+    }
+    if (!isEdit.value && !payload.departmentId) {
+      ElMessage.warning('请选择有科室归属的医生')
+      return
+    }
     if (isEdit.value) {
-      await updateScheduleApi({ id: currentId.value, ...form })
+      await updateScheduleApi({ id: currentId.value, ...payload })
       ElMessage.success('更新成功')
     } else {
-      await createScheduleApi(form)
+      await createScheduleApi(payload)
       ElMessage.success('新增成功')
     }
     dialogVisible.value = false
@@ -538,6 +558,7 @@ const weekdayOptions = [
 ]
 const batchForm = reactive({
   doctorId: '',
+  departmentId: '',
   dateRange: [],
   periods: ['MORNING', 'AFTERNOON'],
   weekdays: [],
@@ -546,14 +567,16 @@ const batchForm = reactive({
 })
 
 const handleBatchDoctorChange = (val) => {
-  const doctor = allDoctors.value.find(d => d.id === val)
+  const doctor = findDoctor(val)
   if (doctor) {
+    batchForm.departmentId = doctor.departmentId || ''
     batchForm.registrationFee = doctor.registrationFee ?? doctor.fee ?? 50
   }
 }
 
 const openBatchDialog = () => {
   batchForm.doctorId = ''
+  batchForm.departmentId = ''
   batchForm.dateRange = []
   batchForm.periods = ['MORNING', 'AFTERNOON']
   batchForm.weekdays = []
@@ -565,6 +588,11 @@ const openBatchDialog = () => {
 const submitBatch = async () => {
   if (!batchForm.doctorId) {
     ElMessage.warning('请选择医生')
+    return
+  }
+  const departmentId = batchForm.departmentId || doctorDepartmentId(batchForm.doctorId)
+  if (!departmentId) {
+    ElMessage.warning('请选择有科室归属的医生')
     return
   }
   if (!batchForm.dateRange || batchForm.dateRange.length !== 2) {
@@ -592,6 +620,7 @@ const submitBatch = async () => {
       for (const period of batchForm.periods) {
         tasks.push({
           doctorId: batchForm.doctorId,
+          departmentId,
           scheduleDate: cursor.format('YYYY-MM-DD'),
           period,
           startTime: period === 'MORNING' ? '08:00' : '14:00',

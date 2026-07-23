@@ -341,6 +341,7 @@ services:
     image: ${MEDCONSULT_IMAGE_REPOSITORY:-cherrybleu/medconsult-assist}:frontend-${MEDCONSULT_IMAGE_TAG:-latest}
     container_name: medconsult-frontend
     restart: unless-stopped
+    mem_limit: 64m
     environment:
       GATEWAY_UPSTREAM: medconsult-gateway:8080
     ports:

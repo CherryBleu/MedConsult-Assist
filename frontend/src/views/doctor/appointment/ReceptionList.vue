@@ -39,7 +39,7 @@
           <template #table>
             <el-table :data="tableData" border stripe class="reception-table">
               <el-table-column type="index" label="序号" width="60" align="center" :index="indexMethod" />
-              <el-table-column label="患者信息" width="160" align="center">
+              <el-table-column label="患者姓名" width="160" align="center">
                 <template #default="{ row }">
                   <div class="patient-cell">
                     <div class="patient-name">{{ patientDisplayName(row) }}</div>
@@ -77,32 +77,35 @@
               <el-table-column prop="visitReason" label="主诉" min-width="150" show-overflow-tooltip />
               <el-table-column label="操作" width="220" align="center" fixed="right">
                 <template #default="{ row }">
-                  <template v-if="canStartOrMarkNoShow(row)">
-                    <el-button
-                      v-if="!isExpired(row)"
-                      type="success"
-                      size="small"
-                      @click="handleStartVisit(row.id)"
-                    >
-                      开始就诊
-                    </el-button>
-                    <el-button
-                      v-else
-                      type="danger"
-                      size="small"
-                      @click="handleMarkNoShow(row.id)"
-                    >
-                      标记爽约
-                    </el-button>
-                  </template>
-                  <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
-                    <el-button type="primary" size="small" @click="handleEndVisit(row.id, row)">
-                      完成接诊
-                    </el-button>
-                    <el-button size="small" @click="goWriteRecord(row)">
-                      写病历
-                    </el-button>
-                  </template>
+                  <div class="operation-actions">
+                    <template v-if="canStartOrMarkNoShow(row)">
+                      <el-button
+                        v-if="!isExpired(row)"
+                        type="success"
+                        size="small"
+                        @click="handleStartVisit(row.id)"
+                      >
+                        开始就诊
+                      </el-button>
+                      <el-button
+                        v-else
+                        type="danger"
+                        size="small"
+                        @click="handleMarkNoShow(row.id)"
+                      >
+                        标记爽约
+                      </el-button>
+                    </template>
+                    <template v-else-if="row.appointmentStatus === 'IN_PROGRESS'">
+                      <el-button type="primary" size="small" @click="handleEndVisit(row.id, row)">
+                        完成接诊
+                      </el-button>
+                      <el-button size="small" @click="goWriteRecord(row)">
+                        写病历
+                      </el-button>
+                    </template>
+                    <span v-else class="table-no-action">暂无操作</span>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -270,9 +273,10 @@ const periodLabel = (period) => {
   return map[period] || period || '-'
 }
 
-const patientDisplayName = (row) => row.patientName || row.name || row.patientNo || '未知'
+const patientDisplayName = (row) => row.patientName || row.name || '未返回姓名'
 
-const canStartOrMarkNoShow = (row) => ['PAID', 'CHECKED_IN'].includes(row.appointmentStatus)
+const canStartOrMarkNoShow = (row) =>
+  ['BOOKED', 'CHECKED_IN'].includes(row.appointmentStatus) && row.paymentStatus === 'PAID'
 
 const isExpired = (row) => {
   if (!canStartOrMarkNoShow(row)) return false
@@ -460,6 +464,24 @@ onMounted(() => {
 }
 .patient-no {
   font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.operation-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 150px;
+  white-space: nowrap;
+}
+
+.operation-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
+.table-no-action {
+  font-size: 13px;
   color: var(--text-secondary);
 }
 

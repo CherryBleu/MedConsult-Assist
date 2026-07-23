@@ -130,6 +130,7 @@ services:
     image: medconsult-frontend:local
     container_name: medconsult-frontend
     restart: unless-stopped
+    mem_limit: 64m
     environment:
       GATEWAY_UPSTREAM: medconsult-gateway:8080
     ports:
