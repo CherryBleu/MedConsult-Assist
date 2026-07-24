@@ -76,12 +76,12 @@ const getUserByAccount = (account) => {
   return users.patient
 }
 
-export const mockGetUserInfo = () => {
+export const mockGetUserInfo = (overrides = {}) => {
   const account = localStorage.getItem(LOGIN_ACCOUNT_KEY) || 'patient'
   const user = getUserByAccount(account)
   return {
     code: 0,
     message: 'success',
-    data: { ...user, status: 'ACTIVE' }
+    data: { ...user, ...overrides, phoneMasked: overrides.phone || user.phone, status: 'ACTIVE' }
   }
 }

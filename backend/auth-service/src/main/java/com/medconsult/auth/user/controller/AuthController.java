@@ -82,6 +82,13 @@ public class AuthController {
         return Result.ok(null);
     }
 
+    @PatchMapping("/me/phone")
+    @Operation(summary = "修改当前用户手机号")
+    public Result<AuthDTO.MeResponse> updatePhone(@Valid @RequestBody AuthDTO.UpdatePhoneRequest req) {
+        Long userId = SecurityContext.requireUser().userId();
+        return Result.ok(authService.updatePhone(userId, req));
+    }
+
     /**
      * 绑定患者档案到当前登录用户（补建档场景）。
      *

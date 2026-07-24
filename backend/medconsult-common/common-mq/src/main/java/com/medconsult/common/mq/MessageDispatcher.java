@@ -3,12 +3,16 @@ package com.medconsult.common.mq;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -97,7 +101,7 @@ public class MessageDispatcher implements RabbitTemplate.ConfirmCallback {
         // CorrelationData.id = LocalMessage.id，confirm 回调凭它回查更新状态
         CorrelationData cd = new CorrelationData(String.valueOf(msg.getId()));
         try {
-            rabbitTemplate.convertAndSend(msg.getExchange(), msg.getRoutingKey(), msg.getPayloadJson(),
+            rabbitTemplate.convertAndSend(msg.getExchange(), msg.getRoutingKey(), messagePayload(msg),
                     message -> {
                         message.getMessageProperties().getHeaders().put("messageNo", msg.getMessageNo());
                         return message;
@@ -122,6 +126,15 @@ public class MessageDispatcher implements RabbitTemplate.ConfirmCallback {
             log.warn("消息投递失败（将重试）: {} retryCount={}", msg.getMessageNo(), msg.getRetryCount(), e);
             handleRetry(msg.getId());
         }
+    }
+
+    private static Message messagePayload(LocalMessage msg) {
+        String payloadJson = msg.getPayloadJson();
+        byte[] body = payloadJson == null ? new byte[0] : payloadJson.getBytes(StandardCharsets.UTF_8);
+        return MessageBuilder.withBody(body)
+                .setContentType(MessageProperties.CONTENT_TYPE_JSON)
+                .setContentEncoding(StandardCharsets.UTF_8.name())
+                .build();
     }
 
     // ===== publisher confirm 回调 =====

@@ -3,14 +3,18 @@ package com.medconsult.notification.notification.controller;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.Result;
 import com.medconsult.common.security.Permission;
+import com.medconsult.common.security.SecurityContext;
 import com.medconsult.notification.notification.dto.NotificationDTO;
+import com.medconsult.notification.notification.service.NotificationRealtimeService;
 import com.medconsult.notification.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * 通知对外接口（对齐《接口文档》§2.8）。
@@ -28,6 +32,7 @@ import org.springframework.web.bind.annotation.*;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final NotificationRealtimeService realtimeService;
 
     /** §2.8.1 创建通知（仅管理员；业务通知走 MQ 或 /internal/notifications） */
     @PostMapping
@@ -49,6 +54,12 @@ public class NotificationController {
     }
 
     /** §2.8.3 标记通知已读 */
+    @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "订阅通知实时事件")
+    public SseEmitter stream() {
+        return realtimeService.subscribe(SecurityContext.requireUser());
+    }
+
     @PatchMapping("/{notificationId}/read")
     @Operation(summary = "标记通知已读")
     public Result<NotificationDTO.ReadResponse> markRead(@Parameter(description = "通知编号", required = true) @PathVariable String notificationId) {

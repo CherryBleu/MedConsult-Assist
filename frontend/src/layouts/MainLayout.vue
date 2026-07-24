@@ -197,12 +197,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Bell } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/modules/user'
 import { useNoticeStore } from '@/store/modules/notice'
+import { subscribeNoticeStream } from '@/api/noticeStream'
 import { ROLE_ENUM } from '@/constants'
 import { useResponsive } from '@/composables/useResponsive'
 
@@ -215,6 +216,7 @@ const { isMobile } = useResponsive()
 const isCollapse = ref(false)
 const mobileDrawerOpen = ref(false)
 const noticePopoverVisible = ref(false)
+let closeNoticeStream = null
 const isMenuCollapsed = computed(() => !isMobile.value && isCollapse.value)
 const asideWidth = computed(() => isMenuCollapsed.value ? '64px' : '220px')
 const navigationExpanded = computed(() => isMobile.value ? mobileDrawerOpen.value : !isCollapse.value)
@@ -369,6 +371,30 @@ const handleNoticeClick = async () => {
   await noticeStore.fetchNotices({ pageNum: 1, pageSize: 5 })
 }
 
+const refreshNoticeState = async () => {
+  await noticeStore.fetchUnreadCount()
+  if (noticePopoverVisible.value) {
+    await noticeStore.fetchNotices({ pageNum: 1, pageSize: 5 })
+  }
+}
+
+const startNoticeStream = () => {
+  if (closeNoticeStream) closeNoticeStream()
+  closeNoticeStream = subscribeNoticeStream({
+    onEvent: ({ event, data }) => {
+      if (event === 'notification') {
+        noticeStore.upsertRealtimeNotice(data)
+        refreshNoticeState()
+      } else if (event === 'notification-read') {
+        noticeStore.applyRealtimeRead(data?.notificationId)
+        if (noticePopoverVisible.value) {
+          noticeStore.fetchNotices({ pageNum: 1, pageSize: 5 })
+        }
+      }
+    }
+  })
+}
+
 const handleMarkRead = async (notice) => {
   if (!notice.isRead) {
     await noticeStore.markRead(notice.id)
@@ -381,9 +407,14 @@ const goToNoticeList = () => {
 }
 
 onMounted(() => {
-  // 通知功能仅管理员可用（后端 /notifications 对非管理员返回 403），其他角色跳过加载避免报错
-  if (userStore.role === ROLE_ENUM.HOSPITAL_ADMIN.value) {
-    noticeStore.fetchUnreadCount()
+  noticeStore.fetchUnreadCount()
+  startNoticeStream()
+})
+
+onBeforeUnmount(() => {
+  if (closeNoticeStream) {
+    closeNoticeStream()
+    closeNoticeStream = null
   }
 })
 

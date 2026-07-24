@@ -343,6 +343,32 @@ public class AuthServiceImpl implements AuthService {
         log.info("用户修改密码成功: userId={} account={}", userId, u.getAccount());
     }
 
+    @Override
+    @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "PHONE_CHANGE",
+            resourceId = "#p0",
+            targetOwnerId = "#p0",
+            detail = "'phone changed'")
+    public AuthDTO.MeResponse updatePhone(Long userId, AuthDTO.UpdatePhoneRequest req) {
+        SysUser u = userMapper.selectById(userId);
+        if (u == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+        String phone = req.getPhone();
+        Long exists = userMapper.selectCount(new QueryWrapper<SysUser>()
+                .eq("phone", phone)
+                .ne("id", userId));
+        if (exists != null && exists > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "手机号已注册");
+        }
+        u.setPhone(phone);
+        userMapper.updateById(u);
+        log.info("用户修改手机号成功: userId={} account={}", userId, u.getAccount());
+        return me(userId);
+    }
+
     // ===== 绑定患者档案（补建档）=====
 
     @Override

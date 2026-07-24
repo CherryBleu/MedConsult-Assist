@@ -1,5 +1,6 @@
 import request from '@/utils/request'
 import { mockDoctorList, mockAddDoctor, mockUpdateDoctor, mockDeleteDoctor } from '@/mock/system'
+import { maskPhone } from '@/utils/privacy'
 import {
   mockUserList, mockAddUser, mockUpdateUser, mockDeleteUser,
   mockDeptList, mockAddDept, mockUpdateDept, mockDeleteDept,
@@ -7,6 +8,26 @@ import {
 } from '@/mock/system'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+
+const normalizePageList = (payload) => payload?.items ?? payload?.records ?? (Array.isArray(payload) ? payload : [])
+
+const mapDoctorUserPhones = async () => {
+  try {
+    const res = await getUserListApi({ role: 'DOCTOR', pageSize: 100 })
+    const users = normalizePageList(res.data)
+    const phoneMap = new Map()
+    users.forEach(user => {
+      const masked = maskPhone(user.phone)
+      if (!masked) return
+      ;[user.doctorId, user.userNo, user.account].forEach(key => {
+        if (key != null && key !== '') phoneMap.set(String(key), masked)
+      })
+    })
+    return phoneMap
+  } catch (e) {
+    return new Map()
+  }
+}
 
 // ===== 用户管理 =====
 // 用户列表走后端 GET /auth/users（仅 HOSPITAL_ADMIN 可访问），用户创建走 /auth/register，
@@ -105,9 +126,11 @@ export const getDoctorListApi = async (params) => {
     return Promise.resolve(mockDoctorList())
   }
   const res = await request({ url: '/doctors', method: 'get', params })
-  const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
+  const list = normalizePageList(res.data)
+  const phoneMap = await mapDoctorUserPhones()
   res.data = list.map(d => ({
     id: d.doctorId ?? d.id,
+    doctorPkId: d.id,
     doctorId: d.doctorId,
     // 后端 ListItem.doctorId 即 doctor_no（业务编号），前端表格"工号"列读 doctorNo
     doctorNo: d.doctorId ?? d.doctorNo,
@@ -119,7 +142,7 @@ export const getDoctorListApi = async (params) => {
     specialties: Array.isArray(d.specialties) ? d.specialties.join('、') : (d.specialties ?? ''),
     // 后端 Doctor 实体无 gender/phone/registrationFee 字段，暂回退为空
     gender: d.gender ?? '',
-    phone: d.phone ?? '',
+    phone: maskPhone(d.phone) || phoneMap.get(String(d.id)) || phoneMap.get(String(d.doctorId)) || '',
     registrationFee: d.registrationFee ?? d.fee ?? '',
     fee: d.registrationFee ?? d.fee,
     enabled: d.enabled,

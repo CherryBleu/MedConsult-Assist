@@ -21,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * 通知服务实现（对齐《接口文档》§2.8）。
@@ -34,6 +36,7 @@ import java.util.List;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationMapper notificationMapper;
+    private final NotificationRealtimeService realtimeService;
 
     @Override
     @Transactional
@@ -51,6 +54,7 @@ public class NotificationServiceImpl implements NotificationService {
         notificationMapper.insert(n);
         log.info("通知创建: notificationNo={} receiverId={} type={}",
                 n.getNotificationNo(), req.getReceiverId(), req.getType());
+        realtimeService.publishCreatedAfterCommit(n);
         return new NotificationDTO.CreateResponse(n.getNotificationNo(), false);
     }
 
@@ -61,12 +65,16 @@ public class NotificationServiceImpl implements NotificationService {
         // 无身份（匿名/服务）访问对外接口 → SecurityContext.requireUser 抛 401。
         // 管理员（HOSPITAL_ADMIN/PHARMACY_ADMIN）可指定 receiverId 查任意人的，不传则查全部。
         JwtPayload payload = SecurityContext.requireUser();
-        String scopedReceiver = resolveReceiverScope(payload, receiverId);
+        Set<String> scopedReceiver = resolveReceiverScope(payload, receiverId);
 
         Page<Notification> p = new Page<>(PageQuery.normalizePage(page), PageQuery.normalizePageSize(pageSize));
         QueryWrapper<Notification> qw = new QueryWrapper<>();
-        if (scopedReceiver != null) {
-            qw.eq("receiver_id", scopedReceiver);
+        if (scopedReceiver != null && !scopedReceiver.isEmpty()) {
+            if (scopedReceiver.size() == 1) {
+                qw.eq("receiver_id", scopedReceiver.iterator().next());
+            } else {
+                qw.in("receiver_id", scopedReceiver);
+            }
         }
         if (read != null) {
             qw.eq("read_status", read ? 1 : 0);
@@ -100,6 +108,7 @@ public class NotificationServiceImpl implements NotificationService {
         n.setReadAt(LocalDateTime.now());
         notificationMapper.updateById(n);
         log.info("通知标记已读: notificationNo={}", notificationNo);
+        realtimeService.publishReadAfterCommit(n);
         return new NotificationDTO.ReadResponse(n.getNotificationNo(), true, n.getReadAt());
     }
 
@@ -116,19 +125,24 @@ public class NotificationServiceImpl implements NotificationService {
      *
      * @return 用于查询的 receiver_id；null 表示不按 receiver 过滤（仅管理员不传 receiverId 时）
      */
-    private String resolveReceiverScope(JwtPayload payload, String receiverId) {
+    private Set<String> resolveReceiverScope(JwtPayload payload, String receiverId) {
         if (isAdmin(payload)) {
-            return (receiverId != null && !receiverId.isBlank()) ? receiverId : null;
+            if (receiverId != null && !receiverId.isBlank()) {
+                return Set.of(receiverId);
+            }
+            Set<String> candidates = receiverCandidates(payload);
+            addIfPresent(candidates, payload.primaryRole());
+            if (payload.roles() != null) {
+                payload.roles().forEach(role -> addIfPresent(candidates, role));
+            }
+            return candidates;
         }
-        // 非管理员：用 JWT 的 userNo claim（用户业务编号）作为 receiver_id 作用域，
-        // 强制限定只能查发给自己的通知（receiver_id 存的就是 userNo）。
-        // 旧 token 无 userNo claim 时为 null，无法可靠匹配，拒绝（而不是返回空列表掩盖问题）。
-        String userNo = payload.userNo();
-        if (userNo == null || userNo.isBlank()) {
+        Set<String> candidates = receiverCandidates(payload);
+        if (candidates.isEmpty()) {
             throw new BusinessException(ErrorCode.FORBIDDEN,
-                    "当前登录态缺少业务编号（userNo），请重新登录后再试");
+                    "当前登录态缺少通知接收人标识，请重新登录后再试");
         }
-        return userNo;
+        return candidates;
     }
 
     /** 单条通知归属校验（IDOR 防护）：非管理员只能操作发给自己的通知 */
@@ -137,10 +151,7 @@ public class NotificationServiceImpl implements NotificationService {
         if (isAdmin(payload)) {
             return;
         }
-        // 用 JWT 的 userNo claim（用户业务编号）校验通知归属：receiver_id 存的就是 userNo。
-        // 旧 token 无 userNo claim 时为 null，无法匹配，拒绝避免越权。
-        String userNo = payload.userNo();
-        if (userNo == null || !userNo.equals(n.getReceiverId())) {
+        if (!receiverCandidates(payload).contains(n.getReceiverId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN,
                     "当前账号角色无权操作该通知，请联系管理员或使用管理员账号");
         }
@@ -156,6 +167,27 @@ public class NotificationServiceImpl implements NotificationService {
             return p.roles().contains("HOSPITAL_ADMIN") || p.roles().contains("PHARMACY_ADMIN");
         }
         return false;
+    }
+
+    private static Set<String> receiverCandidates(JwtPayload payload) {
+        Set<String> candidates = new LinkedHashSet<>();
+        addIfPresent(candidates, payload.userNo());
+        if (payload.patientId() != null) {
+            candidates.add(String.valueOf(payload.patientId()));
+        }
+        if (payload.doctorId() != null) {
+            candidates.add(String.valueOf(payload.doctorId()));
+        }
+        if (payload.pharmacistId() != null) {
+            candidates.add(String.valueOf(payload.pharmacistId()));
+        }
+        return candidates;
+    }
+
+    private static void addIfPresent(Set<String> candidates, String value) {
+        if (value != null && !value.isBlank()) {
+            candidates.add(value);
+        }
     }
 
     private Notification requireByNo(String notificationNo) {

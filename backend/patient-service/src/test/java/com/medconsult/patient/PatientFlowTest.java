@@ -99,6 +99,7 @@ class PatientFlowTest {
                 .andExpect(jsonPath("$.data.gender").value("MALE"))
                 .andExpect(jsonPath("$.data.idNoMasked").value("110101********0011"))
                 .andExpect(jsonPath("$.data.phoneMasked").value("138****0001"))
+                .andExpect(jsonPath("$.data.address").value("北京市朝阳区示例路 1 号"))
                 .andExpect(jsonPath("$.data.allergies[0]").value("青霉素"))
                 .andExpect(jsonPath("$.data.pastMedicalHistory[0]").value("高血压"))
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"));
@@ -117,8 +118,11 @@ class PatientFlowTest {
 
         // 6. 更新档案
         String updateBody = """
-                {"phone":"13800000009","address":"北京市海淀区示例路 9 号",
-                 "allergies":["青霉素","头孢类"],"pastMedicalHistory":["高血压","慢性胃炎"]}""";
+                {"gender":"FEMALE","birthDate":"1989-06-20",
+                 "phone":"13800000009","address":"北京市海淀区示例路 9 号",
+                 "allergies":["青霉素","头孢类"],"pastMedicalHistory":["高血压","慢性胃炎"],
+                 "familyHistory":["糖尿病家族史","高血压家族史"],
+                 "emergencyContact":{"name":"王五","relation":"兄弟","phone":"13800000010"}}""";
         mvc.perform(withAdmin(put("/api/v1/patients/" + patientNo)).contentType("application/json").content(updateBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -127,8 +131,15 @@ class PatientFlowTest {
 
         // 验证更新生效（详情手机号脱敏后为 138****0009）
         mvc.perform(withAdmin(get("/api/v1/patients/" + patientNo)))
+                .andExpect(jsonPath("$.data.gender").value("FEMALE"))
+                .andExpect(jsonPath("$.data.birthDate").value("1989-06-20"))
                 .andExpect(jsonPath("$.data.phoneMasked").value("138****0009"))
-                .andExpect(jsonPath("$.data.allergies[1]").value("头孢类"));
+                .andExpect(jsonPath("$.data.address").value("北京市海淀区示例路 9 号"))
+                .andExpect(jsonPath("$.data.allergies[1]").value("头孢类"))
+                .andExpect(jsonPath("$.data.familyHistory[1]").value("高血压家族史"))
+                .andExpect(jsonPath("$.data.emergencyContact.name").value("王五"))
+                .andExpect(jsonPath("$.data.emergencyContact.relation").value("兄弟"))
+                .andExpect(jsonPath("$.data.emergencyContact.phone").value("13800000010"));
 
         // 7. 状态流转 ACTIVE → DISABLED
         String statusBody = """

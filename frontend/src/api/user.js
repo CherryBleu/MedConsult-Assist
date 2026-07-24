@@ -64,6 +64,17 @@ export const getUserInfoApi = () => {
   })
 }
 
+export const updateMyPhoneApi = (data) => {
+  if (USE_MOCK) {
+    return Promise.resolve(mockGetUserInfo({ phone: data.phone }))
+  }
+  return request({
+    url: '/auth/me/phone',
+    method: 'patch',
+    data
+  })
+}
+
 // 绑定患者档案（补建档场景：历史脏账号 patient_id 为 NULL 时补全关联）
 // 后端自动用 sys_user 已有的 name/phone 建档，前端只需补充 idCard/gender/birthDate。
 // 返回新的 accessToken/refreshToken（已带 patientId），前端存储后无需重新登录。

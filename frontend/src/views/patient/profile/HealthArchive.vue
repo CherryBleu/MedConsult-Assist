@@ -63,7 +63,7 @@
             <div v-if="archive.emergencyContact">
               <div>姓名：{{ archive.emergencyContact.name }}</div>
               <div>关系：{{ archive.emergencyContact.relation }}</div>
-              <div>电话：{{ archive.emergencyContact.phone }}</div>
+              <div>电话：{{ maskPhone(archive.emergencyContact.phone) }}</div>
             </div>
             <span v-else class="empty-text">暂无记录</span>
           </div>
@@ -79,6 +79,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ArrowLeft, Warning, Document, UserFilled, Phone } from '@element-plus/icons-vue'
 import { getHealthArchiveApi } from '@/api/patient'
 import { useUserStore } from '@/store/modules/user'
+import { maskPhone } from '@/utils/privacy'
 
 const userStore = useUserStore()
 const loading = ref(false)

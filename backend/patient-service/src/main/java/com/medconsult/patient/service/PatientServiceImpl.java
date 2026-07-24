@@ -135,6 +135,7 @@ public class PatientServiceImpl implements PatientService {
                 p.getBirthDate(),
                 MaskType.ID_NO.mask(p.getIdNo()),
                 MaskType.PHONE.mask(p.getPhone()),
+                p.getAddress(),
                 fromJsonArray(p.getAllergies()),
                 fromJsonArray(p.getPastMedicalHistory()),
                 fromJsonArray(p.getFamilyHistory()),
@@ -195,6 +196,12 @@ public class PatientServiceImpl implements PatientService {
         enforcePatientOwnership(p);
 
         // 部分字段更新（仅更新非 null 字段，避免覆盖未传字段）
+        if (req.getGender() != null) {
+            p.setGender(req.getGender().isBlank() ? "UNKNOWN" : req.getGender());
+        }
+        if (req.getBirthDate() != null) {
+            p.setBirthDate(req.getBirthDate());
+        }
         if (req.getPhone() != null) {
             // 唯一性校验：若 phone 变更且与现状不同，校验是否已被其他档案占用
             String newPhone = req.getPhone().isBlank() ? null : req.getPhone();

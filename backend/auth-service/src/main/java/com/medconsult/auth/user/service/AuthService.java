@@ -38,6 +38,15 @@ public interface AuthService {
     void changePassword(Long userId, AuthDTO.ChangePasswordRequest req);
 
     /**
+     * 修改当前登录用户手机号。
+     *
+     * @param userId 当前登录用户 ID
+     * @param req    新手机号
+     * @return 更新后的当前用户信息
+     */
+    AuthDTO.MeResponse updatePhone(Long userId, AuthDTO.UpdatePhoneRequest req);
+
+    /**
      * 绑定患者档案到当前登录用户（补建档场景）。
      *
      * <p>用于历史脏账号（sys_user.patient_id 为 NULL）补全患者档案关联。

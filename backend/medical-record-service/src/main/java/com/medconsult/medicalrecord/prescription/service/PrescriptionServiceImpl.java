@@ -16,6 +16,7 @@ import com.medconsult.common.redis.DistributedLock;
 import com.medconsult.common.redis.RedisKey;
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
+import com.medconsult.medicalrecord.notification.NotificationOutboxProducer;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
 import com.medconsult.medicalrecord.prescription.entity.PrescriptionItem;
@@ -66,6 +67,7 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     /** patient_no / doctor_no / department_no → 真实主键 Feign 反查（替代正哈希） */
     private final PatientFeignClient patientFeignClient;
     private final DoctorFeignClient doctorFeignClient;
+    private final NotificationOutboxProducer notificationOutboxProducer;
 
     /** 审方/缴费/完成/退方锁租约：5s（只改主表状态，单次 DB 操作） */
     private static final Duration LOCK_LEASE = Duration.ofSeconds(5);
@@ -206,6 +208,13 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         p.setStatus("PENDING_REVIEW");
         prescriptionMapper.updateById(p);
         log.info("处方提交审方: prescriptionNo={} DRAFT → PENDING_REVIEW", prescriptionNo);
+        notificationOutboxProducer.enqueueRole(
+                "PHARMACY_ADMIN",
+                "MEDICATION",
+                "待审处方",
+                "处方 " + p.getPrescriptionNo() + " 已提交审方，请及时处理。",
+                "PRESCRIPTION",
+                p.getPrescriptionNo());
         return new PrescriptionDTO.SubmitResponse(p.getPrescriptionNo(), p.getStatus());
     }
 

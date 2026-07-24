@@ -3,6 +3,14 @@ import {
   getNoticeListApi, getUnreadCountApi, markReadApi, markAllReadApi
 } from '@/api/notice'
 
+const normalizeNotice = (notice) => ({
+  ...notice,
+  id: notice.id ?? notice.notificationId,
+  isRead: notice.isRead ?? notice.read ?? false
+})
+
+const sameNoticeId = (left, right) => String(left) === String(right)
+
 export const useNoticeStore = defineStore('notice', {
   state: () => ({
     noticeList: [],
@@ -15,11 +23,7 @@ export const useNoticeStore = defineStore('notice', {
       const res = await getNoticeListApi(params)
       // 后端→前端字段映射：notificationId→id, read→isRead（content/createdAt 后端已返回，透传）
       // mock 仍用 id/isRead，?? 兜底保证两种数据源都兼容
-      const records = (res.data.records || []).map(n => ({
-        ...n,
-        id: n.id ?? n.notificationId,
-        isRead: n.isRead ?? n.read ?? false
-      }))
+      const records = (res.data.records || []).map(normalizeNotice)
       this.noticeList = records
       this.loaded = true
       // 返回映射后的数据，供 view 直接使用
@@ -35,7 +39,7 @@ export const useNoticeStore = defineStore('notice', {
 
     async markRead(id) {
       const res = await markReadApi(id)
-      const notice = this.noticeList.find(n => n.id === Number(id))
+      const notice = this.noticeList.find(n => sameNoticeId(n.id, id))
       if (notice && !notice.isRead) {
         notice.isRead = true
         this.unreadCount = Math.max(0, this.unreadCount - 1)
@@ -50,6 +54,40 @@ export const useNoticeStore = defineStore('notice', {
       this.noticeList.forEach(n => { n.isRead = true })
       this.unreadCount = 0
       return res
+    },
+
+    upsertRealtimeNotice(rawNotice) {
+      if (!rawNotice) return
+      const notice = normalizeNotice(rawNotice)
+      if (!notice.id) return
+
+      const index = this.noticeList.findIndex(item => sameNoticeId(item.id, notice.id))
+      if (index === -1) {
+        this.noticeList.unshift(notice)
+        if (!notice.isRead) {
+          this.unreadCount += 1
+        }
+      } else {
+        const previous = this.noticeList[index]
+        const wasRead = previous.isRead
+        const next = { ...previous, ...notice }
+        this.noticeList.splice(index, 1, next)
+        if (wasRead && !next.isRead) {
+          this.unreadCount += 1
+        } else if (!wasRead && next.isRead) {
+          this.unreadCount = Math.max(0, this.unreadCount - 1)
+        }
+      }
+      this.loaded = true
+    },
+
+    applyRealtimeRead(id) {
+      if (!id) return
+      const notice = this.noticeList.find(item => sameNoticeId(item.id, id))
+      if (notice && !notice.isRead) {
+        notice.isRead = true
+        this.unreadCount = Math.max(0, this.unreadCount - 1)
+      }
     }
   }
 })

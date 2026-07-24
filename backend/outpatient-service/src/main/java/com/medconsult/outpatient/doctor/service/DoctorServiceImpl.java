@@ -17,12 +17,15 @@ import com.medconsult.outpatient.department.mapper.DepartmentMapper;
 import com.medconsult.outpatient.doctor.dto.DoctorDTO;
 import com.medconsult.outpatient.doctor.entity.Doctor;
 import com.medconsult.outpatient.doctor.mapper.DoctorMapper;
+import com.medconsult.outpatient.schedule.entity.DoctorSchedule;
+import com.medconsult.outpatient.schedule.mapper.DoctorScheduleMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -53,6 +56,7 @@ public class DoctorServiceImpl implements DoctorService {
     private final DoctorMapper doctorMapper;
     /** 同 schema 内直接用 DepartmentMapper 做 department_no → id 解析与批量回填（非 SQL JOIN） */
     private final DepartmentMapper departmentMapper;
+    private final DoctorScheduleMapper doctorScheduleMapper;
     private final ObjectMapper objectMapper;
 
     // ===== §2.3.2 分页查询 =====
@@ -84,20 +88,44 @@ public class DoctorServiceImpl implements DoctorService {
             }
         }
         Map<Long, Department> deptMap = loadDepartments(deptIds);
+        Map<Long, BigDecimal> feeMap = loadRegistrationFees(result.getRecords().stream()
+                .map(Doctor::getId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList());
 
         List<DoctorDTO.ListItem> items = new ArrayList<>();
         for (Doctor d : result.getRecords()) {
             Department dept = deptMap.get(d.getDepartmentId());
             items.add(new DoctorDTO.ListItem(
                     d.getDoctorNo(),
+                    d.getId(),
                     d.getName(),
                     dept != null ? dept.getDepartmentNo() : null,
                     dept != null ? dept.getName() : null,
                     d.getTitle(),
                     fromJsonArray(d.getSpecialties()),
-                    d.getEnabled() != null && d.getEnabled() == 1));
+                    d.getEnabled() != null && d.getEnabled() == 1,
+                    feeMap.get(d.getId())));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
+    }
+
+    @Override
+    public DoctorDTO.Detail detail(String doctorId) {
+        Doctor d = requireByNo(doctorId);
+        Department dept = d.getDepartmentId() != null ? departmentMapper.selectById(d.getDepartmentId()) : null;
+        return new DoctorDTO.Detail(
+                d.getDoctorNo(),
+                d.getId(),
+                d.getName(),
+                dept != null ? dept.getDepartmentNo() : null,
+                dept != null ? dept.getName() : null,
+                d.getTitle(),
+                fromJsonArray(d.getSpecialties()),
+                d.getIntroduction(),
+                d.getEnabled() != null && d.getEnabled() == 1,
+                latestRegistrationFee(d.getId()));
     }
 
     // ===== 内部校验 =====
@@ -259,6 +287,30 @@ public class DoctorServiceImpl implements DoctorService {
     }
 
     /** JSON 数组串 → List<String>。null/空/解析失败返回空列表 */
+    private Map<Long, BigDecimal> loadRegistrationFees(List<Long> doctorIds) {
+        if (doctorIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<DoctorSchedule> schedules = doctorScheduleMapper.selectList(new QueryWrapper<DoctorSchedule>()
+                .in("doctor_id", doctorIds)
+                .orderByDesc("schedule_date")
+                .orderByAsc("period"));
+        Map<Long, BigDecimal> feeMap = new HashMap<>();
+        for (DoctorSchedule s : schedules) {
+            if (s.getDoctorId() != null && s.getRegistrationFee() != null) {
+                feeMap.putIfAbsent(s.getDoctorId(), s.getRegistrationFee());
+            }
+        }
+        return feeMap;
+    }
+
+    private BigDecimal latestRegistrationFee(Long doctorId) {
+        if (doctorId == null) {
+            return null;
+        }
+        return loadRegistrationFees(List.of(doctorId)).get(doctorId);
+    }
+
     private List<String> fromJsonArray(String json) {
         if (json == null || json.isBlank()) {
             return Collections.emptyList();

@@ -93,6 +93,16 @@ public class AuthDTO {
     }
 
     @Data
+    @Schema(description = "Update current user phone request")
+    public static class UpdatePhoneRequest {
+        @Schema(description = "Phone number")
+        @NotBlank(message = "手机号不能为空")
+        @Pattern(regexp = "^1[3-9]\\d{9}$",
+                message = "手机号格式非法（须 11 位 1[3-9] 开头）")
+        private String phone;
+    }
+
+    @Data
     @Schema(description = "登录请求")
     public static class LoginRequest {
         @Schema(description = "账号")
@@ -235,3 +245,4 @@ public class AuthDTO {
             @Schema(description = "创建时间") java.time.LocalDateTime createdAt
     ) {}
 }
+

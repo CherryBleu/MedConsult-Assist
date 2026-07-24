@@ -1,6 +1,5 @@
 package com.medconsult.notification.consumer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.mq.IdempotentConsumer;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.common.mq.audit.AuditLogEvent;
@@ -34,14 +33,11 @@ public class AuditLogConsumer {
     private static final Duration IDEMPOTENT_WINDOW = Duration.ofHours(72);
 
     private final IdempotentConsumer idempotentConsumer;
-    private final ObjectMapper objectMapper;
     private final AuditLogService auditLogService;
 
-    @RabbitListener(queues = MqConstants.QUEUE_AUDIT_LOG)
-    public void onAuditLog(String payload,
-                           @Header(name = "messageNo", required = false) String messageNo) throws Exception {
-        AuditLogEvent event = objectMapper.readValue(payload, AuditLogEvent.class);
-
+    @RabbitListener(queues = "${medconsult.notification.mq.audit-log-queue:" + MqConstants.QUEUE_AUDIT_LOG + "}")
+    public void onAuditLog(AuditLogEvent event,
+                           @Header(name = "messageNo", required = false) String messageNo) {
         // 幂等键：优先消息头，回退业务字段拼接
         String idemKey = (messageNo != null && !messageNo.isBlank())
                 ? messageNo

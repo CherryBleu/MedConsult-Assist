@@ -158,6 +158,14 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.data.phoneMasked").value("139****0999"))
                 .andExpect(jsonPath("$.data.userId").exists());
 
+        mvc.perform(patch("/api/v1/auth/me/phone")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType("application/json")
+                        .content("""
+                                {"phone":"13900000998"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.phoneMasked").value("139****0998"));
+
         // 7. 刷新 token
         String refreshBody = "{\"refreshToken\":\"" + refreshToken + "\"}";
         MvcResult refreshResult = mvc.perform(post("/api/v1/auth/refresh").contentType("application/json").content(refreshBody))

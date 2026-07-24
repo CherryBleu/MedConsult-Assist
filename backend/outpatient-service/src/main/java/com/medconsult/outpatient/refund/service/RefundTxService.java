@@ -6,6 +6,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
+import com.medconsult.outpatient.notification.NotificationOutboxProducer;
 import com.medconsult.outpatient.refund.dto.RefundDTO;
 import com.medconsult.outpatient.refund.entity.RefundOrder;
 import com.medconsult.outpatient.refund.mapper.RefundOrderMapper;
@@ -34,6 +35,7 @@ public class RefundTxService {
 
     private final AppointmentMapper appointmentMapper;
     private final RefundOrderMapper refundOrderMapper;
+    private final NotificationOutboxProducer notificationOutboxProducer;
 
     @Transactional
     public RefundDTO.RefundResponse refundInTx(String appointmentNo, RefundDTO.RefundRequest req) {
@@ -67,6 +69,13 @@ public class RefundTxService {
 
         a.setPaymentStatus("REFUNDED");
         appointmentMapper.updateById(a);
+        notificationOutboxProducer.enqueuePatient(
+                a.getPatientId(),
+                "APPOINTMENT",
+                "退款成功",
+                "您的预约 " + a.getAppointmentNo() + " 已退款成功。",
+                "REFUND",
+                order.getRefundNo());
         log.info("挂号退款成功: appointmentNo={} refundNo={} amount={}",
                 a.getAppointmentNo(), order.getRefundNo(), order.getRefundAmount());
         return toResponse(order, a.getPaymentStatus());

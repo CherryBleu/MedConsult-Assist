@@ -8,6 +8,7 @@ import com.medconsult.common.core.Result;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.dto.DispenseDTO;
 import com.medconsult.common.mq.audit.AuditLog;
+import com.medconsult.medicalrecord.notification.NotificationOutboxProducer;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
 import com.medconsult.medicalrecord.prescription.entity.PrescriptionItem;
@@ -44,6 +45,7 @@ public class PrescriptionTxService {
     private final PrescriptionMapper prescriptionMapper;
     private final PrescriptionItemMapper itemMapper;
     private final DrugFeignClient drugFeignClient;
+    private final NotificationOutboxProducer notificationOutboxProducer;
 
     @Transactional
     @AuditLog(
@@ -151,6 +153,20 @@ public class PrescriptionTxService {
 
         log.info("处方审方: prescriptionNo={} {} → {} pharmacist={}",
                 fresh.getPrescriptionNo(), "PENDING_REVIEW", newStatus, pharmacistId);
+        notificationOutboxProducer.enqueuePatient(
+                fresh.getPatientId(),
+                "MEDICATION",
+                "处方审方结果",
+                "您的处方 " + fresh.getPrescriptionNo() + " 审方结果为 " + newStatus + "。",
+                "PRESCRIPTION",
+                fresh.getPrescriptionNo());
+        notificationOutboxProducer.enqueueDoctor(
+                fresh.getDoctorId(),
+                "MEDICATION",
+                "处方审方结果",
+                "处方 " + fresh.getPrescriptionNo() + " 审方结果为 " + newStatus + "。",
+                "PRESCRIPTION",
+                fresh.getPrescriptionNo());
         return new PrescriptionDTO.ReviewResponse(fresh.getPrescriptionNo(), newStatus, fresh.getReviewedAt());
     }
 
@@ -278,6 +294,13 @@ public class PrescriptionTxService {
 
             log.info("处方调剂完成: prescriptionNo={} → DISPENSED items={}",
                     fresh.getPrescriptionNo(), dispenseItems.size());
+            notificationOutboxProducer.enqueuePatient(
+                    fresh.getPatientId(),
+                    "MEDICATION",
+                    "处方已调剂",
+                    "您的处方 " + fresh.getPrescriptionNo() + " 已完成调剂。",
+                    "PRESCRIPTION",
+                    fresh.getPrescriptionNo());
             return new PrescriptionDTO.DispenseResponse(
                     fresh.getPrescriptionNo(), fresh.getStatus(), LocalDateTime.now(), dispenseItems);
         } catch (RuntimeException e) {
@@ -321,6 +344,13 @@ public class PrescriptionTxService {
         prescriptionMapper.updateById(fresh);
         log.info("处方缴费: prescriptionNo={} paymentNo={} paidAmount={}",
                 fresh.getPrescriptionNo(), req.getPaymentNo(), req.getPaidAmount());
+        notificationOutboxProducer.enqueueRole(
+                "PHARMACY_ADMIN",
+                "MEDICATION",
+                "处方已缴费",
+                "处方 " + fresh.getPrescriptionNo() + " 已缴费，请及时调剂。",
+                "PRESCRIPTION",
+                fresh.getPrescriptionNo());
         return new PrescriptionDTO.PayResponse(fresh.getPrescriptionNo(), fresh.getStatus(),
                 fresh.getPaymentStatus(), fresh.getPaidAmount(), fresh.getPaymentNo());
     }
@@ -347,6 +377,13 @@ public class PrescriptionTxService {
         fresh.setStatus("COMPLETED");
         prescriptionMapper.updateById(fresh);
         log.info("处方完成: prescriptionNo={}", fresh.getPrescriptionNo());
+        notificationOutboxProducer.enqueuePatient(
+                fresh.getPatientId(),
+                "MEDICATION",
+                "处方已完成",
+                "您的处方 " + fresh.getPrescriptionNo() + " 已完成发药。",
+                "PRESCRIPTION",
+                fresh.getPrescriptionNo());
         return new PrescriptionDTO.CompleteResponse(fresh.getPrescriptionNo(), fresh.getStatus());
     }
 

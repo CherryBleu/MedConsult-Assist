@@ -51,6 +51,7 @@ import static org.mockito.Mockito.*;
 class NotificationServiceImplSecurityTest {
 
     private NotificationMapper notificationMapper;
+    private NotificationRealtimeService realtimeService;
     private NotificationServiceImpl service;
 
     /** 测试用接收人业务编号 */
@@ -63,9 +64,10 @@ class NotificationServiceImplSecurityTest {
         RequestContextHolder.setRequestAttributes(
                 new ServletRequestAttributes(new MockHttpServletRequest()));
         notificationMapper = mock(NotificationMapper.class);
+        realtimeService = mock(NotificationRealtimeService.class);
         // NotificationServiceImpl 用 @RequiredArgsConstructor 注入 NotificationMapper；
         // 构造器由 Lombok 生成，可直接 new 传入 mock（不启 Spring 容器）。
-        service = new NotificationServiceImpl(notificationMapper);
+        service = new NotificationServiceImpl(notificationMapper, realtimeService);
     }
 
     @AfterEach
@@ -188,6 +190,24 @@ class NotificationServiceImplSecurityTest {
         // 已标记 → 写库一次
         verify(notificationMapper, times(1)).updateById(argThat(n ->
                 Integer.valueOf(1).equals(((Notification) n).getReadStatus())));
+    }
+
+    @Test
+    void list_patientIdMatchesReceiver_returnsOwnNotification() {
+        setUser(new JwtPayload(
+                JwtPayload.SubjectType.USER, 100L, null, "患者A",
+                List.of("PATIENT"), "PATIENT", 12345L, null, null, null,
+                List.of(), "jti-patient", 0L));
+
+        Notification own = notification("12345", "N010", "本人患者通知", 0);
+        stubSelectPageReturning(own);
+
+        var result = service.list(1, 10, null, null);
+
+        assertEquals(1, result.total());
+        assertEquals("N010", result.items().get(0).notificationId());
+        String scoped = extractReceiverIdValue(captureWrapper().getValue());
+        assertEquals("12345", scoped);
     }
 
     // ===== markRead: userNo 为空拒绝（旧 token 兼容性兜底）=====

@@ -130,15 +130,31 @@
             </div>
             <div class="archive-value">
               <template v-if="patientInfo.emergencyContact?.name">
-                姓名：{{ patientInfo.emergencyContact.name }}　关系：{{ patientInfo.emergencyContact.relation }}　电话：{{ patientInfo.emergencyContact.phone }}
+                姓名：{{ patientInfo.emergencyContact.name }}　关系：{{ patientInfo.emergencyContact.relation }}　电话：{{ maskPhone(patientInfo.emergencyContact.phone) }}
               </template>
               <span v-else class="empty-text">暂无记录</span>
             </div>
           </div>
         </div>
 
-        <!-- 编辑模式：仅可编辑后端 UpdateRequest 允许且 DetailResponse 返回的字段 -->
+        <!-- 编辑模式：开放后端 UpdateRequest 支持的个人资料和健康档案字段 -->
         <el-form v-else ref="editFormRef" :model="editForm" label-width="100px" class="info-form">
+          <el-form-item label="性别">
+            <el-radio-group v-model="editForm.gender">
+              <el-radio value="MALE">男</el-radio>
+              <el-radio value="FEMALE">女</el-radio>
+              <el-radio value="UNKNOWN">未知</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="出生日期">
+            <el-date-picker
+              v-model="editForm.birthDate"
+              type="date"
+              placeholder="选择出生日期"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
           <el-form-item label="手机号">
             <el-input v-model="editForm.phone" placeholder="如需修改请输入新手机号，留空则保持原号" maxlength="11" />
           </el-form-item>
@@ -160,6 +176,21 @@
               :rows="2"
               placeholder="多个病史请用顿号或逗号分隔"
             />
+          </el-form-item>
+          <el-form-item label="家族病史">
+            <el-input
+              v-model="editForm.familyHistoryText"
+              type="textarea"
+              :rows="2"
+              placeholder="多个家族病史请用顿号或逗号分隔"
+            />
+          </el-form-item>
+          <el-form-item label="紧急联系人">
+            <div class="emergency-contact-grid">
+              <el-input v-model="editForm.emergencyContact.name" placeholder="姓名" />
+              <el-input v-model="editForm.emergencyContact.relation" placeholder="关系" />
+              <el-input v-model="editForm.emergencyContact.phone" placeholder="手机号" maxlength="11" />
+            </div>
           </el-form-item>
         </el-form>
 
@@ -206,6 +237,7 @@ import { Warning, Document, UserFilled, Phone, Lock } from '@element-plus/icons-
 import { getPatientInfoApi, updatePatientInfoApi } from '@/api/patient'
 import { useUserStore } from '@/store/modules/user'
 import { changePasswordApi } from '@/api/system'
+import { maskPhone } from '@/utils/privacy'
 
 const userStore = useUserStore()
 const loading = ref(false)
@@ -255,10 +287,18 @@ const allergyList = computed(() => {
 
 // 编辑表单（仅包含后端 DetailResponse 返回且 UpdateRequest 可更新的字段）
 const editForm = ref({
+  gender: 'UNKNOWN',
+  birthDate: '',
   phone: '',
   address: '',
   allergiesText: '',
-  pastMedicalHistoryText: ''
+  pastMedicalHistoryText: '',
+  familyHistoryText: '',
+  emergencyContact: {
+    name: '',
+    relation: '',
+    phone: ''
+  }
 })
 
 // 补建档表单：只需补充身份证号/性别/出生日期（姓名和手机号从 sys_user 同步）
@@ -300,6 +340,21 @@ const textToList = (text) => {
   return text.split(/[、,，\s]+/).map(s => s.trim()).filter(s => s)
 }
 
+const listToText = (value) => {
+  if (!value) return ''
+  if (Array.isArray(value)) return value.join('、')
+  return value
+}
+
+const normalizedEmergencyContact = () => {
+  const contact = editForm.value.emergencyContact || {}
+  const name = contact.name?.trim() || ''
+  const relation = contact.relation?.trim() || ''
+  const phone = contact.phone?.trim() || ''
+  if (!name && !relation && !phone) return null
+  return { name, relation, phone }
+}
+
 const getPatientInfo = async () => {
   if (!hasPatientId.value) {
     return
@@ -316,11 +371,20 @@ const getPatientInfo = async () => {
 
 // 进入编辑模式：把 List 字段转成文本填入表单
 const startEdit = () => {
+  const emergencyContact = patientInfo.value.emergencyContact || {}
   editForm.value = {
+    gender: patientInfo.value.gender || 'UNKNOWN',
+    birthDate: patientInfo.value.birthDate || '',
     phone: '',
     address: patientInfo.value.address || '',
-    allergiesText: Array.isArray(patientInfo.value.allergies) ? patientInfo.value.allergies.join('、') : (patientInfo.value.allergies || ''),
-    pastMedicalHistoryText: Array.isArray(patientInfo.value.pastMedicalHistory) ? patientInfo.value.pastMedicalHistory.join('、') : (patientInfo.value.pastMedicalHistory || '')
+    allergiesText: listToText(patientInfo.value.allergies),
+    pastMedicalHistoryText: listToText(patientInfo.value.pastMedicalHistory),
+    familyHistoryText: listToText(patientInfo.value.familyHistory),
+    emergencyContact: {
+      name: emergencyContact.name || '',
+      relation: emergencyContact.relation || '',
+      phone: emergencyContact.phone || ''
+    }
   }
   editing.value = true
 }
@@ -334,10 +398,14 @@ const saveEdit = async () => {
   saving.value = true
   try {
     const payload = {
+      gender: editForm.value.gender || 'UNKNOWN',
+      birthDate: editForm.value.birthDate || null,
       phone: editForm.value.phone || null,
       address: editForm.value.address || null,
       allergies: textToList(editForm.value.allergiesText),
-      pastMedicalHistory: textToList(editForm.value.pastMedicalHistoryText)
+      pastMedicalHistory: textToList(editForm.value.pastMedicalHistoryText),
+      familyHistory: textToList(editForm.value.familyHistoryText),
+      emergencyContact: normalizedEmergencyContact()
     }
     await updatePatientInfoApi(patientId, payload)
     ElMessage.success('档案更新成功')
@@ -444,6 +512,12 @@ onMounted(() => {
   font-size: 14px;
   color: var(--text-primary);
 }
+.emergency-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
 .sync-text {
   font-size: 14px;
   color: var(--text-secondary);
@@ -529,5 +603,11 @@ onMounted(() => {
 
 .password-form {
   max-width: 400px;
+}
+
+@media (max-width: 768px) {
+  .emergency-contact-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

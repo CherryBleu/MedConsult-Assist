@@ -128,6 +128,13 @@ class RefundFlowTest {
 
         Long count = jdbc().queryForObject("SELECT COUNT(*) FROM refund_order WHERE appointment_no = ?", Long.class, appointmentNo);
         org.junit.jupiter.api.Assertions.assertEquals(1L, count);
+
+        Long notificationCount = jdbc().queryForObject("""
+                SELECT COUNT(*) FROM local_message
+                WHERE routing_key = 'notification.send'
+                  AND payload_json LIKE '%退款成功%'
+                """, Long.class);
+        org.junit.jupiter.api.Assertions.assertEquals(1L, notificationCount);
     }
 
     @Test

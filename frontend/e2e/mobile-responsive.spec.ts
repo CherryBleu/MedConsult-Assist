@@ -12,17 +12,18 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 test.describe('移动端响应式基础', () => {
-  test('390px 视口下登录入口和表单不横向溢出', async ({ page }) => {
+  test('390px 视口下固定登录入口和表单不横向溢出', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/login')
 
-    await expect(page.getByRole('button', { name: '患者入口' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '工作人员入口' })).toBeVisible()
+    await expect(page).toHaveURL(/\/patient-login/)
+    await expect(page.getByPlaceholder('请输入患者账号')).toBeVisible()
+    await expect(page.getByRole('button', { name: '登 录' })).toBeVisible()
     await expectNoHorizontalOverflow(page)
 
-    await page.getByRole('button', { name: '患者入口' }).click()
-    await expect(page.getByPlaceholder('请输入患者账号')).toBeVisible()
-    await expect(page.getByRole('button', { name: '返回选择' })).toBeVisible()
+    await page.goto('/staff-login')
+    await expect(page.getByPlaceholder('请输入工号/账号')).toBeVisible()
+    await expect(page.getByRole('button', { name: '登 录' })).toBeVisible()
     await expectNoHorizontalOverflow(page)
   })
 

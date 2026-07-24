@@ -1,31 +1,35 @@
 import dayjs from 'dayjs'
 
+const patientInfoData = {
+  id: 1001,
+  patientNo: 'P202607060001',
+  name: '测试患者',
+  gender: 'MALE',
+  birthDate: '1990-05-15',
+  idType: '身份证',
+  idNo: '4201**********1234',
+  phone: '13800138000',
+  address: '湖北省武汉市洪山区XX街道XX小区',
+  status: 'ACTIVE',
+  allergies: ['青霉素过敏', '海鲜过敏'],
+  pastMedicalHistory: ['急性支气管炎（2026年）', '腰肌劳损（2026年）'],
+  familyHistory: ['父亲高血压', '母亲糖尿病'],
+  emergencyContact: {
+    name: '张三',
+    relation: '配偶',
+    phone: '13900139000'
+  },
+  createdAt: '2026-07-06 10:00:00'
+}
+
+const clone = (value) => JSON.parse(JSON.stringify(value))
+
 // 患者个人信息（对齐 patient 表字段）
 export const mockPatientInfo = () => {
   return {
     code: 0,
     message: 'success',
-    data: {
-      id: 1001,
-      patientNo: 'P202607060001',
-      name: '测试患者',
-      gender: 'MALE',
-      birthDate: '1990-05-15',
-      idType: '身份证',
-      idNo: '4201**********1234',
-      phone: '13800138000',
-      address: '湖北省武汉市洪山区XX街道XX小区',
-      status: 'ACTIVE',
-      allergies: ['青霉素过敏', '海鲜过敏'],
-      pastMedicalHistory: ['急性支气管炎（2026年）', '腰肌劳损（2026年）'],
-      familyHistory: ['父亲高血压', '母亲糖尿病'],
-      emergencyContact: {
-        name: '张三',
-        relation: '配偶',
-        phone: '13900139000'
-      },
-      createdAt: '2026-07-06 10:00:00'
-    }
+    data: clone(patientInfoData)
   }
 }
 
@@ -35,32 +39,28 @@ export const mockHealthArchive = () => {
     code: 0,
     message: 'success',
     data: {
-      allergies: '青霉素过敏、海鲜过敏',
-      pastMedicalHistory: '急性支气管炎（2026年）、腰肌劳损（2026年）',
-      familyHistory: '父亲高血压、母亲糖尿病',
-      emergencyContact: {
-        name: '张三',
-        relation: '配偶',
-        phone: '13900139000'
-      }
+      allergies: patientInfoData.allergies,
+      pastMedicalHistory: patientInfoData.pastMedicalHistory,
+      familyHistory: patientInfoData.familyHistory,
+      emergencyContact: clone(patientInfoData.emergencyContact)
     }
   }
 }
 
 // 更新患者信息
 export const mockUpdatePatientInfo = (data) => {
-  // 同步更新 mockPatientInfo 的数据
-  const mock = mockPatientInfo()
-  if (data.phone) mock.data.phone = data.phone
-  if (data.address !== undefined) mock.data.address = data.address
-  if (data.allergies) mock.data.allergies = data.allergies
-  if (data.pastMedicalHistory) mock.data.pastMedicalHistory = data.pastMedicalHistory
-  if (data.familyHistory) mock.data.familyHistory = data.familyHistory
-  if (data.emergencyContact !== undefined) mock.data.emergencyContact = data.emergencyContact
+  if (data.gender !== undefined) patientInfoData.gender = data.gender
+  if (data.birthDate !== undefined) patientInfoData.birthDate = data.birthDate
+  if (data.phone) patientInfoData.phone = data.phone
+  if (data.address !== undefined) patientInfoData.address = data.address
+  if (data.allergies !== undefined) patientInfoData.allergies = data.allergies
+  if (data.pastMedicalHistory !== undefined) patientInfoData.pastMedicalHistory = data.pastMedicalHistory
+  if (data.familyHistory !== undefined) patientInfoData.familyHistory = data.familyHistory
+  if (data.emergencyContact !== undefined) patientInfoData.emergencyContact = data.emergencyContact
   return {
     code: 0,
     message: '更新成功',
-    data
+    data: clone(patientInfoData)
   }
 }
 
@@ -115,7 +115,9 @@ export const mockPatientList = (params) => {
 }
 
 export const mockPatientDetail = (id) => {
-  const patient = patientListData.find(item => item.id === Number(id)) || patientListData[0]
+  const patient = patientListData.find(item =>
+    item.id === Number(id) || item.patientNo === id || String(item.id) === String(id)
+  ) || patientListData[0]
   return {
     code: 0,
     message: 'success',

@@ -116,6 +116,7 @@ public class PatientDTO {
             @Schema(description = "出生日期") LocalDate birthDate,
             @Schema(description = "脱敏证件号") String idNoMasked,          // 脱敏后证件号
             @Schema(description = "脱敏手机号") String phoneMasked,         // 脱敏后手机号
+            @Schema(description = "地址") String address,
             @Schema(description = "过敏史") List<String> allergies,
             @Schema(description = "既往病史") List<String> pastMedicalHistory,
             @Schema(description = "家族病史") List<String> familyHistory,
@@ -143,6 +144,15 @@ public class PatientDTO {
     @Data
     @Schema(description = "更新患者档案请求")
     public static class UpdateRequest {
+        /** MALE / FEMALE / UNKNOWN（不传不更新，传则校验白名单） */
+        @Schema(description = "性别：MALE / FEMALE / UNKNOWN")
+        @Pattern(regexp = "^$|^(MALE|FEMALE|UNKNOWN)$",
+                message = "性别须为 MALE / FEMALE / UNKNOWN")
+        private String gender;
+        /** 出生日期：必须为过去日期 */
+        @Schema(description = "出生日期")
+        @Past(message = "出生日期必须为过去时间")
+        private LocalDate birthDate;
         /** 手机号：选填，填了校验中国大陆 11 位格式 */
         @Schema(description = "手机号")
         @Pattern(regexp = "^$|^1[3-9]\\d{9}$",

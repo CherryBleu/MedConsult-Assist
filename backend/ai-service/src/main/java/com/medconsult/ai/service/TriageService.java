@@ -77,7 +77,7 @@ public class TriageService {
         DiseaseIntent intent = diseaseSearchService.extractIntent(text);
         List<DiseaseKnowledge> knowledge = diseaseSearchService.search(text, intent, 5);
         RiskAssessment risk = riskRuleEngine.assess(text, null);
-        List<TriageRecommendationDto> recommendations = buildRecommendations(knowledge, risk);
+        List<TriageRecommendationDto> recommendations = buildRecommendations(knowledge, risk, text);
 
         String triageNo = BusinessIds.next("TRIAGE");
         AiTriageResultEntity entity = new AiTriageResultEntity();
@@ -97,32 +97,34 @@ public class TriageService {
         return new TriageResponse(risk.emergencyAdvice(), recommendations);
     }
 
-    private List<TriageRecommendationDto> buildRecommendations(List<DiseaseKnowledge> knowledge, RiskAssessment risk) {
+    private List<TriageRecommendationDto> buildRecommendations(List<DiseaseKnowledge> knowledge,
+                                                               RiskAssessment risk,
+                                                               String triageText) {
         // 查询有启用医生的科室编号集合，过滤掉"无医生可预约"的空科室。
         // 避免推荐全科医学科等只有科室没有医生的空科室，导致用户挂号时无医生可选。
         Set<String> deptNosWithDoctors = departmentNosWithDoctors();
 
         Map<String, TriageRecommendationDto> result = new LinkedHashMap<>();
-        if (risk.emergencyAdvice() && deptNosWithDoctors.contains("DEP_EMERGENCY")) {
+        if (risk.emergencyAdvice() && departmentIsAvailable(deptNosWithDoctors, "DEP_EMERGENCY")) {
             result.put("急诊科", new TriageRecommendationDto("DEP_EMERGENCY", "急诊科", 0.98, 1,
                     "命中高危症状规则，建议优先急诊评估。", List.of()));
         }
         int priority = result.size() + 1;
         for (DiseaseKnowledge item : knowledge) {
-            List<String> departments = metadataList(item.metadata().get("cure_department"));
+            List<String> departments = metadataList(item.metadata() == null ? null : item.metadata().get("cure_department"));
             if (departments.isEmpty()) {
-                departments = List.of("全科医学科");
+                departments = inferDepartments(triageText, item);
             }
             for (String department : departments) {
                 String deptNo = departmentIdOf(department);
                 // 过滤无医生的科室：避免推荐用户挂号时找不到医生的空科室
-                if (!deptNosWithDoctors.contains(deptNo)) {
+                if (!departmentIsAvailable(deptNosWithDoctors, deptNo)) {
                     continue;
                 }
                 result.putIfAbsent(department, new TriageRecommendationDto(
                         deptNo,
                         department,
-                        Math.min(0.95, Math.max(0.55, item.score())),
+                        confidenceOf(item.score(), departments),
                         priority++,
                         "与疾病 JSON 条目“" + item.diseaseName() + "”的症状或描述匹配。",
                         new ArrayList<AvailableScheduleDto>()
@@ -130,12 +132,16 @@ public class TriageService {
             }
         }
         if (result.isEmpty()) {
-            // 所有疾病命中的科室都无医生时，兜底推荐第一个有医生的科室（而非全科医学科）。
-            // 若全部科室都无医生（极端情况），退化为全科医学科保持原行为。
-            String fallbackDeptNo = deptNosWithDoctors.isEmpty() ? "DEP_GENERAL" : deptNosWithDoctors.iterator().next();
+            List<String> inferredDepartments = inferDepartments(triageText, null);
+            String fallbackDeptNo = inferredDepartments.stream()
+                    .map(TriageService::departmentIdOf)
+                    .filter(deptNo -> departmentIsAvailable(deptNosWithDoctors, deptNo))
+                    .findFirst()
+                    .orElseGet(() -> fallbackDepartmentNo(deptNosWithDoctors));
             String fallbackDeptName = departmentNameOf(fallbackDeptNo);
-            result.put(fallbackDeptName, new TriageRecommendationDto(fallbackDeptNo, fallbackDeptName, 0.5, 1,
-                    "症状依据不足，建议先由" + fallbackDeptName + "进行初步评估。", List.of()));
+            double confidence = "DEP_GENERAL".equals(fallbackDeptNo) ? 0.6 : 0.72;
+            result.put(fallbackDeptName, new TriageRecommendationDto(fallbackDeptNo, fallbackDeptName, confidence, 1,
+                    "已根据症状关键词优先匹配到" + fallbackDeptName + "，建议由对应专科先评估。", List.of()));
         }
         return result.values().stream().limit(3).toList();
     }
@@ -177,6 +183,49 @@ public class TriageService {
         return value == null || value.toString().isBlank() ? List.of() : List.of(value.toString());
     }
 
+    private static List<String> inferDepartments(String triageText, DiseaseKnowledge knowledge) {
+        String text = joinText(
+                triageText,
+                knowledge == null ? "" : knowledge.diseaseName(),
+                knowledge == null ? "" : knowledge.desc(),
+                knowledge == null ? "" : knowledge.chunkText(),
+                knowledge == null || knowledge.symptoms() == null ? "" : String.join(" ", knowledge.symptoms())
+        );
+        List<String> departments = new ArrayList<>();
+        if (containsAny(text, "急诊", "胸痛", "胸闷", "大汗", "冷汗", "呼吸困难", "喘不上气", "昏厥", "意识")) {
+            departments.add("急诊科");
+        }
+        if (containsAny(text, "心", "胸痛", "胸闷", "心悸", "心慌", "高血压", "冠心病", "心律失常")) {
+            departments.add("心内科");
+        }
+        if (containsAny(text, "咳", "痰", "发热", "发烧", "喘", "呼吸", "肺", "咽痛", "鼻塞", "流涕")) {
+            departments.add("呼吸科");
+        }
+        if (containsAny(text, "小孩", "孩子", "儿童", "宝宝", "婴幼儿", "儿科")) {
+            departments.add("儿科");
+        }
+        return departments.stream().distinct().toList();
+    }
+
+    private static boolean departmentIsAvailable(Set<String> deptNosWithDoctors, String departmentNo) {
+        return deptNosWithDoctors.isEmpty() || deptNosWithDoctors.contains(departmentNo);
+    }
+
+    private static double confidenceOf(double score, List<String> departments) {
+        double minimum = departments.size() == 1 ? 0.72 : 0.65;
+        return Math.min(0.95, Math.max(minimum, score));
+    }
+
+    private static String fallbackDepartmentNo(Set<String> deptNosWithDoctors) {
+        if (deptNosWithDoctors.isEmpty()) {
+            return "DEP_GENERAL";
+        }
+        return deptNosWithDoctors.stream()
+                .filter(deptNo -> !"DEP_GENERAL".equals(deptNo))
+                .findFirst()
+                .orElse("DEP_GENERAL");
+    }
+
     private static String departmentIdOf(String department) {
         if (department.contains("心")) {
             return "DEP_CARDIOLOGY";
@@ -191,6 +240,25 @@ public class TriageService {
             return "DEP_EMERGENCY";
         }
         return "DEP_GENERAL";
+    }
+
+    private static boolean containsAny(String text, String... terms) {
+        for (String term : terms) {
+            if (text.contains(term)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String joinText(String... values) {
+        List<String> parts = new ArrayList<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                parts.add(value);
+            }
+        }
+        return String.join(" ", parts);
     }
 
     /** department_no → 中文名（兜底场景用）。与 schema.sql 种子科室名对齐。 */

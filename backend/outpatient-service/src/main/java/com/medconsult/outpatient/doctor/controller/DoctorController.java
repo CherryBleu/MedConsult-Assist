@@ -45,6 +45,13 @@ public class DoctorController {
         return Result.ok(doctorService.list(page, pageSize, departmentId, enabled));
     }
 
+    @GetMapping("/{doctorId}")
+    @Operation(summary = "查询医生详情")
+    public Result<DoctorDTO.Detail> detail(
+            @Parameter(description = "医生编号或主键 ID", required = true) @PathVariable String doctorId) {
+        return Result.ok(doctorService.detail(doctorId));
+    }
+
     /** 新增医生（仅 HOSPITAL_ADMIN；doctor_no 后端自动生成） */
     @PostMapping
     @Permission(roles = {"HOSPITAL_ADMIN"})

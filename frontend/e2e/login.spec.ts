@@ -27,7 +27,8 @@ test.describe('登录流程', () => {
   test('患者账号不能从工作人员入口登录', async ({ page }) => {
     await loginViaUI(page, 'staff', 'patient')
 
-    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 })
-    await expect(page.getByText('该账号不是工作人员账号，请从患者入口登录').first()).toBeVisible({ timeout: 15_000 })
+    await expect(page).toHaveURL(/\/staff-login/, { timeout: 15_000 })
+    await expect(page.getByPlaceholder('请输入工号/账号')).toHaveValue('patient')
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('hospital_token'))).toBeNull()
   })
 })

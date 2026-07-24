@@ -112,6 +112,14 @@ class OutpatientFlowTest {
                 .andExpect(jsonPath("$.data.items[0].specialties[0]").value("高血压"))
                 .andExpect(jsonPath("$.data.items[0].specialties[1]").value("心律失常"))
                 .andExpect(jsonPath("$.data.items[0].enabled").value(true));
+
+        mvc.perform(get("/api/v1/doctors/" + doctorId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.doctorId").value(DOCTOR_NO))
+                .andExpect(jsonPath("$.data.departmentName").value("测试科"))
+                .andExpect(jsonPath("$.data.title").value("主任医师"))
+                .andExpect(jsonPath("$.data.introduction").value("测试简介"));
     }
 
     @Test
@@ -435,6 +443,26 @@ class OutpatientFlowTest {
         }
         assertEquals(java.util.List.of(
                 "CREATE", "PAYMENT", "CHECK_IN", "STATUS_CHANGE", "STATUS_CHANGE", "CREATE", "CANCEL"), actions);
+
+        java.util.List<java.util.Map<String, Object>> notificationRows = jdbc.queryForList("""
+                SELECT message_no, exchange, routing_key, payload_json, status, retry_count
+                FROM local_message
+                WHERE routing_key = 'notification.send'
+                  AND message_no LIKE 'notif:%'
+                ORDER BY id
+                """);
+        assertEquals(7, notificationRows.size());
+        for (java.util.Map<String, Object> row : notificationRows) {
+            assertEquals("medconsult.notification", row.get("exchange"));
+            assertEquals("notification.send", row.get("routing_key"));
+            assertEquals("PENDING", row.get("status"));
+            assertEquals(0, ((Number) row.get("retry_count")).intValue());
+
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            assertEquals("PATIENT", payload.get("receiverRole").asText());
+            assertEquals("APPOINTMENT", payload.get("type").asText());
+            assertTrue(payload.get("relatedType").asText().equals("APPOINTMENT"));
+        }
     }
 
     private String createSchedule(int quota) throws Exception {

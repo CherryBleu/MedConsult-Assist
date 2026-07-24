@@ -33,7 +33,7 @@
                 <el-table-column prop="specialties" label="擅长" min-width="180" show-overflow-tooltip />
                 <el-table-column prop="phone" label="联系电话" width="130" />
                 <el-table-column label="挂号费" width="100">
-                  <template #default="{ row }">¥{{ row.registrationFee }}</template>
+                  <template #default="{ row }">¥{{ formatFee(row.registrationFee) }}</template>
                 </el-table-column>
                 <el-table-column label="状态" width="90">
                   <template #default="{ row }">
@@ -86,7 +86,7 @@
                 </div>
                 <div>
                   <dt>挂号费</dt>
-                  <dd>¥{{ row.registrationFee || 0 }}</dd>
+                  <dd>¥{{ formatFee(row.registrationFee) }}</dd>
                 </div>
               </dl>
 
@@ -141,15 +141,6 @@
         <el-form-item label="擅长领域">
           <el-input v-model="form.specialties" type="textarea" :rows="2" placeholder="请输入擅长领域" />
         </el-form-item>
-        <el-form-item label="联系电话" prop="phone">
-          <el-input
-            v-model="form.phone"
-            placeholder="请输入11位手机号"
-            maxlength="11"
-            inputmode="numeric"
-            @input="form.phone = normalizePhoneInput($event)"
-          />
-        </el-form-item>
         <el-form-item label="挂号费">
           <el-input-number v-model="form.registrationFee" :min="0" :precision="0" />
         </el-form-item>
@@ -194,6 +185,11 @@ const deptList = ref([])
 const currentId = ref(null)
 const formRef = ref(null)
 
+const formatFee = (value) => {
+  if (value === null || value === undefined || value === '') return '0'
+  return value
+}
+
 const form = reactive({
   doctorNo: '',
   name: '',
@@ -210,17 +206,11 @@ const form = reactive({
 const rules = {
   doctorNo: [{ required: true, message: '请输入工号', trigger: 'blur' }],
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的11位手机号', trigger: 'blur' }
-  ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/, message: '密码须8-64位且至少含字母和数字', trigger: 'blur' }
   ]
 }
-
-const normalizePhoneInput = (value) => String(value || '').replace(/\D/g, '').slice(0, 11)
 
 const getDoctorList = async () => {
   loading.value = true
@@ -256,7 +246,7 @@ const handleEdit = (row) => {
   currentId.value = row.id
   Object.assign(form, {
     doctorNo: row.doctorNo, name: row.name, gender: row.gender, title: row.title,
-    departmentId: row.departmentId, specialties: row.specialties, phone: row.phone, 
+    departmentId: row.departmentId, specialties: row.specialties, phone: '',
     password: '', registrationFee: row.registrationFee, status: row.status
   })
   dialogVisible.value = true

@@ -4,15 +4,17 @@ import { mockPatientInfo, mockHealthArchive, mockUpdatePatientInfo, mockPatientL
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 // 后端 DetailResponse 字段 → 前端期望字段映射
-// 后端: patientId(patient_no)/name/gender/birthDate/idNoMasked/phoneMasked/allergies/pastMedicalHistory/status
+// 后端: patientId(patient_no)/name/gender/birthDate/idNoMasked/phoneMasked/address/allergies/pastMedicalHistory/status
 // 前端 UserInfo 期望: patientNo/name/gender/birthDate/idNo/phone/idType/address
 const mapPatientDetail = (p) => ({
   patientNo: p.patientId ?? p.patientNo,
   patientId: p.patientId,
   name: p.name,
   gender: p.gender,
+  age: p.age,
   birthDate: p.birthDate,
   idNo: p.idNoMasked ?? p.idNo,
+  idCard: p.idNoMasked ?? p.idCard ?? p.idNo,
   phone: p.phoneMasked ?? p.phone,
   idType: p.idType ?? 'ID_CARD',
   address: p.address ?? '',
@@ -86,14 +88,16 @@ export const getAdminPatientListApi = async (params) => {
 }
 
 // 管理员：患者详情（对齐后端 GET /patients/{patientId}）
-export const getPatientDetailApi = (id) => {
+export const getPatientDetailApi = async (id) => {
   if (USE_MOCK) {
     return Promise.resolve(mockPatientDetail(id))
   }
-  return request({
+  const res = await request({
     url: `/patients/${id}`,
     method: 'get'
   })
+  if (res.data) res.data = mapPatientDetail(res.data)
+  return res
 }
 
 // 管理员：更新患者状态（对齐后端 PATCH /patients/{patientId}/status）

@@ -130,6 +130,53 @@ class TriageServiceTest {
     }
 
     @Test
+    void triageShouldInferSpecializedDepartmentWhenKnowledgeHasNoDepartment() {
+        bindPatientIdentity(78L);
+        DiseaseSearchService diseaseSearchService = mock(DiseaseSearchService.class);
+        DiseaseIntent intent = new DiseaseIntent(List.of(), new MetadataQuery(List.of(), Map.of()));
+        when(diseaseSearchService.extractIntent(anyString())).thenReturn(intent);
+        when(diseaseSearchService.search(anyString(), eq(intent), eq(5))).thenReturn(List.of(
+                knowledge("急性支气管炎", Map.of(), "咳嗽、咳痰、发热")
+        ));
+        RiskRuleEngine riskRuleEngine = mock(RiskRuleEngine.class);
+        when(riskRuleEngine.assess(anyString(), isNull()))
+                .thenReturn(new RiskAssessment("LOW", false, List.of()));
+        TriageService service = triageService(diseaseSearchService, mock(AiTriageResultMapper.class),
+                mock(AiCallLogService.class), mock(DoctorFeignClient.class),
+                redisTemplate("[\"DEP_RESPIRATORY\",\"DEP_GENERAL\"]"), riskRuleEngine);
+
+        TriageResponse response = service.triage(request(List.of("咳嗽", "咳痰", "发热"), "三天"));
+
+        assertEquals("DEP_RESPIRATORY", response.recommendations().getFirst().departmentId());
+        assertEquals("呼吸科", response.recommendations().getFirst().departmentName());
+        assertEquals(0.82, response.recommendations().getFirst().confidence());
+    }
+
+    @Test
+    void triageShouldKeepKnowledgeDepartmentWhenDoctorLookupIsUnavailable() {
+        bindPatientIdentity(79L);
+        DiseaseSearchService diseaseSearchService = mock(DiseaseSearchService.class);
+        DiseaseIntent intent = new DiseaseIntent(List.of(), new MetadataQuery(List.of(), Map.of()));
+        when(diseaseSearchService.extractIntent(anyString())).thenReturn(intent);
+        when(diseaseSearchService.search(anyString(), eq(intent), eq(5))).thenReturn(List.of(
+                knowledge("肺炎", Map.of("cure_department", List.of("呼吸内科")))
+        ));
+        RiskRuleEngine riskRuleEngine = mock(RiskRuleEngine.class);
+        when(riskRuleEngine.assess(anyString(), isNull()))
+                .thenReturn(new RiskAssessment("LOW", false, List.of()));
+        DoctorFeignClient doctorFeignClient = mock(DoctorFeignClient.class);
+        when(doctorFeignClient.departmentNosWithDoctors()).thenReturn(Result.ok(List.of()));
+
+        TriageService service = triageService(diseaseSearchService, mock(AiTriageResultMapper.class),
+                mock(AiCallLogService.class), doctorFeignClient, redisTemplate(null), riskRuleEngine);
+
+        TriageResponse response = service.triage(request(List.of("咳嗽"), "三天"));
+
+        assertEquals("DEP_RESPIRATORY", response.recommendations().getFirst().departmentId());
+        assertEquals("呼吸内科", response.recommendations().getFirst().departmentName());
+    }
+
+    @Test
     void triageShouldFallbackToFirstAvailableDepartmentWhenMatchesAreFilteredOut() {
         bindPatientIdentity(88L);
         DiseaseSearchService diseaseSearchService = mock(DiseaseSearchService.class);
@@ -174,6 +221,10 @@ class TriageServiceTest {
     }
 
     private static DiseaseKnowledge knowledge(String diseaseName, Map<String, Object> metadata) {
+        return knowledge(diseaseName, metadata, "疾病名称：" + diseaseName);
+    }
+
+    private static DiseaseKnowledge knowledge(String diseaseName, Map<String, Object> metadata, String chunkText) {
         return new DiseaseKnowledge(
                 "vector-" + diseaseName,
                 "DISEASE_JSON:" + diseaseName,
@@ -181,8 +232,8 @@ class TriageServiceTest {
                 diseaseName + "描述",
                 List.of("咳嗽"),
                 metadata,
-                "cure_department",
-                "疾病名称：" + diseaseName,
+                metadata.containsKey("cure_department") ? "cure_department" : "symptom",
+                chunkText,
                 0.82,
                 MatchSource.MONGODB_NAME_EXACT
         );

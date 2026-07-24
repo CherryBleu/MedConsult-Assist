@@ -22,6 +22,11 @@ public interface DoctorService {
     PageResult<DoctorDTO.ListItem> list(int page, int pageSize, String departmentId, Boolean enabled);
 
     /**
+     * 查询医生详情，支持 doctor_no，也兼容登录态里传入的数字主键 ID。
+     */
+    DoctorDTO.Detail detail(String doctorId);
+
+    /**
      * 按医生编号查询，未找到抛 NOT_FOUND。
      * <p>供 ScheduleService 创建排班时校验医生存在与启用（需求 §4.3.1 规则 2）。
      */

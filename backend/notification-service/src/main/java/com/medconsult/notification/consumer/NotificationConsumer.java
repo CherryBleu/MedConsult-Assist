@@ -1,6 +1,5 @@
 package com.medconsult.notification.consumer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.mq.IdempotentConsumer;
 import com.medconsult.common.mq.MqConstants;
 import com.medconsult.notification.notification.dto.NotificationDTO;
@@ -38,14 +37,11 @@ public class NotificationConsumer {
     private static final Duration IDEMPOTENT_WINDOW = Duration.ofHours(72);
 
     private final IdempotentConsumer idempotentConsumer;
-    private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
 
-    @RabbitListener(queues = MqConstants.QUEUE_NOTIFICATION_SEND)
-    public void onNotification(String payload,
-                               @Header(name = "messageNo", required = false) String messageNo) throws Exception {
-        NotificationEvent event = objectMapper.readValue(payload, NotificationEvent.class);
-
+    @RabbitListener(queues = "${medconsult.notification.mq.notification-queue:" + MqConstants.QUEUE_NOTIFICATION_SEND + "}")
+    public void onNotification(NotificationEvent event,
+                               @Header(name = "messageNo", required = false) String messageNo) {
         // 幂等键：优先消息头，回退业务字段拼接
         String idemKey = (messageNo != null && !messageNo.isBlank())
                 ? messageNo

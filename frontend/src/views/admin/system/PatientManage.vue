@@ -130,26 +130,29 @@
         <el-descriptions title="基本信息" :column="1" border>
           <el-descriptions-item label="患者编号">{{ detailData.patientNo }}</el-descriptions-item>
           <el-descriptions-item label="姓名">{{ detailData.name }}</el-descriptions-item>
-          <el-descriptions-item label="性别">{{ detailData.gender === 'MALE' ? '男' : '女' }}</el-descriptions-item>
-          <el-descriptions-item label="年龄">{{ detailData.age }}岁</el-descriptions-item>
+          <el-descriptions-item label="性别">{{ genderLabel(detailData.gender) }}</el-descriptions-item>
+          <el-descriptions-item label="年龄">{{ detailData.age ?? '-' }}岁</el-descriptions-item>
           <el-descriptions-item label="手机号">{{ detailData.phone }}</el-descriptions-item>
           <el-descriptions-item label="身份证号">{{ detailData.idCard }}</el-descriptions-item>
-          <el-descriptions-item label="出生日期">{{ detailData.birthDate }}</el-descriptions-item>
+          <el-descriptions-item label="出生日期">{{ detailData.birthDate || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="detailData.status === 'ACTIVE' ? 'success' : 'danger'" size="small">
               {{ detailData.status === 'ACTIVE' ? '正常' : '禁用' }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="注册时间" :span="2">{{ detailData.createdAt }}</el-descriptions-item>
-          <el-descriptions-item label="地址" :span="2">{{ detailData.address }}</el-descriptions-item>
+          <el-descriptions-item label="注册时间" :span="2">{{ detailData.createdAt || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="地址" :span="2">{{ detailData.address || '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <el-descriptions title="健康档案" :column="1" border class="mt-20" style="margin-top: 20px">
-          <el-descriptions-item label="过敏史">{{ detailData.allergies }}</el-descriptions-item>
-          <el-descriptions-item label="既往病史">{{ detailData.pastMedicalHistory }}</el-descriptions-item>
-          <el-descriptions-item label="家族病史">{{ detailData.familyHistory }}</el-descriptions-item>
+          <el-descriptions-item label="过敏史">{{ formatList(detailData.allergies) }}</el-descriptions-item>
+          <el-descriptions-item label="既往病史">{{ formatList(detailData.pastMedicalHistory) }}</el-descriptions-item>
+          <el-descriptions-item label="家族病史">{{ formatList(detailData.familyHistory) }}</el-descriptions-item>
           <el-descriptions-item label="紧急联系人">
-            {{ detailData.emergencyContact.name }}（{{ detailData.emergencyContact.relation }}）- {{ detailData.emergencyContact.phone }}
+            <template v-if="detailData.emergencyContact?.name || detailData.emergencyContact?.phone">
+              {{ detailData.emergencyContact.name || '-' }}（{{ detailData.emergencyContact.relation || '-' }}）- {{ maskPhone(detailData.emergencyContact.phone) || '-' }}
+            </template>
+            <span v-else>-</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>
@@ -167,6 +170,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminPatientListApi, getPatientDetailApi, updatePatientStatusApi } from '@/api/patient'
 import PageState from '@/components/common/PageState.vue'
 import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
+import { maskPhone } from '@/utils/privacy'
 
 const loading = ref(false)
 const errorMessage = ref('')
@@ -213,8 +217,18 @@ const handleReset = () => {
 
 const handleView = async (row) => {
   try {
-    const res = await getPatientDetailApi(row.id)
-    detailData.value = res.data
+    const patientId = patientIdentifier(row)
+    if (!patientId) {
+      ElMessage.error('患者编号缺失，无法查看详情')
+      return
+    }
+    const res = await getPatientDetailApi(patientId)
+    detailData.value = {
+      ...row,
+      ...(res.data || {}),
+      age: res.data?.age ?? row.age,
+      createdAt: res.data?.createdAt ?? row.createdAt
+    }
     detailDialogVisible.value = true
   } catch (error) {
     ElMessage.error(error?.message || '患者详情加载失败')
@@ -222,6 +236,11 @@ const handleView = async (row) => {
 }
 
 const handleToggleStatus = (row) => {
+  const patientId = patientIdentifier(row)
+  if (!patientId) {
+    ElMessage.error('患者编号缺失，无法变更状态')
+    return
+  }
   const newStatus = row.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
   const actionText = newStatus === 'ACTIVE' ? '启用' : '禁用'
   ElMessageBox.confirm(`确定要${actionText}患者「${row.name}」吗？`, '提示', {
@@ -229,13 +248,25 @@ const handleToggleStatus = (row) => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
-    await updatePatientStatusApi(row.id, newStatus)
+    await updatePatientStatusApi(patientId, newStatus)
     ElMessage.success(`${actionText}成功`)
     getList()
   }).catch(() => {})
 }
 
-const genderLabel = (gender) => gender === 'MALE' ? '男' : '女'
+const patientIdentifier = (row) => row?.patientNo || row?.patientId || row?.id
+
+const genderLabel = (gender) => {
+  if (gender === 'MALE') return '男'
+  if (gender === 'FEMALE') return '女'
+  return '未知'
+}
+
+const formatList = (value) => {
+  if (!value) return '-'
+  if (Array.isArray(value)) return value.length ? value.join('、') : '-'
+  return value
+}
 
 const patientStatusLabel = (status) => status === 'ACTIVE' ? '正常' : '禁用'
 

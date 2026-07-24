@@ -8,6 +8,7 @@ import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.outpatient.appointment.dto.AppointmentDTO;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
+import com.medconsult.outpatient.notification.NotificationOutboxProducer;
 import com.medconsult.outpatient.schedule.entity.DoctorSchedule;
 import com.medconsult.outpatient.schedule.mapper.DoctorScheduleMapper;
 import com.medconsult.outpatient.schedule.service.ScheduleService;
@@ -41,6 +42,7 @@ public class AppointmentTxService {
     private final AppointmentMapper appointmentMapper;
     private final DoctorScheduleMapper scheduleMapper;
     private final ScheduleService scheduleService;
+    private final NotificationOutboxProducer notificationOutboxProducer;
 
     private static final Set<String> OCCUPIED_APPOINTMENT_STATUS = Set.of("BOOKED", "CHECKED_IN", "IN_PROGRESS");
 
@@ -129,6 +131,20 @@ public class AppointmentTxService {
 
         log.info("预约创建成功: appointmentNo={} scheduleNo={} queueNo={} patientId={}",
                 a.getAppointmentNo(), s.getScheduleNo(), queueNo, patientId);
+        notificationOutboxProducer.enqueuePatient(
+                a.getPatientId(),
+                "APPOINTMENT",
+                "预约已创建",
+                "您已创建预约 " + a.getAppointmentNo() + "，请及时完成支付。",
+                "APPOINTMENT",
+                a.getAppointmentNo());
+        notificationOutboxProducer.enqueueDoctor(
+                a.getDoctorId(),
+                "APPOINTMENT",
+                "新的预约",
+                "患者已创建预约 " + a.getAppointmentNo() + "，等待支付。",
+                "APPOINTMENT",
+                a.getAppointmentNo());
         return new AppointmentDTO.CreateResponse(
                 a.getAppointmentNo(), queueNo, a.getFee(), a.getPaymentStatus(), a.getAppointmentStatus());
     }
@@ -174,6 +190,20 @@ public class AppointmentTxService {
 
         log.info("预约取消成功: appointmentNo={} scheduleNo={} releasedQuota=1",
                 a.getAppointmentNo(), s.getScheduleNo());
+        notificationOutboxProducer.enqueuePatient(
+                a.getPatientId(),
+                "APPOINTMENT",
+                "预约已取消",
+                "您的预约 " + a.getAppointmentNo() + " 已取消。",
+                "APPOINTMENT",
+                a.getAppointmentNo());
+        notificationOutboxProducer.enqueueDoctor(
+                a.getDoctorId(),
+                "APPOINTMENT",
+                "预约已取消",
+                "预约 " + a.getAppointmentNo() + " 已取消。",
+                "APPOINTMENT",
+                a.getAppointmentNo());
         return new AppointmentDTO.CancelResponse(a.getAppointmentNo(), a.getAppointmentStatus(), releasedQuota);
     }
 
@@ -229,6 +259,22 @@ public class AppointmentTxService {
             a.setPaidAmount(req.getPaidAmount());
         }
         appointmentMapper.updateById(a);
+        if ("PAID".equals(req.getPaymentStatus()) && !"PAID".equals(oldPaymentStatus)) {
+            notificationOutboxProducer.enqueuePatient(
+                    a.getPatientId(),
+                    "APPOINTMENT",
+                    "预约支付成功",
+                    "您的预约 " + a.getAppointmentNo() + " 已支付成功。",
+                    "APPOINTMENT",
+                    a.getAppointmentNo());
+            notificationOutboxProducer.enqueueDoctor(
+                    a.getDoctorId(),
+                    "APPOINTMENT",
+                    "预约支付成功",
+                    "预约 " + a.getAppointmentNo() + " 已支付成功。",
+                    "APPOINTMENT",
+                    a.getAppointmentNo());
+        }
         return new AppointmentDTO.PaymentResponse(a.getAppointmentNo(), a.getPaymentStatus());
     }
 
@@ -280,6 +326,7 @@ public class AppointmentTxService {
             }
         }
         appointmentMapper.updateById(a);
+        enqueueStatusNotification(a, newStatus);
         return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), newStatus);
     }
 
@@ -319,6 +366,33 @@ public class AppointmentTxService {
             s.setStatus("AVAILABLE");
         }
         scheduleMapper.updateById(s);
+    }
+
+    private void enqueueStatusNotification(Appointment a, String newStatus) {
+        String title;
+        String content;
+        if ("CHECKED_IN".equals(newStatus)) {
+            title = "签到成功";
+            content = "您的预约 " + a.getAppointmentNo() + " 已签到，请等待叫号。";
+        } else if ("IN_PROGRESS".equals(newStatus)) {
+            title = "开始就诊";
+            content = "您的预约 " + a.getAppointmentNo() + " 已开始就诊。";
+        } else if ("COMPLETED".equals(newStatus)) {
+            title = "就诊完成";
+            content = "您的预约 " + a.getAppointmentNo() + " 已完成就诊。";
+        } else if ("NO_SHOW".equals(newStatus)) {
+            title = "预约爽约";
+            content = "您的预约 " + a.getAppointmentNo() + " 已标记为爽约。";
+        } else {
+            return;
+        }
+        notificationOutboxProducer.enqueuePatient(
+                a.getPatientId(),
+                "APPOINTMENT",
+                title,
+                content,
+                "APPOINTMENT",
+                a.getAppointmentNo());
     }
 
     /** 生成预约编号：A + 雪花序列（IdWorker 的 Long 无符号 base36）。DB 有 uk_appointment_no 兜底 */
