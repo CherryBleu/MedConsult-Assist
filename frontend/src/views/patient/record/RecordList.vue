@@ -30,7 +30,7 @@
             <div class="record-main">
               <div class="record-doctor">主治医生：{{ item.doctorName || '-' }}</div>
               <div class="record-complaint">主诉：{{ item.chiefComplaint || '-' }}</div>
-              <div class="record-diagnosis">初步诊断：{{ item.initialDiagnosis || '-' }}</div>
+              <div class="record-diagnosis">初步诊断：{{ item.diagnosisText || '-' }}</div>
             </div>
             <div class="record-footer">
               <span class="record-no">病历号：{{ item.recordNo || '-' }}</span>

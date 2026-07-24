@@ -37,8 +37,16 @@
                   <dd>{{ item.deptName || '-' }}</dd>
                 </div>
                 <div>
+                  <dt>主治</dt>
+                  <dd>{{ item.doctorName || '-' }}</dd>
+                </div>
+                <div>
                   <dt>主诉</dt>
                   <dd>{{ item.chiefComplaint || '-' }}</dd>
+                </div>
+                <div>
+                  <dt>诊断</dt>
+                  <dd>{{ item.diagnosisText || '-' }}</dd>
                 </div>
               </dl>
             </div>

@@ -88,6 +88,9 @@ public class AppointmentServiceImpl implements AppointmentService {
     private static final Set<String> ALLOWED_APPOINTMENT_STATUS =
             Set.of("BOOKED", "CANCELLED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED", "NO_SHOW");
 
+    private static final Set<String> COMPLETABLE_VISIT_STATUS =
+            Set.of("BOOKED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED");
+
     /** 合法的状态流转（from → to 集合），不允许从 CANCELLED 跳转 */
     private static final Map<String, Set<String>> STATUS_TRANSITIONS = buildTransitions();
 
@@ -302,6 +305,21 @@ public class AppointmentServiceImpl implements AppointmentService {
                 a.getDoctorId());
     }
 
+    @Override
+    public void internalComplete(Long appointmentId) {
+        Appointment a = requireById(appointmentId);
+        if ("COMPLETED".equals(a.getAppointmentStatus())) {
+            return;
+        }
+        String lockKey = lockKey(a.getScheduleId());
+        try {
+            distributedLock.withLock(lockKey, LOCK_LEASE,
+                    () -> txService.completeInternalInTx(a.getAppointmentNo(), COMPLETABLE_VISIT_STATUS));
+        } catch (DistributedLock.LockNotAcquiredException e) {
+            throw new BusinessException(ErrorCode.CONFLICT, "鍙锋簮鎿嶄綔绻佸繖锛岃绋嶅悗閲嶈瘯: " + a.getAppointmentNo());
+        }
+    }
+
     private AppointmentDTO.StatusResponse transitionStatus(Appointment a, String newStatus) {
         if (!ALLOWED_APPOINTMENT_STATUS.contains(newStatus)) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "非法预约状态: " + newStatus);
@@ -409,6 +427,17 @@ public class AppointmentServiceImpl implements AppointmentService {
                 new QueryWrapper<Appointment>().eq("appointment_no", appointmentNo));
         if (a == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "预约不存在: " + appointmentNo);
+        }
+        return a;
+    }
+
+    private Appointment requireById(Long appointmentId) {
+        if (appointmentId == null) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "棰勭害ID涓嶈兘涓虹┖");
+        }
+        Appointment a = appointmentMapper.selectById(appointmentId);
+        if (a == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "棰勭害涓嶅瓨鍦? " + appointmentId);
         }
         return a;
     }

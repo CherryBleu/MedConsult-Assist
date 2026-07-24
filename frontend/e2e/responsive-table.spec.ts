@@ -174,9 +174,9 @@ test.describe('responsive table', () => {
             items: [{
               id: 1,
               prescriptionId: 'RX202607170001',
-              status: 'PENDING_REVIEW',
+              status: 'PAID',
               totalFee: 88.5,
-              paymentStatus: 'UNPAID',
+              paymentStatus: 'PAID',
               createdAt: '2026-07-17 10:15:00'
             }]
           }
@@ -192,7 +192,7 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
-  test('prescription review detail shows medicine cards on mobile', async ({ page }) => {
+  test('prescription dispensing detail shows medicine cards on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await loginViaUI(page, 'staff', 'pharmacy')
 
@@ -200,7 +200,7 @@ test.describe('responsive table', () => {
 
     const firstCard = page.locator('[data-testid="responsive-prescription-card"]').first()
     await expect(firstCard).toBeVisible()
-    await firstCard.getByRole('button', { name: '查看 RX202607160002 处方详情' }).click()
+    await firstCard.getByRole('button', { name: '查看 RX202607180006 处方详情' }).click()
 
     const detailDialog = page.getByRole('dialog', { name: '处方详情' })
     await expect(detailDialog).toBeVisible()
@@ -208,40 +208,39 @@ test.describe('responsive table', () => {
     await expectNoHorizontalOverflow(page)
   })
 
-  test('prescription review keeps pharmacist review dialog recoverable on mobile', async ({ page }) => {
+  test('prescription dispensing keeps dispense dialog recoverable on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await loginViaUI(page, 'staff', 'pharmacy')
-    await page.evaluate(() => localStorage.setItem('mock_prescription_review_fail_once', '1'))
+    await page.evaluate(() => localStorage.setItem('mock_prescription_dispense_fail_once', '1'))
 
     await page.goto('/pharmacy/prescription-review')
 
     const firstCard = page.locator('[data-testid="responsive-prescription-card"]').first()
     await expect(firstCard).toBeVisible()
     await expectTouchTargetsAtLeast(page, '.prescription-review-action:visible')
-    await firstCard.getByRole('button', { name: '驳回 RX202607160002' }).click()
+    await firstCard.getByRole('button', { name: '发药 RX202607180006' }).click()
 
-    const reviewDialog = page.getByRole('dialog', { name: '审方驳回' })
-    await expect(reviewDialog).toBeVisible()
-    await reviewDialog.getByPlaceholder('请填写驳回原因（必填）').fill('剂量需要医生复核')
-    await reviewDialog.getByRole('button', { name: '确认' }).click()
+    const dispenseDialog = page.getByRole('dialog', { name: '调剂发药' })
+    await expect(dispenseDialog).toBeVisible()
+    await dispenseDialog.getByRole('button', { name: '确认发药' }).click()
 
-    await expect(reviewDialog.getByRole('alert')).toContainText(/审方提交失败|请重试/)
-    await expect(reviewDialog).toBeVisible()
+    await expect(dispenseDialog.getByRole('alert')).toContainText(/发药失败|请重试/)
+    await expect(dispenseDialog).toBeVisible()
     await expectNoHorizontalOverflow(page)
   })
 
-  test('prescription review ignores stale list responses after filter changes', async ({ page }) => {
+  test('prescription dispensing ignores stale list responses after filter changes', async ({ page }) => {
     await loginViaUI(page, 'staff', 'pharmacy')
-    await page.evaluate(() => localStorage.setItem('mock_prescription_pending_review_delay_once', '1'))
+    await page.evaluate(() => localStorage.setItem('mock_prescription_paid_delay_once', '1'))
 
     await page.goto('/pharmacy/prescription-review')
     await page.locator('.header-actions .el-select').click()
-    await page.getByRole('option', { name: '已通过' }).click()
+    await page.getByRole('option', { name: '已发药' }).click()
 
     const desktopTable = page.locator('.responsive-table__desktop')
-    await expect(desktopTable.getByText('RX202607190001')).toBeVisible()
+    await expect(desktopTable.getByText('RX202607160002')).toBeVisible()
     await page.waitForTimeout(700)
-    await expect(desktopTable.getByText('RX202607190001')).toBeVisible()
-    await expect(desktopTable.getByText('RX202607160002')).toHaveCount(0)
+    await expect(desktopTable.getByText('RX202607160002')).toBeVisible()
+    await expect(desktopTable.getByText('RX202607180006')).toHaveCount(0)
   })
 })

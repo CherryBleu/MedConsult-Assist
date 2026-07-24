@@ -43,7 +43,9 @@ x-ai-env: &ai-env
   ALIYUNBAILIAN_TIMEOUT_SECONDS: ${ALIYUNBAILIAN_TIMEOUT_SECONDS:-60}
   VISION_BASE_URL: ${VISION_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
   VISION_API_KEY: ${VISION_API_KEY:-sk-placeholder}
-  VISION_MODEL: ${VISION_MODEL:-qwen3.7-plus}
+  VISION_MODEL: ${VISION_MODEL:-gpt-5.6-sol}
+  VISION_TIMEOUT_SECONDS: ${VISION_TIMEOUT_SECONDS:-60}
+  IMAGING_MODEL: ${VISION_MODEL:-gpt-5.6-sol}
 
 services:
   nacos:

@@ -285,7 +285,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, CircleCheck } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
-import { createRecordApi, updateRecordApi, getRecordDetailApi } from '@/api/record'
+import { createRecordApi, updateRecordApi, getRecordDetailApi, getRecordListApi } from '@/api/record'
 import { createPrescriptionApi } from '@/api/prescription'
 import { generateSummaryByTextApi, medicationAnalysisApi } from '@/api/ai'
 import { getDrugListApi } from '@/api/drug'
@@ -309,6 +309,10 @@ const medAnalysisResult = ref(null)
 const prescriptionSubmitting = ref(false)
 const prescriptionError = ref('')
 const submittedPrescriptionId = ref('')
+const recordOwner = reactive({
+  patientId: '',
+  doctorId: ''
+})
 
 const newPrescriptionItem = () => ({
   key: Date.now() + Math.random(),
@@ -452,6 +456,22 @@ const getPrescriptionDraftItems = () => prescriptionItems.value
     unitPrice: item.unitPrice === '' ? undefined : Number(item.unitPrice)
   }))
 
+const getPrescriptionSnapshotItems = () => prescriptionItems.value
+  .filter(item => item.drugName?.trim())
+  .map(item => ({
+    drugNo: item.drugNo || undefined,
+    drugName: item.drugName.trim(),
+    name: item.drugName.trim(),
+    specification: item.specification || undefined,
+    dosage: item.dosage || undefined,
+    frequency: item.frequency || undefined,
+    route: item.route || undefined,
+    days: item.days === '' || item.days == null ? undefined : Number(item.days),
+    quantity: item.quantity === '' || item.quantity == null ? undefined : Number(item.quantity),
+    unit: item.unit || undefined,
+    unitPrice: item.unitPrice === '' || item.unitPrice == null ? undefined : Number(item.unitPrice)
+  }))
+
 const validatePrescriptionItems = () => {
   const items = getPrescriptionDraftItems()
   if (items.length === 0) return '请至少填写一条处方药品'
@@ -488,6 +508,36 @@ const applyPrescriptionDetail = (list) => {
   })
 }
 
+const applyRecordDetail = (d) => {
+  if (!d) return
+  currentRecordId.value = d.recordId || d.recordNo || currentRecordId.value
+  form.chiefComplaint = d.chiefComplaint || ''
+  recordOwner.patientId = d.patientId || ''
+  recordOwner.doctorId = d.doctorId || ''
+  form.presentIllness = d.presentIllness || ''
+  form.pastHistory = d.pastHistory || ''
+  form.physicalExam = d.physicalExam || ''
+  form.initialDiagnosis = Array.isArray(d.initialDiagnosis) ? d.initialDiagnosis.join('，') : (d.initialDiagnosis || '')
+  form.doctorAdvice = d.doctorAdvice || ''
+  form.status = d.status || form.status
+  applyPrescriptionDetail(d.prescriptions)
+}
+
+const loadRecordDetail = async (recordId) => {
+  if (!recordId) return false
+  const res = await getRecordDetailApi(recordId)
+  applyRecordDetail(res.data)
+  return Boolean(res.data)
+}
+
+const loadExistingAppointmentRecord = async () => {
+  if (currentRecordId.value || !form.appointmentId) return false
+  const res = await getRecordListApi({ appointmentId: form.appointmentId, pageNum: 1, pageSize: 1 })
+  const existing = res.data?.records?.[0] || res.data?.items?.[0]
+  if (!existing?.recordId) return false
+  return loadRecordDetail(existing.recordId)
+}
+
 const extractRecordId = (response) => response?.data?.recordId || response?.data?.recordNo || response?.data?.id
 
 const withTimeout = (promise, ms, message) => {
@@ -515,8 +565,8 @@ const ensureRecordDraft = async () => {
 // 组装后端 CreateRequest 期望的载荷：patientId/doctorId 必填，initialDiagnosis 是数组
 const buildPayload = () => {
   // patientId 优先取路由参数（从接诊页带入），否则用测试患者档案
-  const patientId = route.query.patientId || userStore.userInfo?.patientId
-  const doctorId = route.query.doctorId || userStore.userInfo?.doctorId
+  const patientId = route.query.patientId || recordOwner.patientId || userStore.userInfo?.patientId
+  const doctorId = route.query.doctorId || recordOwner.doctorId || userStore.userInfo?.doctorId
   return {
     patientId: String(patientId || ''),
     doctorId: String(doctorId || ''),
@@ -529,7 +579,8 @@ const buildPayload = () => {
     initialDiagnosis: form.initialDiagnosis?.trim()
       ? form.initialDiagnosis.split(/[,，；;\n]/).map(s => s.trim()).filter(Boolean)
       : undefined,
-    doctorAdvice: form.doctorAdvice || undefined
+    doctorAdvice: form.doctorAdvice || undefined,
+    prescriptions: getPrescriptionSnapshotItems()
   }
 }
 
@@ -571,10 +622,12 @@ const publishPrescription = async () => {
   try {
     prescriptionError.value = '正在保存病历并推送处方，请稍候...'
     const recordId = await ensureRecordDraft()
+    const patientId = route.query.patientId || recordOwner.patientId || userStore.userInfo?.patientId || ''
+    const doctorId = route.query.doctorId || recordOwner.doctorId || userStore.userInfo?.doctorId || ''
     const res = await withTimeout(createPrescriptionApi({
       recordId: String(recordId),
-      patientId: String(route.query.patientId || userStore.userInfo?.patientId || ''),
-      doctorId: String(route.query.doctorId || userStore.userInfo?.doctorId || ''),
+      patientId: String(patientId),
+      doctorId: String(doctorId),
       departmentId: String(route.query.departmentId || userStore.userInfo?.departmentId || ''),
       source: 'OUTPATIENT',
       items: getPrescriptionDraftItems()
@@ -582,8 +635,9 @@ const publishPrescription = async () => {
     const prescriptionId = res.data?.prescriptionId
     if (!prescriptionId) throw new Error('处方创建失败，请重试')
     submittedPrescriptionId.value = prescriptionId
+    form.status = 'ARCHIVED'
     prescriptionError.value = ''
-    ElMessage.success('处方已推送药房，患者可缴费')
+    ElMessage.success('处方已推送药房，病历已同步至患者端')
   } catch (e) {
     prescriptionError.value = e?.response?.data?.message || e?.message || '处方推送失败，请重试'
   } finally {
@@ -617,15 +671,24 @@ const generateSummary = async () => {
       pickSummaryValue(content, ['treatmentPlan', 'treatment_plan', 'treatment', 'plan', '治疗计划', '处理意见']),
       pickSummaryValue(content, ['followUpAdvice', 'follow_up_advice', 'advice', 'doctorAdvice', 'doctor_advice', '医嘱', '随访建议'])
     ].map(formatSummaryValue).filter(Boolean)
-    if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
+    const normalizedAdviceParts = [
+      pickSummaryValue(content, ['managementPlan', 'management_plan', 'disposition']),
+      pickSummaryValue(content, ['followupAdvice', 'follow_up', 'medicalAdvice', 'medical_advice', 'orders', 'recommendations', 'suggestions'])
+    ].map(formatSummaryValue).filter(Boolean)
+    if (normalizedAdviceParts.length) form.doctorAdvice = normalizedAdviceParts.join('\n')
+    else if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
     const filledAny = Boolean(
       diagnosis ||
+      normalizedAdviceParts.length ||
       adviceParts.length ||
       presentIllnessValue ||
       pastHistoryValue ||
       physicalExamValue ||
       chiefComplaintValue
     )
+    if (filledAny) {
+      await ensureRecordDraft()
+    }
     if (!filledAny) {
       throw new Error('AI未返回可填入的病历内容')
     }
@@ -737,6 +800,8 @@ onMounted(async () => {
       const d = res.data
       if (d) {
         form.chiefComplaint = d.chiefComplaint || ''
+        recordOwner.patientId = d.patientId || ''
+        recordOwner.doctorId = d.doctorId || ''
         form.presentIllness = d.presentIllness || ''
         form.pastHistory = d.pastHistory || ''
         form.physicalExam = d.physicalExam || ''
@@ -747,6 +812,17 @@ onMounted(async () => {
     } catch (e) {
       // 加载失败不阻塞新建流程
     }
+  }
+})
+onMounted(async () => {
+  if (route.query.recordId || currentRecordId.value) return
+  if (!form.appointmentId) {
+    form.appointmentId = route.query.appointmentId || route.query.appointmentid || ''
+  }
+  try {
+    await loadExistingAppointmentRecord()
+  } catch (e) {
+    // 鍔犺浇澶辫触涓嶉樆濉炴柊寤烘祦绋?
   }
 })
 </script>

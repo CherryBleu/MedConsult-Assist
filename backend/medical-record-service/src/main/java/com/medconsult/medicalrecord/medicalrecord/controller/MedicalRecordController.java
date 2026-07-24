@@ -11,67 +11,61 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 电子病历对外接口（对齐《接口文档》§2.6 + 《修改建议》§2.1）。
- *
- * <p>路径前缀 /api/v1/medical-records（对外，走 Gateway 鉴权）。
- * <p>路径变量 {@code recordId} 实为 {@code record_no}（业务可读编号）。
- *
- * <p><b>修订项 §2.1</b>：创建接口<b>不</b>接受 prescriptions 入参——处方独立走
- * {@code POST /api/v1/prescriptions}，通过 record_id 反查。
- */
 @RestController
 @RequestMapping("/api/v1/medical-records")
 @RequiredArgsConstructor
-@Tag(name = "电子病历接口", description = "电子病历存储管理（§2.6）")
+@Tag(name = "Medical records", description = "Medical record storage APIs")
 public class MedicalRecordController {
 
     private final MedicalRecordService medicalRecordService;
 
-    /** §2.6.1 创建电子病历（初始 DRAFT，医生写） */
     @PostMapping
-    @Operation(summary = "创建电子病历")
+    @Operation(summary = "Create medical record draft")
     @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.CreateResponse> create(@Valid @RequestBody MedicalRecordDTO.CreateRequest req) {
         return Result.ok(medicalRecordService.create(req));
     }
 
-    /** §2.6.2 查询病历详情 */
     @GetMapping("/{recordId}")
-    @Operation(summary = "查询病历详情")
-    public Result<MedicalRecordDTO.DetailResponse> detail(@Parameter(description = "病历编号", required = true) @PathVariable String recordId) {
+    @Operation(summary = "Get medical record detail")
+    public Result<MedicalRecordDTO.DetailResponse> detail(
+            @Parameter(description = "Record number", required = true) @PathVariable String recordId) {
         return Result.ok(medicalRecordService.detail(recordId));
     }
 
-    /** §2.6.3 分页查询病历（可按 patientId 过滤） */
     @GetMapping
-    @Operation(summary = "分页查询病历")
+    @Operation(summary = "List medical records")
     public Result<PageResult<MedicalRecordDTO.ListItem>> list(
-            @Parameter(description = "页码") @RequestParam(defaultValue = "1") int page,
-            @Parameter(description = "每页数量") @RequestParam(defaultValue = "10") int pageSize,
-            @Parameter(description = "患者编号") @RequestParam(required = false) String patientId,
-            @Parameter(description = "预约 ID（按预约过滤病历）") @RequestParam(required = false) Long appointmentId) {
+            @Parameter(description = "Page number") @RequestParam(defaultValue = "1") int page,
+            @Parameter(description = "Page size") @RequestParam(defaultValue = "10") int pageSize,
+            @Parameter(description = "Patient number or id") @RequestParam(required = false) String patientId,
+            @Parameter(description = "Appointment number or id") @RequestParam(required = false) String appointmentId) {
         return Result.ok(medicalRecordService.list(page, pageSize, patientId, appointmentId));
     }
 
-    /** §2.6.4 更新草稿病历（仅 DRAFT 可改，医生写） */
     @PutMapping("/{recordId}")
-    @Operation(summary = "更新草稿病历")
+    @Operation(summary = "Update draft medical record")
     @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.UpdateResponse> updateDraft(
-            @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
+            @Parameter(description = "Record number", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.UpdateDraftRequest req) {
         return Result.ok(medicalRecordService.updateDraft(recordId, req));
     }
 
-    /** §2.6.5 归档病历（DRAFT → ARCHIVED，不可逆，医生） */
     @PostMapping("/{recordId}/archive")
-    @Operation(summary = "归档病历")
+    @Operation(summary = "Archive medical record")
     @Permission(roles = {"DOCTOR"}, dataScope = DataScope.ALL)
     public Result<MedicalRecordDTO.ArchiveResponse> archive(
-            @Parameter(description = "病历编号", required = true) @PathVariable String recordId,
+            @Parameter(description = "Record number", required = true) @PathVariable String recordId,
             @Valid @RequestBody MedicalRecordDTO.ArchiveRequest req) {
         return Result.ok(medicalRecordService.archive(recordId, req));
     }

@@ -52,10 +52,32 @@ public class MedicalRecordTxService {
         r.setPhysicalExam(req.getPhysicalExam());
         r.setInitialDiagnosis(toJsonArray(req.getInitialDiagnosis()));
         r.setDoctorAdvice(req.getDoctorAdvice());
+        r.setPrescriptionsSnapshot(toJson(req.getPrescriptions()));
         r.setStatus("DRAFT");
         medicalRecordMapper.insert(r);
         log.info("病历创建: recordNo={} patientId={} doctorId={}",
                 r.getRecordNo(), req.getPatientId(), req.getDoctorId());
+        return new MedicalRecordDTO.CreateResponse(r.getRecordNo(), r.getStatus());
+    }
+
+    @Transactional
+    @AuditLog(
+            resourceType = "MEDICAL_RECORD",
+            action = "UPDATE",
+            resourceId = "#result.recordId()",
+            targetOwnerId = "#p0.patientId",
+            detail = "'draft reused'")
+    public MedicalRecordDTO.CreateResponse updateExistingDraftInTx(MedicalRecord r,
+                                                                    MedicalRecordDTO.CreateRequest req) {
+        if (req.getChiefComplaint() != null) r.setChiefComplaint(req.getChiefComplaint());
+        if (req.getPresentIllness() != null) r.setPresentIllness(req.getPresentIllness());
+        if (req.getPastHistory() != null) r.setPastHistory(req.getPastHistory());
+        if (req.getPhysicalExam() != null) r.setPhysicalExam(req.getPhysicalExam());
+        if (req.getInitialDiagnosis() != null) r.setInitialDiagnosis(toJsonArray(req.getInitialDiagnosis()));
+        if (req.getDoctorAdvice() != null) r.setDoctorAdvice(req.getDoctorAdvice());
+        if (req.getPrescriptions() != null) r.setPrescriptionsSnapshot(toJson(req.getPrescriptions()));
+        medicalRecordMapper.updateById(r);
+        log.info("Existing draft reused: recordNo={}", r.getRecordNo());
         return new MedicalRecordDTO.CreateResponse(r.getRecordNo(), r.getStatus());
     }
 
@@ -67,6 +89,18 @@ public class MedicalRecordTxService {
             return objectMapper.writeValueAsString(list);
         } catch (JsonProcessingException e) {
             log.warn("诊断序列化为 JSON 失败，原样存 null", e);
+            return null;
+        }
+    }
+
+    private String toJson(List<MedicalRecordDTO.DraftPrescriptionItem> list) {
+        if (list == null || list.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (JsonProcessingException e) {
+            log.warn("Draft prescription serialization failed, storing null", e);
             return null;
         }
     }

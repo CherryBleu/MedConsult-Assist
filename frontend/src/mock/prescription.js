@@ -11,8 +11,8 @@ let mockPrescriptions = [
     paidAmount: null,
     paymentStatus: 'UNPAID',
     paymentNo: '',
-    reviewedAt: dayjs().subtract(1, 'hour').format('YYYY-MM-DD HH:mm:ss'),
-    reviewComment: '剂量与疗程已核对，可缴费取药。',
+    reviewedAt: '',
+    reviewComment: '',
     rejectReason: '',
     createdAt: dayjs().subtract(2, 'hour').format('YYYY-MM-DD HH:mm:ss'),
     items: [
@@ -30,8 +30,8 @@ let mockPrescriptions = [
     paidAmount: 42.00,
     paymentStatus: 'PAID',
     paymentNo: 'PAY202607180006',
-    reviewedAt: '2026-07-18 15:30:00',
-    reviewComment: '请按医嘱完成疗程。',
+    reviewedAt: '',
+    reviewComment: '',
     rejectReason: '',
     createdAt: '2026-07-18 15:02:00',
     items: [
@@ -48,8 +48,8 @@ let mockPrescriptions = [
     paidAmount: 63.80,
     paymentStatus: 'PAID',
     paymentNo: 'PAY202607170003',
-    reviewedAt: '2026-07-17 11:15:00',
-    reviewComment: '已完成发药。',
+    reviewedAt: '',
+    reviewComment: '',
     rejectReason: '',
     createdAt: '2026-07-17 10:45:00',
     items: [
@@ -60,7 +60,7 @@ let mockPrescriptions = [
     prescriptionId: 'RX202607160002',
     recordId: 'MR202607160002',
     patientId: 1001,
-    status: 'PENDING_REVIEW',
+    status: 'DISPENSED',
     source: 'OUTPATIENT',
     totalFee: 28.00,
     paidAmount: null,
@@ -78,15 +78,15 @@ let mockPrescriptions = [
     prescriptionId: 'RX202607150001',
     recordId: 'MR202607150001',
     patientId: 1001,
-    status: 'REJECTED',
+    status: 'CANCELLED',
     source: 'OUTPATIENT',
     totalFee: 35.00,
     paidAmount: null,
     paymentStatus: 'UNPAID',
     paymentNo: '',
-    reviewedAt: '2026-07-15 16:20:00',
+    reviewedAt: '',
     reviewComment: '',
-    rejectReason: '处方剂量需医生重新确认。',
+    rejectReason: '',
     createdAt: '2026-07-15 15:58:00',
     items: [
       { id: 10006, drugName: '复方感冒灵颗粒', specification: '14g*10袋', dosage: '1袋', frequency: '每日三次', route: '冲服', days: 3, quantity: 1, unit: '盒', unitPrice: 35.00, subtotal: 35.00 }
@@ -146,7 +146,7 @@ export const mockPrescriptionList = (params = {}) => {
   }
   records.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
   const response = { code: 0, message: 'success', data: pageResult(records, params) }
-  if (params.status === 'PENDING_REVIEW' && consumeDelayOnce('mock_prescription_pending_review_delay_once')) {
+  if (params.status === 'PAID' && consumeDelayOnce('mock_prescription_paid_delay_once')) {
     return delay(600).then(() => response)
   }
   return response

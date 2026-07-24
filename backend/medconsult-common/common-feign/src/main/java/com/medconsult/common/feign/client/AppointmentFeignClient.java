@@ -5,6 +5,7 @@ import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 
 /**
  * Feign client for outpatient appointment internal APIs.
@@ -17,4 +18,8 @@ public interface AppointmentFeignClient {
     /** Internal lookup: appointment_no -> primary key and patient/doctor ownership. */
     @GetMapping("/internal/appointments/no/{appointmentNo}/ownership")
     Result<AppointmentOwnershipDTO> resolveOwnership(@PathVariable("appointmentNo") String appointmentNo);
+
+    /** Internal command: mark a visit appointment completed by primary key. */
+    @PostMapping("/internal/appointments/{appointmentId}/complete")
+    Result<Void> completeById(@PathVariable("appointmentId") Long appointmentId);
 }

@@ -39,6 +39,14 @@ public class DoctorDTO {
             @Schema(description = "Registration fee") BigDecimal registrationFee
     ) {}
 
+    @Schema(description = "Internal doctor profile")
+    public record InternalProfile(
+            @Schema(description = "Doctor primary key") Long doctorId,
+            @Schema(description = "Doctor name") String doctorName,
+            @Schema(description = "Department primary key") Long departmentId,
+            @Schema(description = "Department name") String departmentName
+    ) {}
+
     @Schema(description = "Create doctor request")
     public record CreateRequest(
             @Schema(description = "Doctor name") @NotBlank(message = "doctor name must not be blank") @Size(max = 50) String name,

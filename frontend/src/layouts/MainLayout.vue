@@ -329,7 +329,7 @@ const allMenuList = {
   ],
   [ROLE_ENUM.PHARMACY_ADMIN.value]: [
     { path: '/pharmacy/workbench', title: '工作台', icon: 'House' },
-    { path: '/pharmacy/prescription-review', title: '处方审核', icon: 'Document' },
+    { path: '/pharmacy/prescription-review', title: '处方发药', icon: 'Document' },
     {
       path: '/pharmacy/drug',
       title: '药品库存',

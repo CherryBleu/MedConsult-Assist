@@ -3,8 +3,8 @@
     <div class="card-box prescription-review-page">
       <div class="page-header">
         <div>
-          <h2 class="page-title">处方审核</h2>
-          <p class="page-subtitle">医生开方后直接进入药房发药与完成处理，历史待审处方仍可兼容处理。</p>
+          <h2 class="page-title">处方发药</h2>
+          <p class="page-subtitle">医生开方后进入患者缴费与药房发药流程，药房按待发药、已发药、已完成处理。</p>
         </div>
         <div class="header-actions">
           <el-select
@@ -15,10 +15,8 @@
             aria-label="处方状态筛选"
             @change="handleFilterChange"
           >
-            <el-option label="待发药/待缴费" value="APPROVED" />
-            <el-option label="历史待审" value="PENDING_REVIEW" />
-            <el-option label="已驳回" value="REJECTED" />
-            <el-option label="已缴费" value="PAID" />
+            <el-option label="待缴费" value="APPROVED" />
+            <el-option label="待发药" value="PAID" />
             <el-option label="已发药" value="DISPENSED" />
             <el-option label="已完成" value="COMPLETED" />
             <el-option label="已取消" value="CANCELLED" />
@@ -35,7 +33,7 @@
         @retry="fetchList"
       >
         <div class="prescription-table-shell">
-          <ResponsiveTable aria-label="处方审核列表">
+          <ResponsiveTable aria-label="处方发药列表">
             <template #table>
               <el-table :data="prescriptionList" class="prescription-table" border stripe>
               <el-table-column prop="prescriptionId" label="处方编号" width="170" />
@@ -63,9 +61,7 @@
                 <template #default="{ row }">
                   <div class="table-actions">
                     <el-button class="prescription-review-action" size="small" link type="primary" :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
-                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="success" :aria-label="`放行 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">放行</el-button>
-                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="danger" :aria-label="`退回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">退回</el-button>
-                    <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" size="small" link type="warning" :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
+                    <el-button v-if="row.status === 'PAID'" class="prescription-review-action" size="small" link type="warning" :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
                     <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" size="small" link type="primary" :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
                   </div>
                 </template>
@@ -104,9 +100,7 @@
                 </dl>
                 <div class="prescription-card__actions">
                   <el-button class="prescription-review-action" plain :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`放行 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">放行</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`退回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">退回</el-button>
-                  <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
+                  <el-button v-if="row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
                   <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" type="primary" plain :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
                 </div>
               </article>
@@ -144,8 +138,6 @@
           <el-descriptions-item label="支付状态">{{ getPayLabel(detail.paymentStatus) }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ getSourceLabel(detail.source) }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ detail.createdAt }}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.reviewComment" label="审方意见" :span="2">{{ detail.reviewComment }}</el-descriptions-item>
-          <el-descriptions-item v-if="detail.rejectReason" label="驳回原因" :span="2">{{ detail.rejectReason }}</el-descriptions-item>
         </el-descriptions>
 
         <h4 class="detail-section-title">处方明细</h4>
@@ -202,26 +194,6 @@
       </div>
     </el-dialog>
 
-    <!-- 历史待审处方处理对话框 -->
-    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '历史处方放行' : '历史处方退回'" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
-      <el-form :model="reviewForm" label-width="90px">
-        <el-form-item label="处方编号">
-          <span>{{ currentPrescription?.prescriptionId }}</span>
-        </el-form-item>
-        <el-form-item label="处理意见">
-          <el-input v-model="reviewForm.reviewComment" type="textarea" :rows="2" placeholder="处理意见（可选）" />
-        </el-form-item>
-        <el-form-item v-if="reviewForm.action === 'REJECT'" label="驳回原因" required>
-          <el-input v-model="reviewForm.rejectReason" type="textarea" :rows="2" placeholder="请填写驳回原因（必填）" />
-        </el-form-item>
-      </el-form>
-      <div v-if="reviewError" class="inline-error" role="alert">{{ reviewError }}</div>
-      <template #footer>
-        <el-button class="prescription-dialog-action" @click="reviewDialogVisible = false">取消</el-button>
-        <el-button type="primary" class="prescription-dialog-action" :loading="submitting" @click="handleReview">确认</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 调剂发药对话框 -->
     <el-dialog v-model="dispenseDialogVisible" title="调剂发药" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
       <el-alert title="发药将触发药品库存 FEFO 出库，请确认处方明细无误。" type="warning" :closable="false" style="margin-bottom: 12px" />
@@ -247,7 +219,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getPrescriptionListApi, getPrescriptionDetailApi,
-  reviewPrescriptionApi, dispensePrescriptionApi, completePrescriptionApi
+  dispensePrescriptionApi, completePrescriptionApi
 } from '@/api/prescription'
 import { useUserStore } from '@/store/modules/user'
 import PageState from '@/components/common/PageState.vue'
@@ -260,7 +232,7 @@ const { isMobile } = useResponsive()
 const loading = ref(false)
 const prescriptionList = ref([])
 const total = ref(0)
-const statusFilter = ref('APPROVED')
+const statusFilter = ref('PAID')
 const loadError = ref('')
 let listRequestSeq = 0
 
@@ -330,49 +302,8 @@ const retryDetail = () => {
   showDetail({ prescriptionId: lastDetailId.value })
 }
 
-// ===== 审方 =====
-const reviewDialogVisible = ref(false)
 const currentPrescription = ref(null)
-const reviewForm = reactive({ action: 'APPROVE', reviewComment: '', rejectReason: '' })
 const submitting = ref(false)
-const reviewError = ref('')
-
-const openReview = (row, action) => {
-  currentPrescription.value = row
-  reviewForm.action = action
-  reviewForm.reviewComment = ''
-  reviewForm.rejectReason = ''
-  reviewError.value = ''
-  reviewDialogVisible.value = true
-}
-
-const handleReview = async () => {
-  reviewError.value = ''
-  if (reviewForm.action === 'REJECT' && !reviewForm.rejectReason?.trim()) {
-    reviewError.value = '驳回必须填写驳回原因'
-    return
-  }
-  submitting.value = true
-  try {
-    const pharmacistId = getPharmacistOperatorId()
-    if (!pharmacistId) {
-      throw new Error('当前药师账号缺少编号，请重新登录后再试')
-    }
-    await reviewPrescriptionApi(currentPrescription.value.prescriptionId, {
-      action: reviewForm.action,
-      pharmacistId,
-      reviewComment: reviewForm.reviewComment || undefined,
-      rejectReason: reviewForm.action === 'REJECT' ? reviewForm.rejectReason : undefined
-    })
-    ElMessage.success(reviewForm.action === 'APPROVE' ? '已放行' : '已退回')
-    reviewDialogVisible.value = false
-    fetchList()
-  } catch (e) {
-    reviewError.value = getErrorMessage(e, '处理失败，请重试')
-  } finally {
-    submitting.value = false
-  }
-}
 
 // ===== 调剂发药 =====
 const dispenseDialogVisible = ref(false)
@@ -420,11 +351,8 @@ const handleComplete = (row) => {
 
 // ===== 状态文案/配色 =====
 const STATUS_META = {
-  DRAFT: { label: '草稿', type: 'info' },
-  PENDING_REVIEW: { label: '历史待审', type: 'warning' },
-  APPROVED: { label: '待发药/待缴费', type: 'success' },
-  REJECTED: { label: '已驳回', type: 'danger' },
-  PAID: { label: '已缴费', type: 'success' },
+  APPROVED: { label: '待缴费', type: 'warning' },
+  PAID: { label: '待发药', type: 'success' },
   DISPENSED: { label: '已发药', type: 'primary' },
   COMPLETED: { label: '已完成', type: 'success' },
   CANCELLED: { label: '已取消', type: 'info' }

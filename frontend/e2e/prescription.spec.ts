@@ -91,7 +91,7 @@ test('医生可结构化开方并通知药房', async ({ page }) => {
   await expectTouchTargetsAtLeast(page, '.record-action:visible')
   await page.getByRole('button', { name: '开方并通知药房' }).click()
 
-  await expect(page.getByText('处方已推送药房，患者可缴费').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('处方已推送药房，病历已同步至患者端').first()).toBeVisible({ timeout: 15_000 })
   await expectNoHorizontalOverflow(page)
 })
 

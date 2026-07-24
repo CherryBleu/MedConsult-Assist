@@ -7,6 +7,7 @@ import com.medconsult.outpatient.appointment.service.AppointmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,5 +27,12 @@ public class AppointmentInternalController {
     public Result<AppointmentOwnershipDTO> resolveOwnership(@PathVariable String appointmentNo) {
         SecurityContext.requireService("appointment:read");
         return Result.ok(appointmentService.internalResolveOwnership(appointmentNo));
+    }
+
+    @PostMapping("/appointments/{appointmentId}/complete")
+    public Result<Void> complete(@PathVariable Long appointmentId) {
+        SecurityContext.requireService("appointment:write");
+        appointmentService.internalComplete(appointmentId);
+        return Result.ok(null);
     }
 }

@@ -35,4 +35,7 @@ public interface AppointmentService {
 
     /** Internal: appointment_no -> appointment primary key and patient/doctor ownership. */
     AppointmentOwnershipDTO internalResolveOwnership(String appointmentNo);
+
+    /** Internal: complete the visit after the doctor publishes the medical record and prescription. */
+    void internalComplete(Long appointmentId);
 }

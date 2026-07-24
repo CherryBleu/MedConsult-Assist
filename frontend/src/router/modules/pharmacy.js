@@ -17,7 +17,7 @@ const pharmacyRoutes = [
         path: 'prescription-review',
         name: 'PharmacyPrescriptionReview',
         component: () => import('@/views/pharmacy/prescription/PrescriptionReview.vue'),
-        meta: { title: '处方审核' }
+        meta: { title: '处方发药' }
       },
       {
         path: 'drug',

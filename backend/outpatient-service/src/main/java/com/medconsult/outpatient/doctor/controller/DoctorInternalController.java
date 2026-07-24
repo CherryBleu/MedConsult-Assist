@@ -1,17 +1,22 @@
 package com.medconsult.outpatient.doctor.controller;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.DoctorProfileDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.security.SecurityContext;
+import com.medconsult.outpatient.doctor.dto.DoctorDTO;
 import com.medconsult.outpatient.department.service.DepartmentService;
 import com.medconsult.outpatient.doctor.service.DoctorService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 门诊域对内接口（架构文档 §2.3 补充）。
@@ -54,5 +59,19 @@ public class DoctorInternalController {
     public Result<List<String>> departmentNosWithDoctors() {
         SecurityContext.requireService("department:read");
         return Result.ok(doctorService.internalDepartmentNosWithDoctors());
+    }
+
+    @GetMapping("/doctors/profiles")
+    public Result<Map<Long, DoctorProfileDTO>> doctorProfiles(@RequestParam("ids") List<Long> ids) {
+        SecurityContext.requireService("doctor:read");
+        Map<Long, DoctorDTO.InternalProfile> profiles = doctorService.internalProfilesByIds(ids);
+        return Result.ok(profiles.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> new DoctorProfileDTO(
+                                entry.getValue().doctorId(),
+                                entry.getValue().doctorName(),
+                                entry.getValue().departmentId(),
+                                entry.getValue().departmentName()))));
     }
 }

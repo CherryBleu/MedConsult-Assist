@@ -1,12 +1,15 @@
 package com.medconsult.common.feign.client;
 
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.dto.DoctorProfileDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * outpatient-service 的 Feign 客户端（架构文档 §2.3）。
@@ -33,4 +36,8 @@ public interface DoctorFeignClient {
      */
     @GetMapping("/internal/departments/with-doctors")
     Result<List<String>> departmentNosWithDoctors();
+
+    /** Internal display lookup: doctor primary key -> doctor name and department name. */
+    @GetMapping("/internal/doctors/profiles")
+    Result<Map<Long, DoctorProfileDTO>> profilesByIds(@RequestParam("ids") List<Long> ids);
 }

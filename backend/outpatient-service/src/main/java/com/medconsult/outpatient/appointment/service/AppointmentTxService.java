@@ -294,6 +294,35 @@ public class AppointmentTxService {
     @Transactional
     @AuditLog(
             resourceType = "APPOINTMENT",
+            action = "STATUS_CHANGE",
+            resourceId = "#result.appointmentId()",
+            detail = "'status=' + #result.appointmentStatus()")
+    public AppointmentDTO.StatusResponse completeInternalInTx(String appointmentNo,
+                                                              java.util.Set<String> allowedStatus) {
+        Appointment a = requireByNo(appointmentNo);
+        String current = a.getAppointmentStatus();
+        if ("COMPLETED".equals(current)) {
+            return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), current);
+        }
+        if (!allowedStatus.contains(current)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前预约状态不可直接完成: " + current);
+        }
+        boolean occupiedBefore = occupiesQuota(a);
+        a.setAppointmentStatus("COMPLETED");
+        if (occupiedBefore) {
+            DoctorSchedule s = scheduleMapper.selectById(a.getScheduleId());
+            if (s != null) {
+                decrementBookedQuota(s);
+            }
+        }
+        appointmentMapper.updateById(a);
+        enqueueStatusNotification(a, "COMPLETED");
+        return new AppointmentDTO.StatusResponse(a.getAppointmentNo(), a.getAppointmentStatus());
+    }
+
+    @Transactional
+    @AuditLog(
+            resourceType = "APPOINTMENT",
             action = "CHECK_IN",
             resourceId = "#result.appointmentId()",
             detail = "'status=' + #result.appointmentStatus()")

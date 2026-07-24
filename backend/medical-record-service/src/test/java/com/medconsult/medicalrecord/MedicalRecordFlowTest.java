@@ -11,6 +11,7 @@ import com.medconsult.common.feign.client.DoctorFeignClient;
 import com.medconsult.common.feign.client.PatientFeignClient;
 import com.medconsult.common.feign.dto.AppointmentOwnershipDTO;
 import com.medconsult.common.feign.dto.DispenseDTO;
+import com.medconsult.common.feign.dto.DoctorProfileDTO;
 import com.medconsult.common.feign.dto.EntityIdDTO;
 import com.medconsult.common.security.JwtCodec;
 import org.junit.jupiter.api.BeforeEach;
@@ -180,12 +181,19 @@ class MedicalRecordFlowTest {
                 .thenReturn(Result.ok(EntityIdDTO.of(2001L)));
         when(doctorFeignClient.resolveDepartmentId(any()))
                 .thenReturn(Result.ok(EntityIdDTO.of(3001L)));
+        when(patientFeignClient.namesByIds(any()))
+                .thenReturn(Result.ok(Map.of(1001L, "测试患者")));
+        when(doctorFeignClient.profilesByIds(any()))
+                .thenReturn(Result.ok(Map.of(2001L,
+                        new DoctorProfileDTO(2001L, "测试医生", 3001L, "心内科"))));
         when(appointmentFeignClient.resolveOwnership(any()))
                 .thenReturn(Result.ok(new AppointmentOwnershipDTO(9001L, "A202607200001", 1001L, 2001L)));
         when(appointmentFeignClient.resolveOwnership("A_OTHER_PATIENT"))
                 .thenReturn(Result.ok(new AppointmentOwnershipDTO(9002L, "A_OTHER_PATIENT", 9999L, 2001L)));
         when(appointmentFeignClient.resolveOwnership("A_OTHER_DOCTOR"))
                 .thenReturn(Result.ok(new AppointmentOwnershipDTO(9003L, "A_OTHER_DOCTOR", 1001L, 2999L)));
+        when(appointmentFeignClient.completeById(any()))
+                .thenReturn(Result.ok(null));
     }
 
     // ===== 病历域 =====
@@ -294,10 +302,25 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").value(recordNo))
+                .andExpect(jsonPath("$.data.patientName").value("测试患者"))
+                .andExpect(jsonPath("$.data.doctorName").value("测试医生"))
+                .andExpect(jsonPath("$.data.departmentName").value("心内科"))
                 .andExpect(jsonPath("$.data.chiefComplaint").value("胸闷、心悸 3 天"))
                 .andExpect(jsonPath("$.data.initialDiagnosis[0]").value("心律失常待查"))
                 .andExpect(jsonPath("$.data.initialDiagnosis[1]").value("高血压"))
                 .andExpect(jsonPath("$.data.status").value("DRAFT"));
+    }
+
+    @Test
+    void recordDetail_includesPrescriptionItemsAndArchiveTime() throws Exception {
+        String recordNo = createRecord();
+        createPrescriptionForRecord(recordNo, "trace-detail");
+
+        mvc.perform(doctorAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.archivedAt").exists())
+                .andExpect(jsonPath("$.data.prescriptions[0].prescriptionStatus").value("APPROVED"));
     }
 
     @Test
@@ -307,6 +330,9 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].patientName").value("测试患者"))
+                .andExpect(jsonPath("$.data.items[0].doctorName").value("测试医生"))
+                .andExpect(jsonPath("$.data.items[0].departmentName").value("心内科"))
                 .andExpect(jsonPath("$.data.items[0].chiefComplaint").value("胸闷、心悸 3 天"))
                 .andExpect(jsonPath("$.data.items[0].status").value("DRAFT"));
     }
@@ -317,10 +343,14 @@ class MedicalRecordFlowTest {
         // DRAFT 可改（医生身份）
         mvc.perform(doctorAuth(put("/api/v1/medical-records/" + recordNo))
                         .contentType("application/json")
-                        .content("{\"doctorAdvice\":\"继续监测血压，1 周后复诊。\"}"))
+                        .content("{\"initialDiagnosis\":[\"updated diagnosis\"],\"doctorAdvice\":\"继续监测血压，1 周后复诊。\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").value(recordNo));
+
+        mvc.perform(doctorAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.initialDiagnosis[0]").value("updated diagnosis"));
     }
 
     @Test
@@ -394,22 +424,39 @@ class MedicalRecordFlowTest {
     }
 
     @Test
-    void recordDetail_selfPatientAllowed() throws Exception {
+    void recordDetail_selfPatientHidesDraft() throws Exception {
         String recordNo = createRecord(); // 归属 patientId=1001
-        // 患者本人（patientId=1001）查自己病历 → 放行
+        // 患者本人不能查看医生尚未发布的草稿病历
+        mvc.perform(selfPatientAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(jsonPath("$.code").value(404001));
+    }
+
+    @Test
+    void recordDetail_selfPatientAllowedAfterArchive() throws Exception {
+        String recordNo = createRecord(); // 归属 patientId=1001
+        archiveRecord(recordNo);
+        // 医生归档发布后，患者本人可查看
         mvc.perform(selfPatientAuth(get("/api/v1/medical-records/" + recordNo)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0));
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("ARCHIVED"));
     }
 
     @Test
     void recordList_patientScopedToSelf() throws Exception {
-        createRecord(); // 归属 patientId=1001
-        // 患者本人（patientId=1001）列表：忽略入参 patientId，只返回自己的（total=1）
+        String recordNo = createRecord(); // 归属 patientId=1001
+        // 患者本人（patientId=1001）列表：忽略入参 patientId，且不返回医生草稿
         mvc.perform(selfPatientAuth(get("/api/v1/medical-records").param("patientId", "P_OTHER")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.total").value(1));
+                .andExpect(jsonPath("$.data.total").value(0));
+
+        archiveRecord(recordNo);
+        mvc.perform(selfPatientAuth(get("/api/v1/medical-records").param("patientId", "P_OTHER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].status").value("ARCHIVED"));
     }
 
     @Test
@@ -479,6 +526,21 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.paymentStatus").value("UNPAID"))
                 .andExpect(jsonPath("$.data.totalFee").value(210.00));
+    }
+
+    @Test
+    void createPrescription_archivesRecordForPatient() throws Exception {
+        String recordNo = createRecord();
+        createPrescriptionForRecord(recordNo, "trace-publish-record");
+
+        mvc.perform(doctorAuth(get("/api/v1/medical-records/" + recordNo)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ARCHIVED"));
+
+        mvc.perform(selfPatientAuth(get("/api/v1/medical-records")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].status").value("ARCHIVED"));
     }
 
     @Test
@@ -860,12 +922,6 @@ class MedicalRecordFlowTest {
                         .content("{\"cancelReason\":\"audit cancel\",\"operatorId\":\"D10001\"}")))
                 .andExpect(status().isOk());
 
-        mvc.perform(doctorAuth(post("/api/v1/medical-records/" + recordNo + "/archive")
-                        .header("X-Trace-Id", traceId)
-                        .contentType("application/json")
-                        .content("{\"confirmBy\":\"D10001\",\"confirmNote\":\"audit archive\"}")))
-                .andExpect(status().isOk());
-
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT message_no, exchange, routing_key, payload_json, status, retry_count
@@ -873,7 +929,7 @@ class MedicalRecordFlowTest {
                 WHERE routing_key = 'audit.log'
                 ORDER BY id
                 """);
-        assertEquals(10, rows.size());
+        assertEquals(9, rows.size());
 
         List<String> events = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -898,8 +954,7 @@ class MedicalRecordFlowTest {
                 "PRESCRIPTION:DISPENSE",
                 "PRESCRIPTION:COMPLETE",
                 "PRESCRIPTION:CREATE",
-                "PRESCRIPTION:CANCEL",
-                "MEDICAL_RECORD:ARCHIVE"), events);
+                "PRESCRIPTION:CANCEL"), events);
     }
 
     // ===== 测试助手 =====

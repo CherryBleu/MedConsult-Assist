@@ -181,6 +181,37 @@ public class DoctorServiceImpl implements DoctorService {
     // ===== 管理员维护（HOSPITAL_ADMIN） =====
 
     @Override
+    public Map<Long, DoctorDTO.InternalProfile> internalProfilesByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> doctorIds = ids.stream()
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (doctorIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Doctor> doctors = doctorMapper.selectBatchIds(doctorIds);
+        List<Long> deptIds = doctors.stream()
+                .map(Doctor::getDepartmentId)
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        Map<Long, Department> deptMap = loadDepartments(deptIds);
+        Map<Long, DoctorDTO.InternalProfile> profiles = new HashMap<>();
+        for (Doctor doctor : doctors) {
+            Department dept = deptMap.get(doctor.getDepartmentId());
+            profiles.put(doctor.getId(), new DoctorDTO.InternalProfile(
+                    doctor.getId(),
+                    doctor.getName(),
+                    doctor.getDepartmentId(),
+                    dept == null ? null : dept.getName()));
+        }
+        return profiles;
+    }
+
+    @Override
     @Transactional
     @AuditLog(
             resourceType = "DOCTOR",

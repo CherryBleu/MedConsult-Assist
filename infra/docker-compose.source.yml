@@ -16,6 +16,8 @@ x-backend-env: &backend-env
   RABBITMQ_USER: ${RABBITMQ_USER:-medconsult}
   RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-medconsult123}
   JWT_SECRET: ${JWT_SECRET:-dev-secret-0123456789abcdef0123456789abcdef-min32bytes}
+  TZ: Asia/Shanghai
+  JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Duser.timezone=Asia/Shanghai}
 
 x-ai-env: &ai-env
   MONGODB_URI: ${MONGODB_URI:-mongodb://medconsult-mongodb:27017}
@@ -43,7 +45,9 @@ x-ai-env: &ai-env
   ALIYUNBAILIAN_TIMEOUT_SECONDS: ${ALIYUNBAILIAN_TIMEOUT_SECONDS:-60}
   VISION_BASE_URL: ${VISION_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
   VISION_API_KEY: ${VISION_API_KEY:-sk-placeholder}
-  VISION_MODEL: ${VISION_MODEL:-qwen3-vl-plus}
+  VISION_MODEL: ${VISION_MODEL:-gpt-5.6-sol}
+  VISION_TIMEOUT_SECONDS: ${VISION_TIMEOUT_SECONDS:-60}
+  IMAGING_MODEL: ${VISION_MODEL:-gpt-5.6-sol}
 
 services:
   source-builder:

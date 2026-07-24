@@ -6,6 +6,7 @@ import com.medconsult.outpatient.doctor.dto.DoctorDTO;
 import com.medconsult.outpatient.doctor.entity.Doctor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 医生服务接口（对齐《接口文档》§2.3.2）。
@@ -46,6 +47,11 @@ public interface DoctorService {
      * 再回查 department 拿 department_no（业务层组装，非 SQL JOIN）。
      */
     List<String> internalDepartmentNosWithDoctors();
+
+    /**
+     * Internal display lookup by doctor primary keys.
+     */
+    Map<Long, DoctorDTO.InternalProfile> internalProfilesByIds(List<Long> ids);
 
     /**
      * 管理员新增医生：生成 doctor_no（D + 雪花 base36），校验 department_no 存在，

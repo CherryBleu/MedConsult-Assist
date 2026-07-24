@@ -7,49 +7,46 @@
       </div>
 
       <div v-loading="loading" class="detail-content">
-        <!-- 基本信息 -->
         <div class="detail-section">
           <h3 class="section-title">基本信息</h3>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="病历号">{{ detail.recordNo }}</el-descriptions-item>
-            <el-descriptions-item label="就诊科室">{{ detail.deptName }}</el-descriptions-item>
-            <el-descriptions-item label="主治医生">{{ detail.doctorName }}</el-descriptions-item>
-            <el-descriptions-item label="就诊时间">{{ detail.createdAt }}</el-descriptions-item>
+            <el-descriptions-item label="病历号">{{ detail.recordNo || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="就诊科室">{{ detail.deptName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="主治医生">{{ detail.doctorName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="就诊时间">{{ detail.createdAt || '-' }}</el-descriptions-item>
             <el-descriptions-item label="病历状态">
               <el-tag :type="getStatusType(MEDICAL_RECORD_STATUS, detail.status)">
                 {{ getStatusLabel(MEDICAL_RECORD_STATUS, detail.status) }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="归档时间">{{ detail.archivedAt }}</el-descriptions-item>
+            <el-descriptions-item label="归档时间">{{ detail.archivedAt || '-' }}</el-descriptions-item>
           </el-descriptions>
         </div>
 
-        <!-- 主诉与现病史 -->
         <div class="detail-section">
           <h3 class="section-title">诊疗信息</h3>
           <div class="info-block">
             <div class="info-label">主诉</div>
-            <div class="info-content">{{ detail.chiefComplaint }}</div>
+            <div class="info-content">{{ detail.chiefComplaint || '-' }}</div>
           </div>
           <div class="info-block">
             <div class="info-label">现病史</div>
-            <div class="info-content">{{ detail.presentIllness }}</div>
+            <div class="info-content">{{ detail.presentIllness || '-' }}</div>
           </div>
           <div class="info-block">
             <div class="info-label">既往史</div>
-            <div class="info-content">{{ detail.pastHistory }}</div>
+            <div class="info-content">{{ detail.pastHistory || '-' }}</div>
           </div>
           <div class="info-block">
             <div class="info-label">体格检查</div>
-            <div class="info-content">{{ detail.physicalExam }}</div>
+            <div class="info-content">{{ detail.physicalExam || '-' }}</div>
           </div>
           <div class="info-block">
-            <div class="info-label">最终诊断</div>
-            <div class="info-content diagnosis">{{ detail.finalDiagnosis }}</div>
+            <div class="info-label">诊断</div>
+            <div class="info-content diagnosis">{{ detail.diagnosisText || '-' }}</div>
           </div>
         </div>
 
-        <!-- 处方信息 -->
         <div class="detail-section">
           <h3 class="section-title">处方信息</h3>
           <el-table :data="detail.prescriptions || []" border stripe>
@@ -60,10 +57,9 @@
           </el-table>
         </div>
 
-        <!-- 医嘱 -->
         <div class="detail-section">
           <h3 class="section-title">医嘱</h3>
-          <div class="advice-block">{{ detail.doctorAdvice }}</div>
+          <div class="advice-block">{{ detail.doctorAdvice || '-' }}</div>
         </div>
       </div>
     </div>
@@ -84,7 +80,7 @@ const detail = ref({})
 const getDetail = async () => {
   const id = route.params.id
   if (!id) return
-  
+
   loading.value = true
   try {
     const res = await getRecordDetailApi(id)

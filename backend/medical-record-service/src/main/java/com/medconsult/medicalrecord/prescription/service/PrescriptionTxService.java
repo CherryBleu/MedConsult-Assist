@@ -5,9 +5,12 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.Result;
+import com.medconsult.common.feign.client.AppointmentFeignClient;
 import com.medconsult.common.feign.client.DrugFeignClient;
 import com.medconsult.common.feign.dto.DispenseDTO;
 import com.medconsult.common.mq.audit.AuditLog;
+import com.medconsult.medicalrecord.medicalrecord.entity.MedicalRecord;
+import com.medconsult.medicalrecord.medicalrecord.mapper.MedicalRecordMapper;
 import com.medconsult.medicalrecord.notification.NotificationOutboxProducer;
 import com.medconsult.medicalrecord.prescription.dto.PrescriptionDTO;
 import com.medconsult.medicalrecord.prescription.entity.Prescription;
@@ -44,6 +47,8 @@ public class PrescriptionTxService {
 
     private final PrescriptionMapper prescriptionMapper;
     private final PrescriptionItemMapper itemMapper;
+    private final MedicalRecordMapper medicalRecordMapper;
+    private final AppointmentFeignClient appointmentFeignClient;
     private final DrugFeignClient drugFeignClient;
     private final NotificationOutboxProducer notificationOutboxProducer;
 
@@ -98,6 +103,8 @@ public class PrescriptionTxService {
         com.baomidou.mybatisplus.extension.toolkit.Db.saveBatch(items);
         p.setTotalFee(totalFee);
         prescriptionMapper.updateById(p);
+        publishRecordIfDraft(recordId);
+        completeAppointmentIfNeeded(recordId);
 
         log.info("处方创建: prescriptionNo={} items={} totalFee={}",
                 p.getPrescriptionNo(), req.getItems().size(), totalFee);
@@ -118,6 +125,20 @@ public class PrescriptionTxService {
         return new PrescriptionDTO.CreateResponse(p.getPrescriptionNo(), p.getStatus(), totalFee);
     }
 
+    private void publishRecordIfDraft(Long recordId) {
+        MedicalRecord record = medicalRecordMapper.selectById(recordId);
+        if (record == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "病历不存在: " + recordId);
+        }
+        if (!"DRAFT".equals(record.getStatus())) {
+            return;
+        }
+        record.setStatus("ARCHIVED");
+        record.setArchivedAt(LocalDateTime.now());
+        medicalRecordMapper.updateById(record);
+        log.info("开方成功后发布病历: recordNo={}", record.getRecordNo());
+    }
+
     /**
      * 审方事务体（锁内执行）。
      *
@@ -127,6 +148,16 @@ public class PrescriptionTxService {
      * @param reviewComment 审方意见
      * @param rejectReason  驳回原因（REJECT 时校验非空）
      */
+    private void completeAppointmentIfNeeded(Long recordId) {
+        MedicalRecord record = medicalRecordMapper.selectById(recordId);
+        if (record == null || record.getAppointmentId() == null) {
+            return;
+        }
+        appointmentFeignClient.completeById(record.getAppointmentId());
+        log.info("寮€鏂瑰悗瀹屾垚棰勭害: recordNo={} appointmentId={}",
+                record.getRecordNo(), record.getAppointmentId());
+    }
+
     @Transactional
     @AuditLog(
             resourceType = "PRESCRIPTION",
