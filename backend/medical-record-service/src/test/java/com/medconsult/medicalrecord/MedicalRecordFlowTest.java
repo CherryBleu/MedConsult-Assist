@@ -43,9 +43,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>病历：创建(DRAFT) / 详情 / 列表(按 patientId 过滤) / 更新草稿 / 归档(DRAFT→ARCHIVED)</li>
  *   <li>病历归档后不可改 → CONFLICT（医疗文书不可变，§6.1）</li>
  *   <li>内部接口 /internal/medical-records/{id}/full 返回完整病历</li>
- *   <li>处方：开方(DRAFT) / 列表(按 status 过滤) / 详情(含明细) / 提交审方(DRAFT→PENDING_REVIEW)</li>
- *   <li>处方审方：PENDING_REVIEW → APPROVED；PENDING_REVIEW → REJECTED</li>
- *   <li>非法状态转移：DRAFT 直接 review → CONFLICT；REJECT 无驳回原因 → PARAM_ERROR</li>
+ *   <li>处方：开方(APPROVED) / 列表(按 status 过滤) / 详情(含明细) / 患者缴费 / 药房调剂</li>
+ *   <li>历史待审兼容：PENDING_REVIEW → APPROVED；PENDING_REVIEW → REJECTED</li>
+ *   <li>非法状态转移：APPROVED 直接 review → CONFLICT；REJECT 无驳回原因 → PARAM_ERROR</li>
  * </ul>
  *
  * <p>注意：medical-record-service 无只读依赖表（不像 outpatient 依赖 department/doctor 预置数据），
@@ -204,6 +204,34 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.recordId").exists())
                 .andExpect(jsonPath("$.data.status").value("DRAFT"));
+    }
+
+    @Test
+    void createRecordAndPrescription_acceptNumericPatientAndDoctorIds() throws Exception {
+        String recordBody = """
+                {"patientId":"1001","doctorId":"2001","chiefComplaint":"咳嗽伴发热3天",
+                 "initialDiagnosis":["急性支气管炎"],"doctorAdvice":"多饮水，按医嘱用药。"}""";
+        MvcResult recordResult = mvc.perform(doctorAuth(post("/api/v1/medical-records")
+                        .contentType("application/json")
+                        .content(recordBody)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andReturn();
+        String recordNo = om.readTree(recordResult.getResponse().getContentAsString())
+                .at("/data/recordId").asText();
+
+        String rxBody = """
+                {"recordId":"%s","patientId":"1001","doctorId":"2001","source":"OUTPATIENT",
+                 "items":[{"drugNo":"D001","drugName":"阿莫西林胶囊","days":5,
+                           "quantity":2,"unit":"盒","unitPrice":25.50}]}"""
+                .formatted(recordNo);
+        mvc.perform(doctorAuth(post("/api/v1/prescriptions")
+                        .contentType("application/json")
+                        .content(rxBody)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.totalFee").value(51.00));
     }
 
     @Test
@@ -440,7 +468,7 @@ class MedicalRecordFlowTest {
     // ===== 处方域 =====
 
     @Test
-    void createPrescription_draftWithItems() throws Exception {
+    void createPrescription_approvedWithItems() throws Exception {
         String rxNo = createPrescription();
         // 验证详情含明细
         mvc.perform(doctorAuth(get("/api/v1/prescriptions/" + rxNo)))
@@ -448,7 +476,7 @@ class MedicalRecordFlowTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.items[0].drugName").value("硝苯地平控释片"))
                 .andExpect(jsonPath("$.data.items[0].subtotal").value(210.00))
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.paymentStatus").value("UNPAID"))
                 .andExpect(jsonPath("$.data.totalFee").value(210.00));
     }
@@ -486,24 +514,22 @@ class MedicalRecordFlowTest {
 
     @Test
     void prescriptionList_filterByStatus() throws Exception {
-        createPrescription(); // DRAFT
-        mvc.perform(doctorAuth(get("/api/v1/prescriptions").param("status", "DRAFT")))
+        createPrescription(); // APPROVED
+        mvc.perform(doctorAuth(get("/api/v1/prescriptions").param("status", "APPROVED")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.items[0].status").value("DRAFT"));
+                .andExpect(jsonPath("$.data.items[0].status").value("APPROVED"));
         // PENDING_REVIEW 应为 0
         mvc.perform(doctorAuth(get("/api/v1/prescriptions").param("status", "PENDING_REVIEW")))
                 .andExpect(jsonPath("$.data.total").value(0));
     }
 
     @Test
-    void submit_draftToPendingReview() throws Exception {
+    void submit_approvedRejected() throws Exception {
         String rxNo = createPrescription();
         mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.status").value("PENDING_REVIEW"));
+                .andExpect(jsonPath("$.code").value(409001));
     }
 
     @Test
@@ -518,8 +544,7 @@ class MedicalRecordFlowTest {
     @Test
     void submit_nonDraftRejected() throws Exception {
         String rxNo = createPrescription();
-        submitPrescription(rxNo); // DRAFT → PENDING_REVIEW
-        // 已 PENDING_REVIEW 再 submit → CONFLICT
+        // 已 APPROVED 再 submit → CONFLICT
         mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + rxNo + "/submit")))
                 .andExpect(jsonPath("$.code").value(409001));
     }
@@ -554,13 +579,13 @@ class MedicalRecordFlowTest {
 
     @Test
     void prescriptionList_selfPatientReturnsOwnOnly() throws Exception {
-        createPrescription(); // 归属 patientId=1001，DRAFT
+        createPrescription(); // 归属 patientId=1001，APPROVED
         // 本人患者可调列表（不再 403），且只看到自己的处方
         mvc.perform(selfPatientAuth(get("/api/v1/prescriptions")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.items[0].status").value("DRAFT"));
+                .andExpect(jsonPath("$.data.items[0].status").value("APPROVED"));
     }
 
     @Test
@@ -594,7 +619,7 @@ class MedicalRecordFlowTest {
     @Test
     void review_pendingToApproved() throws Exception {
         String rxNo = createPrescription();
-        submitPrescription(rxNo);
+        markPrescriptionStatus(rxNo, "PENDING_REVIEW");
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
                         .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\",\"reviewComment\":\"用药合理\"}")))
@@ -607,7 +632,7 @@ class MedicalRecordFlowTest {
     @Test
     void review_pendingToRejected() throws Exception {
         String rxNo = createPrescription();
-        submitPrescription(rxNo);
+        markPrescriptionStatus(rxNo, "PENDING_REVIEW");
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
                         .content("{\"action\":\"REJECT\",\"pharmacistId\":\"PH2001\",\"rejectReason\":\"剂量超限\"}")))
@@ -617,9 +642,9 @@ class MedicalRecordFlowTest {
     }
 
     @Test
-    void review_illegalAction_onDraft() throws Exception {
+    void review_illegalAction_onApproved() throws Exception {
         String rxNo = createPrescription();
-        // DRAFT 直接 review → CONFLICT（必须先 submit）
+        // 当前主流程已 APPROVED，历史 review 只允许处理 PENDING_REVIEW
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
                         .content("{\"action\":\"APPROVE\",\"pharmacistId\":\"PH2001\"}")))
@@ -629,7 +654,7 @@ class MedicalRecordFlowTest {
     @Test
     void review_rejectWithoutReason_paramError() throws Exception {
         String rxNo = createPrescription();
-        submitPrescription(rxNo);
+        markPrescriptionStatus(rxNo, "PENDING_REVIEW");
         // REJECT 无 rejectReason → PARAM_ERROR
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/review")
                         .contentType("application/json")
@@ -654,7 +679,8 @@ class MedicalRecordFlowTest {
 
     @Test
     void pay_nonApprovedRejected() throws Exception {
-        String rxNo = createPrescription(); // DRAFT，未审
+        String rxNo = createPrescription();
+        markPrescriptionStatus(rxNo, "PENDING_REVIEW");
         mvc.perform(selfPatientAuth(post("/api/v1/prescriptions/" + rxNo + "/pay")
                         .contentType("application/json")
                         .content("{\"paidAmount\":210.00,\"paymentNo\":\"PAY001\"}")))
@@ -703,7 +729,8 @@ class MedicalRecordFlowTest {
 
     @Test
     void dispense_draftRejected() throws Exception {
-        String rxNo = createPrescription(); // DRAFT，未审未缴费
+        String rxNo = createPrescription();
+        markPrescriptionStatus(rxNo, "PENDING_REVIEW");
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
                         .contentType("application/json")
                         .content("{\"pharmacistId\":\"PH2001\"}")))
@@ -722,8 +749,6 @@ class MedicalRecordFlowTest {
                         .contentType("application/json").content(body)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .at("/data/prescriptionId").asText();
-        submitPrescription(rxNo);
-        approvePrescription(rxNo);
         when(drugFeignClient.outbound(any(), any())).thenReturn(
                 Result.ok(new DispenseDTO.OutboundResponse("SF_MOCK", "D001", 50)));
         mvc.perform(pharmacyAdminAuth(post("/api/v1/prescriptions/" + rxNo + "/dispense")
@@ -812,8 +837,6 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk());
 
         String completedRxNo = createPrescriptionForRecord(recordNo, traceId);
-        submitPrescription(completedRxNo, traceId);
-        approvePrescription(completedRxNo, traceId);
         mvc.perform(selfPatientAuth(post("/api/v1/prescriptions/" + completedRxNo + "/pay")
                         .header("X-Trace-Id", traceId)
                         .contentType("application/json")
@@ -831,8 +854,6 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk());
 
         String cancelledRxNo = createPrescriptionForRecord(recordNo, traceId);
-        submitPrescription(cancelledRxNo, traceId);
-        approvePrescription(cancelledRxNo, traceId);
         mvc.perform(doctorAuth(post("/api/v1/prescriptions/" + cancelledRxNo + "/cancel")
                         .header("X-Trace-Id", traceId)
                         .contentType("application/json")
@@ -852,7 +873,7 @@ class MedicalRecordFlowTest {
                 WHERE routing_key = 'audit.log'
                 ORDER BY id
                 """);
-        assertEquals(14, rows.size());
+        assertEquals(10, rows.size());
 
         List<String> events = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -873,14 +894,10 @@ class MedicalRecordFlowTest {
                 "MEDICAL_RECORD:UPDATE",
                 "ATTACHMENT:CREATE",
                 "PRESCRIPTION:CREATE",
-                "PRESCRIPTION:SUBMIT",
-                "PRESCRIPTION:REVIEW",
                 "PRESCRIPTION:PAYMENT",
                 "PRESCRIPTION:DISPENSE",
                 "PRESCRIPTION:COMPLETE",
                 "PRESCRIPTION:CREATE",
-                "PRESCRIPTION:SUBMIT",
-                "PRESCRIPTION:REVIEW",
                 "PRESCRIPTION:CANCEL",
                 "MEDICAL_RECORD:ARCHIVE"), events);
     }
@@ -906,7 +923,7 @@ class MedicalRecordFlowTest {
                 .andExpect(status().isOk());
     }
 
-    /** 创建处方（DRAFT），返回 prescription_no。明细带 drugNo 供 dispense 测试用 */
+    /** 创建处方（APPROVED），返回 prescription_no。明细带 drugNo 供 dispense 测试用 */
     private String createPrescription() throws Exception {
         String recordNo = createRecord();
         String body = """
@@ -964,15 +981,19 @@ class MedicalRecordFlowTest {
         return om.readTree(r.getResponse().getContentAsString()).at("/data/prescriptionId").asText();
     }
 
-    /** 创建已审通过的处方（DRAFT→submit→review APPROVE），返回 prescription_no */
-    private String createApprovedPrescription() throws Exception {
-        String rxNo = createPrescription();
-        submitPrescription(rxNo);
-        approvePrescription(rxNo);
-        return rxNo;
+    /** 将处方改成历史状态，专用于兼容旧待审流转的回归测试。 */
+    private void markPrescriptionStatus(String rxNo, String status) {
+        new JdbcTemplate(dataSource).update(
+                "UPDATE prescription SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE prescription_no = ?",
+                status, rxNo);
     }
 
-    /** 创建已调剂的处方（开方→提交→审方→dispense），返回 prescription_no。需先 stub Feign */
+    /** 创建已通过的处方，返回 prescription_no */
+    private String createApprovedPrescription() throws Exception {
+        return createPrescription();
+    }
+
+    /** 创建已调剂的处方（开方→dispense），返回 prescription_no。需先 stub Feign */
     private String createDispensedPrescription() throws Exception {
         String rxNo = createApprovedPrescription();
         when(drugFeignClient.outbound(any(), any())).thenReturn(

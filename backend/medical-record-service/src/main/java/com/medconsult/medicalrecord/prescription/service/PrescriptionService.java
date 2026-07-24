@@ -7,15 +7,15 @@ import com.medconsult.medicalrecord.prescription.entity.Prescription;
 /**
  * 处方服务接口（对齐《修改建议》§2.1 处方接口补充表 + 架构文档 §6.2 8 态状态机）。
  *
- * <p>第 1 批：create / list / detail / submit / review（DRAFT→PENDING_REVIEW→APPROVED|REJECTED）。
- * <p>第 2 批：pay / dispense / complete / cancel（APPROVED→PAID→DISPENSED→COMPLETED / CANCELLED）。
+ * <p>当前主流程：create 后直接 APPROVED，患者 pay，药房 dispense / complete。
+ * submit / review 保留用于历史 DRAFT / PENDING_REVIEW 处方兼容处理。
  */
 public interface PrescriptionService {
 
-    /** 开方（初始 DRAFT，写主表 + 明细；drugNo 非空时 Feign 反查存 drug_id） */
+    /** 开方（初始 APPROVED，写主表 + 明细；drugNo 非空时供调剂发药扣库存使用） */
     PrescriptionDTO.CreateResponse create(PrescriptionDTO.CreateRequest req);
 
-    /** 处方列表（可按 status 过滤，药师审方工作台） */
+    /** 处方列表（可按 status 过滤，患者处方页 / 药房发药工作台） */
     PageResult<PrescriptionDTO.ListItem> list(int page, int pageSize, String status);
 
     /** 处方详情（含明细） */
@@ -24,7 +24,7 @@ public interface PrescriptionService {
     /** 提交审方（DRAFT → PENDING_REVIEW） */
     PrescriptionDTO.SubmitResponse submit(String prescriptionNo);
 
-    /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发） */
+    /** 历史兼容：审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发） */
     PrescriptionDTO.ReviewResponse review(String prescriptionNo, PrescriptionDTO.ReviewRequest req);
 
     /** 缴费（APPROVED → PAID） */

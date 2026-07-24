@@ -11,20 +11,15 @@ import java.time.LocalDateTime;
 /**
  * 处方主表（对应《修改建议》§2.1 表 1 prescription，从 medical_record 剥离独立成表）。
  *
- * <p>状态机（8 态，本批第 1 批只实现前 4 态流转）：
+ * <p>状态机（当前主流程跳过审方，历史 DRAFT/PENDING_REVIEW 仍兼容处理）：
  * <pre>
- * DRAFT ──submit──▶ PENDING_REVIEW ──approve──▶ APPROVED
- *                       │
- *                     reject
- *                       ▼
- *                   REJECTED
+ * create ──▶ APPROVED ──pay──▶ PAID ──dispense──▶ DISPENSED ──complete──▶ COMPLETED
+ *              │   ▲
+ *              │   └── 历史 PENDING_REVIEW ──approve
+ *              └────── cancel
  *
- * （第 2 批补：APPROVED ──pay──▶ PAID ──dispense──▶ DISPENSED ──complete──▶ COMPLETED
- *            APPROVED/PAID/CANCELLED 退方分支）
+ * 历史兼容：DRAFT ──submit──▶ PENDING_REVIEW ──reject──▶ REJECTED
  * </pre>
- *
- * <p>本批合法转移：DRAFT→PENDING_REVIEW（submit）、PENDING_REVIEW→APPROVED|REJECTED（review）。
- * 其他状态值（PAID/DISPENSED/COMPLETED/CANCELLED）作为字面量预留，但本批无对应接口触发。
  */
 @Getter
 @Setter

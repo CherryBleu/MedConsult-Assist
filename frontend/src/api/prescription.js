@@ -17,7 +17,8 @@ const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 // 接口集见 docs/接口文档.md §2.9 处方管理 / docs/修改建议.md §2.1 八态状态机）
 //
 // 后端 prescriptionId 实为 prescription_no（业务可读编号）。
-// 状态机：DRAFT → PENDING_REVIEW → APPROVED → PAID → DISPENSED → COMPLETED
+// 当前主流程：医生开方后直接 APPROVED，患者可缴费，药房可发药。
+// 历史兼容状态：DRAFT → PENDING_REVIEW → APPROVED → PAID → DISPENSED → COMPLETED
 //                  │                     │
 //                  ↓ 驳回               ↓ 退方
 //                REJECTED             CANCELLED
@@ -82,19 +83,19 @@ export const getPrescriptionDetailApi = async (id) => {
   return res
 }
 
-// 医生开方（DRAFT，对齐 POST /prescriptions）
+// 医生开方（当前直接 APPROVED，对齐 POST /prescriptions）
 export const createPrescriptionApi = (data) => {
   if (USE_MOCK) return Promise.resolve(mockCreatePrescription(data))
   return request({ url: '/prescriptions', method: 'post', data })
 }
 
-// 提交审方（DRAFT → PENDING_REVIEW，对齐 POST /prescriptions/{id}/submit）
+// 历史兼容：提交审方（DRAFT → PENDING_REVIEW，对齐 POST /prescriptions/{id}/submit）
 export const submitPrescriptionApi = (id) => {
   if (USE_MOCK) return Promise.resolve(mockSubmitPrescription(id))
   return request({ url: `/prescriptions/${id}/submit`, method: 'post' })
 }
 
-// 药师审方（PENDING_REVIEW → APPROVED | REJECTED，对齐 POST /prescriptions/{id}/review）
+// 历史兼容：药师处理待审处方（PENDING_REVIEW → APPROVED | REJECTED）
 // payload: { action: 'APPROVE'|'REJECT', pharmacistId, reviewComment?, rejectReason? }
 export const reviewPrescriptionApi = (id, data) => {
   if (USE_MOCK) return Promise.resolve(mockReviewPrescription(id, data))

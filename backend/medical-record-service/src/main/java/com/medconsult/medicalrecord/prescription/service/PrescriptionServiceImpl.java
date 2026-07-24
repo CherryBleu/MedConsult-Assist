@@ -35,15 +35,14 @@ import java.util.List;
 /**
  * 处方服务实现（对齐《修改建议》§2.1 + 架构文档 §6.2 状态机）。
  *
- * <p>核心逻辑（第 1 批）：
+ * <p>核心逻辑：
  * <ul>
  *   <li>开方 create：prescriptionNo = RX + 雪花 base36；recordId/patientId/doctorId/departmentId
- *       用业务编号正哈希落库（同病历域策略）；status 初始 DRAFT；paymentStatus 初始 UNPAID；
+ *       解析为真实主键落库；status 初始 APPROVED；paymentStatus 初始 UNPAID；
  *       遍历明细累加 totalFee（无单价的按 0 计）；明细 drugId 本批存 null（快照名展示）</li>
  *   <li>列表 list：可按 status 过滤，分页</li>
  *   <li>详情 detail：主表 + 明细（批量查 by prescription_id）</li>
- *   <li>提交审方 submit：DRAFT → PENDING_REVIEW（状态校验）</li>
- *   <li>审方 review：PENDING_REVIEW → APPROVED | REJECTED；Redis 锁包裹 TxService 事务体防并发</li>
+ *   <li>历史兼容 submit/review：DRAFT → PENDING_REVIEW → APPROVED | REJECTED</li>
  * </ul>
  *
  * <p><b>锁 key 引用 RedisKey 常量</b>（改进点：outpatient 的 AppointmentServiceImpl 硬编码了字符串，
@@ -361,6 +360,10 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         if (patientNo == null || patientNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
         }
+        Long numericId = parseUnsignedLong(patientNo);
+        if (numericId != null) {
+            return numericId;
+        }
         Result<EntityIdDTO> resp = patientFeignClient.resolveId(patientNo);
         if (resp == null || resp.data() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "患者不存在: " + patientNo);
@@ -373,6 +376,10 @@ public class PrescriptionServiceImpl implements PrescriptionService {
         if (doctorNo == null || doctorNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "医生编号不能为空");
         }
+        Long numericId = parseUnsignedLong(doctorNo);
+        if (numericId != null) {
+            return numericId;
+        }
         Result<EntityIdDTO> resp = doctorFeignClient.resolveDoctorId(doctorNo);
         if (resp == null || resp.data() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
@@ -384,6 +391,10 @@ public class PrescriptionServiceImpl implements PrescriptionService {
     private Long resolveDepartmentId(String departmentNo) {
         if (departmentNo == null || departmentNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "科室编号不能为空");
+        }
+        Long numericId = parseUnsignedLong(departmentNo);
+        if (numericId != null) {
+            return numericId;
         }
         Result<EntityIdDTO> resp = doctorFeignClient.resolveDepartmentId(departmentNo);
         if (resp == null || resp.data() == null) {
@@ -445,6 +456,21 @@ public class PrescriptionServiceImpl implements PrescriptionService {
             return "DOCTOR".equals(payload.primaryRole());
         }
         return payload.roles() != null && payload.roles().contains("DOCTOR");
+    }
+
+    private static Long parseUnsignedLong(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || !trimmed.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "编号超出范围: " + value);
+        }
     }
 
 }

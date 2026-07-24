@@ -134,7 +134,7 @@ const goWriteRecord = (item) => {
   router.push({
     path: '/doctor/record/write',
     query: {
-      appointmentId: item.id,
+      appointmentId: item.appointmentNo || item.id,
       patientId: item.patientNo || item.patientId,
       patientName: patientDisplayName(item)
     }

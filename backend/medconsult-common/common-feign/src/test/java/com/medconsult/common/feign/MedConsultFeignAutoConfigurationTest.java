@@ -2,7 +2,9 @@ package com.medconsult.common.feign;
 
 import com.medconsult.common.security.JwtCodec;
 import com.medconsult.common.security.JwtPayload;
+import com.medconsult.common.security.MedConsultSecurityAutoConfiguration;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -37,5 +39,31 @@ class MedConsultFeignAutoConfigurationTest {
             assertThat(payload.serviceCode()).isEqualTo("drug-service");
             assertThat(payload.scope()).isEqualTo(List.of("drug:read", "drug:write"));
         });
+    }
+
+    @Test
+    void autoConfigurationOrderKeepsJwtBackedServiceTokenProvider() {
+        new ApplicationContextRunner()
+                .withInitializer(ctx -> ctx.getBeanFactory()
+                        .setConversionService(ApplicationConversionService.getSharedInstance()))
+                .withPropertyValues(
+                        "spring.application.name=medical-record-service",
+                        "medconsult.security.jwt.secret=" + SECRET,
+                        "medconsult.feign.service-token.scope=*")
+                .withConfiguration(AutoConfigurations.of(
+                        MedConsultFeignAutoConfiguration.class,
+                        MedConsultSecurityAutoConfiguration.class))
+                .run(ctx -> {
+                    AuthRelayInterceptor.ServiceTokenProvider provider =
+                            ctx.getBean(AuthRelayInterceptor.ServiceTokenProvider.class);
+
+                    String token = provider.get();
+
+                    assertThat(token).isNotBlank();
+                    JwtPayload payload = ctx.getBean(JwtCodec.class).parse(token);
+                    assertThat(payload.subjectType()).isEqualTo(JwtPayload.SubjectType.SERVICE);
+                    assertThat(payload.serviceCode()).isEqualTo("medical-record-service");
+                    assertThat(payload.scope()).isEqualTo(List.of("*"));
+                });
     }
 }

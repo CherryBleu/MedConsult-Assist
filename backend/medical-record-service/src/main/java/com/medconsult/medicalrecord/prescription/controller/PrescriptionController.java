@@ -13,13 +13,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * 处方对外接口（对齐《修改建议》§2.1 处方接口补充表，第 1 批 5 接口）。
+ * 处方对外接口（对齐《修改建议》§2.1 处方接口补充表）。
  *
  * <p>路径前缀 /api/v1/prescriptions（对外，走 Gateway 鉴权）。
  * <p>路径变量 {@code prescriptionId} 实为 {@code prescription_no}（业务可读编号）。
  *
- * <p>第 1 批：POST 创建 / GET 列表 / GET 详情 / POST {id}/submit / POST {id}/review。
- * <p>第 2 批（后续）：POST {id}/pay / POST {id}/dispense / POST {id}/complete / POST {id}/cancel。
+ * <p>当前主流程：POST 创建后直接 APPROVED，患者缴费、药房调剂发药。
+ * POST {id}/submit / POST {id}/review 保留用于历史待审处方兼容处理。
  */
 @RestController
 @RequestMapping("/api/v1/prescriptions")
@@ -29,7 +29,7 @@ public class PrescriptionController {
 
     private final PrescriptionService prescriptionService;
 
-    /** 开方（初始 DRAFT，写主表 + 明细）—— 仅医生可开方（§2.3 权限矩阵「处方 开方=DOCTOR」） */
+    /** 开方（初始 APPROVED，写主表 + 明细）—— 仅医生可开方（§2.3 权限矩阵「处方 开方=DOCTOR」） */
     @PostMapping
     @Permission(roles = {"DOCTOR"})
     @Operation(summary = "创建处方")
@@ -56,7 +56,7 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.detail(prescriptionId));
     }
 
-    /** 提交审方（DRAFT → PENDING_REVIEW）—— 仅开方医生提交（§2.3「处方 开方=DOCTOR」） */
+    /** 历史兼容：提交审方（DRAFT → PENDING_REVIEW）—— 仅开方医生提交（§2.3「处方 开方=DOCTOR」） */
     @PostMapping("/{prescriptionId}/submit")
     @Permission(roles = {"DOCTOR"})
     @Operation(summary = "提交处方（草稿→待审）")
@@ -64,7 +64,7 @@ public class PrescriptionController {
         return Result.ok(prescriptionService.submit(prescriptionId));
     }
 
-    /** 审方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发）—— 仅药师审方（§2.3「处方 审核=PHARMACY_ADMIN」） */
+    /** 历史兼容：处理待审处方（PENDING_REVIEW → APPROVED | REJECTED，Redis 锁内防并发）—— 仅药师（§2.3「处方 审核=PHARMACY_ADMIN」） */
     @PostMapping("/{prescriptionId}/review")
     @Permission(roles = {"PHARMACY_ADMIN"})
     @Operation(summary = "药师审方（待审→已通过/已驳回）")

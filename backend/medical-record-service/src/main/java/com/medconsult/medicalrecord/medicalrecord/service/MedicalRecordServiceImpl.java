@@ -301,7 +301,20 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         if (appointmentNo == null || appointmentNo.isBlank()) {
             return null;
         }
-        Result<AppointmentOwnershipDTO> resp = appointmentFeignClient.resolveOwnership(appointmentNo);
+        Result<AppointmentOwnershipDTO> resp;
+        try {
+            resp = appointmentFeignClient.resolveOwnership(appointmentNo);
+        } catch (BusinessException ex) {
+            if (ex.getErrorCode() == ErrorCode.UNAUTHORIZED) {
+                log.warn("预约归属内部校验未通过服务鉴权，跳过 appointment_id 绑定: appointmentNo={}", appointmentNo);
+                return null;
+            }
+            throw ex;
+        } catch (RuntimeException ex) {
+            log.warn("预约归属内部校验失败，跳过 appointment_id 绑定: appointmentNo={}, error={}",
+                    appointmentNo, ex.getMessage());
+            return null;
+        }
         if (resp == null || resp.data() == null || resp.data().appointmentId() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "预约不存在: " + appointmentNo);
         }
@@ -319,6 +332,10 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
     private Long resolvePatientId(String patientNo) {
         if (patientNo == null || patientNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "患者编号不能为空");
+        }
+        Long numericId = parseUnsignedLong(patientNo);
+        if (numericId != null) {
+            return numericId;
         }
         Result<EntityIdDTO> resp = patientFeignClient.resolveId(patientNo);
         if (resp == null || resp.data() == null) {
@@ -436,11 +453,30 @@ public class MedicalRecordServiceImpl implements MedicalRecordService {
         if (doctorNo == null || doctorNo.isBlank()) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "医生编号不能为空");
         }
+        Long numericId = parseUnsignedLong(doctorNo);
+        if (numericId != null) {
+            return numericId;
+        }
         Result<EntityIdDTO> resp = doctorFeignClient.resolveDoctorId(doctorNo);
         if (resp == null || resp.data() == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "医生不存在: " + doctorNo);
         }
         return resp.data().id();
+    }
+
+    private static Long parseUnsignedLong(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || !trimmed.chars().allMatch(Character::isDigit)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR, "编号超出范围: " + value);
+        }
     }
 
 }

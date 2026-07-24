@@ -1,8 +1,12 @@
 package com.medconsult.common.feign;
 
 import com.medconsult.common.security.JwtPayload;
+import feign.MethodMetadata;
 import feign.RequestInterceptor;
 import feign.RequestTemplate;
+import feign.Target;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Feign 鉴权透传拦截器（架构文档 §2.4 关键设计）。
@@ -22,6 +26,8 @@ import feign.RequestTemplate;
  * 服务 token 由 {@link ServiceTokenProvider} 提供（auth-service 换发，缓存）。
  */
 public class AuthRelayInterceptor implements RequestInterceptor {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthRelayInterceptor.class);
 
     public static final String HEADER_AUTH = "Authorization";
     public static final String HEADER_BEARER_PREFIX = "Bearer ";
@@ -72,6 +78,7 @@ public class AuthRelayInterceptor implements RequestInterceptor {
             // 用户链路：透传用户 token（从 RequestContext）+ 身份头
             String userToken = RequestContext.getUserToken();
             if (userToken != null) {
+                tpl.removeHeader(HEADER_AUTH);
                 tpl.header(HEADER_AUTH, HEADER_BEARER_PREFIX + userToken);
             }
             if (user.userId() != null) {
@@ -106,13 +113,36 @@ public class AuthRelayInterceptor implements RequestInterceptor {
         if (path == null || path.isBlank()) {
             path = tpl.url();
         }
+        if (path == null || !path.contains("/internal/")) {
+            MethodMetadata metadata = tpl.methodMetadata();
+            RequestTemplate methodTemplate = metadata == null ? null : metadata.template();
+            String methodPath = methodTemplate == null ? null : methodTemplate.path();
+            if (methodPath == null || methodPath.isBlank()) {
+                methodPath = methodTemplate == null ? null : methodTemplate.url();
+            }
+            if (methodPath != null && !methodPath.isBlank()) {
+                path = path == null || path.isBlank() ? methodPath : path + " " + methodPath;
+            }
+        }
+        if (path == null || !path.contains("/internal/")) {
+            Target<?> target = tpl.feignTarget();
+            String targetUrl = target == null ? null : target.url();
+            if (targetUrl != null && !targetUrl.isBlank()) {
+                path = path == null || path.isBlank() ? targetUrl : path + " " + targetUrl;
+            }
+        }
         return path;
     }
 
     private void applyServiceToken(RequestTemplate tpl) {
         String serviceToken = serviceTokenProvider.get();
-        if (serviceToken != null) {
+        tpl.removeHeader(HEADER_AUTH);
+        if (serviceToken != null && !serviceToken.isBlank()) {
             tpl.header(HEADER_AUTH, HEADER_BEARER_PREFIX + serviceToken);
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("Feign service auth applied path={} tokenPresent={}",
+                    requestPath(tpl), serviceToken != null && !serviceToken.isBlank());
         }
     }
 

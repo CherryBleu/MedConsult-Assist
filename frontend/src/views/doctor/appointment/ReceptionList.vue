@@ -367,7 +367,7 @@ const goWriteRecord = (row) => {
   router.push({
     path: '/doctor/record/write',
     query: {
-      appointmentId: row.id || row.appointmentId,
+      appointmentId: row.appointmentNo || row.id || row.appointmentId,
       patientId: row.patientNo || row.patientId,
       patientName: patientDisplayName(row)
     }

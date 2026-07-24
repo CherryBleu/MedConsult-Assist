@@ -1,11 +1,13 @@
 package com.medconsult.common.feign;
 
 import com.medconsult.common.security.JwtCodec;
+import com.medconsult.common.security.MedConsultSecurityAutoConfiguration;
 import feign.Request;
 import feign.codec.ErrorDecoder;
 import jakarta.servlet.Filter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -36,6 +38,7 @@ import java.util.List;
  * <p>前提：业务服务须 {@code @EnableFeignClients} 启用 Feign（本模块不强制开启）。
  */
 @AutoConfiguration
+@AutoConfigureAfter(MedConsultSecurityAutoConfiguration.class)
 @ConditionalOnClass(name = "feign.RequestInterceptor")
 public class MedConsultFeignAutoConfiguration {
 

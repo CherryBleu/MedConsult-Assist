@@ -339,7 +339,7 @@ import ResponsiveTable from '@/components/common/ResponsiveTable.vue'
 const tabs = [
   { name: 'ALL', label: '全部' },
   { name: 'PENDING_PAY', label: '待缴费', status: 'APPROVED' },
-  { name: 'REVIEWING', label: '审方中', status: 'PENDING_REVIEW' },
+  { name: 'REVIEWING', label: '历史待审', status: 'PENDING_REVIEW' },
   { name: 'READY', label: '待取药', status: 'PAID' },
   { name: 'DONE', label: '已完成', statuses: ['DISPENSED', 'COMPLETED'] },
   { name: 'EXCEPTION', label: '退回/取消', statuses: ['REJECTED', 'CANCELLED'] }
@@ -347,7 +347,7 @@ const tabs = [
 
 const STATUS_META = {
   DRAFT: { label: '草稿', type: 'info' },
-  PENDING_REVIEW: { label: '审方中', type: 'warning' },
+  PENDING_REVIEW: { label: '历史待审', type: 'warning' },
   APPROVED: { label: '待缴费', type: 'warning' },
   REJECTED: { label: '已驳回', type: 'danger' },
   PAID: { label: '待取药', type: 'success' },
@@ -364,8 +364,7 @@ const PAY_META = {
 }
 
 const statusSteps = [
-  { value: 'PENDING_REVIEW', label: '审方' },
-  { value: 'APPROVED', label: '通过' },
+  { value: 'APPROVED', label: '开方' },
   { value: 'PAID', label: '缴费' },
   { value: 'DISPENSED', label: '发药' },
   { value: 'COMPLETED', label: '完成' }
@@ -501,7 +500,7 @@ const getPayType = (status) => PAY_META[status]?.type || ''
 
 const getNextAction = (row) => {
   if (canPay(row)) return '缴费后取药'
-  if (row.status === 'PENDING_REVIEW') return '等待药师审方'
+  if (row.status === 'PENDING_REVIEW') return '历史处方处理中'
   if (row.status === 'PAID') return '等待药房发药'
   if (row.status === 'DISPENSED') return '核对已发药'
   if (row.status === 'COMPLETED') return '处方已完成'

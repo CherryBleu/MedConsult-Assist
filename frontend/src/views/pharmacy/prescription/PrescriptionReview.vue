@@ -4,7 +4,7 @@
       <div class="page-header">
         <div>
           <h2 class="page-title">处方审核</h2>
-          <p class="page-subtitle">药师审方、发药和完成状态在同一桌面工作区内处理。</p>
+          <p class="page-subtitle">医生开方后直接进入药房发药与完成处理，历史待审处方仍可兼容处理。</p>
         </div>
         <div class="header-actions">
           <el-select
@@ -15,8 +15,8 @@
             aria-label="处方状态筛选"
             @change="handleFilterChange"
           >
-            <el-option label="待审方" value="PENDING_REVIEW" />
-            <el-option label="已通过" value="APPROVED" />
+            <el-option label="待发药/待缴费" value="APPROVED" />
+            <el-option label="历史待审" value="PENDING_REVIEW" />
             <el-option label="已驳回" value="REJECTED" />
             <el-option label="已缴费" value="PAID" />
             <el-option label="已发药" value="DISPENSED" />
@@ -63,8 +63,8 @@
                 <template #default="{ row }">
                   <div class="table-actions">
                     <el-button class="prescription-review-action" size="small" link type="primary" :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
-                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="success" :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
-                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="danger" :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
+                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="success" :aria-label="`放行 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">放行</el-button>
+                    <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" size="small" link type="danger" :aria-label="`退回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">退回</el-button>
                     <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" size="small" link type="warning" :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
                     <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" size="small" link type="primary" :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
                   </div>
@@ -104,8 +104,8 @@
                 </dl>
                 <div class="prescription-card__actions">
                   <el-button class="prescription-review-action" plain :aria-label="`查看 ${row.prescriptionId} 处方详情`" @click="showDetail(row)">详情</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`通过 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">通过</el-button>
-                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`驳回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">驳回</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="success" plain :aria-label="`放行 ${row.prescriptionId}`" @click="openReview(row, 'APPROVE')">放行</el-button>
+                  <el-button v-if="row.status === 'PENDING_REVIEW'" class="prescription-review-action" type="danger" plain :aria-label="`退回 ${row.prescriptionId}`" @click="openReview(row, 'REJECT')">退回</el-button>
                   <el-button v-if="row.status === 'APPROVED' || row.status === 'PAID'" class="prescription-review-action" type="warning" plain :aria-label="`发药 ${row.prescriptionId}`" @click="openDispense(row)">发药</el-button>
                   <el-button v-if="row.status === 'DISPENSED'" class="prescription-review-action" type="primary" plain :aria-label="`完成 ${row.prescriptionId}`" @click="handleComplete(row)">完成</el-button>
                 </div>
@@ -202,14 +202,14 @@
       </div>
     </el-dialog>
 
-    <!-- 审方对话框 -->
-    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '审方通过' : '审方驳回'" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
+    <!-- 历史待审处方处理对话框 -->
+    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.action === 'APPROVE' ? '历史处方放行' : '历史处方退回'" width="min(480px, calc(100vw - 32px))" top="24px" class="prescription-workflow-dialog">
       <el-form :model="reviewForm" label-width="90px">
         <el-form-item label="处方编号">
           <span>{{ currentPrescription?.prescriptionId }}</span>
         </el-form-item>
-        <el-form-item label="审方意见">
-          <el-input v-model="reviewForm.reviewComment" type="textarea" :rows="2" placeholder="审方意见（可选）" />
+        <el-form-item label="处理意见">
+          <el-input v-model="reviewForm.reviewComment" type="textarea" :rows="2" placeholder="处理意见（可选）" />
         </el-form-item>
         <el-form-item v-if="reviewForm.action === 'REJECT'" label="驳回原因" required>
           <el-input v-model="reviewForm.rejectReason" type="textarea" :rows="2" placeholder="请填写驳回原因（必填）" />
@@ -260,13 +260,18 @@ const { isMobile } = useResponsive()
 const loading = ref(false)
 const prescriptionList = ref([])
 const total = ref(0)
-const statusFilter = ref('PENDING_REVIEW')
+const statusFilter = ref('APPROVED')
 const loadError = ref('')
 let listRequestSeq = 0
 
 const pagination = reactive({ page: 1, pageSize: 10 })
 const descriptionColumns = computed(() => isMobile.value ? 1 : 2)
 const getErrorMessage = (error, fallback) => error?.response?.data?.message || error?.message || fallback
+const getPharmacistOperatorId = () => {
+  const user = userStore.userInfo || {}
+  const id = user.pharmacistId || user.pharmacistNo || user.userId || user.userNo || user.id || user.account
+  return id == null ? '' : String(id).trim()
+}
 
 const fetchList = async () => {
   const requestSeq = ++listRequestSeq
@@ -349,18 +354,21 @@ const handleReview = async () => {
   }
   submitting.value = true
   try {
-    // pharmacistId 取当前登录药师的关联编号（由 /auth/me 返回，JWT 全链路透传）
+    const pharmacistId = getPharmacistOperatorId()
+    if (!pharmacistId) {
+      throw new Error('当前药师账号缺少编号，请重新登录后再试')
+    }
     await reviewPrescriptionApi(currentPrescription.value.prescriptionId, {
       action: reviewForm.action,
-      pharmacistId: String(userStore.userInfo?.pharmacistId || ''),
+      pharmacistId,
       reviewComment: reviewForm.reviewComment || undefined,
       rejectReason: reviewForm.action === 'REJECT' ? reviewForm.rejectReason : undefined
     })
-    ElMessage.success(reviewForm.action === 'APPROVE' ? '已通过审方' : '已驳回')
+    ElMessage.success(reviewForm.action === 'APPROVE' ? '已放行' : '已退回')
     reviewDialogVisible.value = false
     fetchList()
   } catch (e) {
-    reviewError.value = getErrorMessage(e, '审方提交失败，请重试')
+    reviewError.value = getErrorMessage(e, '处理失败，请重试')
   } finally {
     submitting.value = false
   }
@@ -380,9 +388,12 @@ const handleDispense = async () => {
   dispenseError.value = ''
   submitting.value = true
   try {
-    // pharmacistId 取当前登录药师关联编号（与 handleReview 一致，由 /auth/me 返回、JWT 透传）
+    const pharmacistId = getPharmacistOperatorId()
+    if (!pharmacistId) {
+      throw new Error('当前药师账号缺少编号，请重新登录后再试')
+    }
     await dispensePrescriptionApi(currentPrescription.value.prescriptionId, {
-      pharmacistId: String(userStore.userInfo?.pharmacistId || '')
+      pharmacistId
     })
     ElMessage.success('发药成功')
     dispenseDialogVisible.value = false
@@ -410,8 +421,8 @@ const handleComplete = (row) => {
 // ===== 状态文案/配色 =====
 const STATUS_META = {
   DRAFT: { label: '草稿', type: 'info' },
-  PENDING_REVIEW: { label: '待审方', type: 'warning' },
-  APPROVED: { label: '已通过', type: 'success' },
+  PENDING_REVIEW: { label: '历史待审', type: 'warning' },
+  APPROVED: { label: '待发药/待缴费', type: 'success' },
   REJECTED: { label: '已驳回', type: 'danger' },
   PAID: { label: '已缴费', type: 'success' },
   DISPENSED: { label: '已发药', type: 'primary' },

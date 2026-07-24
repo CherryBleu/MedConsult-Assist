@@ -2,6 +2,7 @@ package com.medconsult.common.feign;
 
 import com.medconsult.common.security.JwtPayload;
 import com.medconsult.common.security.SecurityContext;
+import feign.MethodMetadata;
 import feign.RequestTemplate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,6 +108,29 @@ class AuthRelayInterceptorTest {
     }
 
     @Test
+    void internalEndpoint_usesMethodTemplateWhenRuntimePathDoesNotContainInternal() throws Exception {
+        SecurityContext.setPayload(new JwtPayload(
+                JwtPayload.SubjectType.USER, 1001L, null, "药师",
+                List.of("PHARMACY_ADMIN"), "PHARMACY_ADMIN", null, null, 4001L, null,
+                List.of("prescription:dispense"), "jti-1", 0L));
+        RequestContext.setUserToken("user-jwt-token");
+
+        MethodMetadata metadata = newMethodMetadata();
+        metadata.template().method("POST");
+        metadata.template().uri("/internal/drugs/{drugNo}/outbound");
+
+        RequestTemplate tpl = new RequestTemplate();
+        tpl.method("POST");
+        tpl.uri("/outbound");
+        tpl.methodMetadata(metadata);
+        interceptor.apply(tpl);
+
+        assertEquals("Bearer svc-jwt-token", header(tpl, "Authorization"));
+        assertNull(header(tpl, "X-User-Id"), "运行时 path 不完整时仍应按方法模板识别 internal");
+        assertNull(header(tpl, "X-User-Roles"));
+    }
+
+    @Test
     void traceIdAlwaysRelayed_evenWithoutIdentity() {
         RequestContext.setTraceId("trace-only");
         RequestTemplate tpl = new RequestTemplate();
@@ -157,5 +181,11 @@ class AuthRelayInterceptorTest {
         Collection<String> values = tpl.headers().get(name);
         if (values == null || values.isEmpty()) return null;
         return values.iterator().next();
+    }
+
+    private static MethodMetadata newMethodMetadata() throws Exception {
+        var constructor = MethodMetadata.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        return constructor.newInstance();
     }
 }

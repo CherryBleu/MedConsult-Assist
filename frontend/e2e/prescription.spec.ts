@@ -53,7 +53,20 @@ test('医生填写主诉后保存病历草稿成功', async ({ page }) => {
   await expect(page.getByText('草稿已保存').first()).toBeVisible({ timeout: 15_000 })
 })
 
-test('医生可结构化开方并提交审方', async ({ page }) => {
+test('AI整理病历会填入诊断和医嘱草稿', async ({ page }) => {
+  await loginViaUI(page, 'staff', 'doctor')
+
+  await page.goto('/doctor/record/write?patientId=1001&doctorId=1&patientName=测试患者')
+  await expect(page.getByRole('heading', { name: '书写电子病历' })).toBeVisible({ timeout: 15_000 })
+  await page.getByPlaceholder('请输入主诉').fill('咳嗽伴发热3天')
+
+  await page.getByRole('button', { name: 'AI整理病历' }).click()
+
+  await expect(page.getByPlaceholder('请输入初步诊断')).toHaveValue(/急性支气管炎/, { timeout: 15_000 })
+  await expect(page.getByPlaceholder('请输入医嘱')).toHaveValue(/多饮水|复诊|随诊/)
+})
+
+test('医生可结构化开方并通知药房', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await loginViaUI(page, 'staff', 'doctor')
 
@@ -65,21 +78,20 @@ test('医生可结构化开方并提交审方', async ({ page }) => {
 
   const firstItem = page.getByTestId('structured-prescription-item').first()
   await expect(firstItem).toBeVisible()
-  await firstItem.getByPlaceholder('药品名称').fill('阿莫西林胶囊')
-  await firstItem.getByPlaceholder('规格').fill('0.25g*24粒')
+  await firstItem.locator('.drug-name-select').click()
+  await page.getByRole('option', { name: /阿莫西林胶囊/ }).click()
+  await expect(firstItem.locator('[input-id="rx-spec-0"]')).toHaveValue('0.5g*24粒')
   await firstItem.getByPlaceholder('单次剂量').fill('0.5g')
   await firstItem.getByPlaceholder('频次').fill('每日三次')
   await firstItem.getByPlaceholder('给药途径').fill('口服')
   await firstItem.getByLabel('用药天数').fill('5')
   await firstItem.getByLabel('数量').fill('2')
-  await firstItem.getByPlaceholder('单位').fill('盒')
-  await firstItem.getByLabel('单价').fill('18.5')
 
-  await expect(page.getByTestId('structured-prescription-total')).toContainText('¥37.00')
+  await expect(page.getByTestId('structured-prescription-total')).toContainText('¥51.00')
   await expectTouchTargetsAtLeast(page, '.record-action:visible')
-  await page.getByRole('button', { name: '开方并提交审方' }).click()
+  await page.getByRole('button', { name: '开方并通知药房' }).click()
 
-  await expect(page.getByText('处方已提交审方').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('处方已推送药房，患者可缴费').first()).toBeVisible({ timeout: 15_000 })
   await expectNoHorizontalOverflow(page)
 })
 
@@ -93,13 +105,14 @@ test('医生开方提交失败时显示可恢复错误', async ({ page }) => {
   await page.getByPlaceholder('请输入初步诊断').fill('急性支气管炎')
 
   const firstItem = page.getByTestId('structured-prescription-item').first()
-  await firstItem.getByPlaceholder('药品名称').fill('阿莫西林胶囊')
+  await firstItem.locator('.drug-name-select').click()
+  await page.getByRole('option', { name: /阿莫西林胶囊/ }).click()
   await firstItem.getByLabel('用药天数').fill('5')
   await firstItem.getByLabel('数量').fill('2')
 
-  await page.getByRole('button', { name: '开方并提交审方' }).click()
+  await page.getByRole('button', { name: '开方并通知药房' }).click()
 
-  await expect(page.getByRole('alert')).toContainText(/处方提交失败|请重试/)
-  await expect(firstItem.getByPlaceholder('药品名称')).toHaveValue('阿莫西林胶囊')
+  await expect(page.getByRole('alert')).toContainText(/处方推送失败|处方提交失败|请重试/)
+  await expect(firstItem.locator('.drug-name-select')).toContainText('阿莫西林胶囊')
   await expectNoHorizontalOverflow(page)
 })

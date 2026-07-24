@@ -169,9 +169,12 @@ export const mockCreatePrescription = (data = {}) => {
     prescriptionId: 'RX' + Date.now(),
     recordId: data.recordId,
     patientId: data.patientId || 1001,
-    status: 'DRAFT',
+    status: 'APPROVED',
     source: data.source || 'OUTPATIENT',
-    totalFee: (data.items || []).reduce((sum, item) => sum + Number(item.subtotal || 0), 0),
+    totalFee: (data.items || []).reduce((sum, item) => {
+      const subtotal = item.subtotal ?? (Number(item.quantity || 0) * Number(item.unitPrice || 0))
+      return sum + Number(subtotal || 0)
+    }, 0),
     paidAmount: null,
     paymentStatus: 'UNPAID',
     paymentNo: '',
@@ -179,7 +182,11 @@ export const mockCreatePrescription = (data = {}) => {
     reviewComment: '',
     rejectReason: '',
     createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-    items: data.items || []
+    items: (data.items || []).map((item, index) => ({
+      id: Date.now() + index,
+      ...item,
+      subtotal: item.subtotal ?? (Number(item.quantity || 0) * Number(item.unitPrice || 0))
+    }))
   }
   mockPrescriptions.unshift(prescription)
   return { code: 0, message: 'success', data: { prescriptionId: prescription.prescriptionId, status: prescription.status, totalFee: prescription.totalFee } }
@@ -238,9 +245,12 @@ export const mockPayPrescription = (id, data = {}) => {
   }
 }
 
-export const mockDispensePrescription = (id) => {
+export const mockDispensePrescription = (id, data = {}) => {
   if (consumeFailOnce('mock_prescription_dispense_fail_once')) {
     return Promise.reject(new Error('发药失败，请重试'))
+  }
+  if (!String(data.pharmacistId || '').trim()) {
+    return Promise.reject(new Error('调剂药师编号不能为空'))
   }
   const prescription = findPrescription(id)
   if (!prescription) return Promise.reject(new Error('处方不存在'))

@@ -24,8 +24,8 @@ import java.util.Map;
  * service 层用 Feign/同服务反查落真实主键（recordId 同服务直查 medical_record.id；
  * patientId/doctorId/departmentId 经 Feign 反查 patient/outpatient 服务）。
  *
- * <p>本批 5 接口：POST /prescriptions（开方）/ GET /prescriptions（列表）/ GET /{id}（详情）/
- * POST /{id}/submit（提交审方 DRAFT→PENDING_REVIEW）/ POST /{id}/review（审方→APPROVED|REJECTED）。
+ * <p>当前主流程：POST /prescriptions 开方后直接 APPROVED，患者可缴费，药房可调剂发药。
+ * submit/review 保留用于历史 PENDING_REVIEW 处方兼容处理。
  */
 public class PrescriptionDTO {
 
@@ -118,7 +118,7 @@ public class PrescriptionDTO {
     @Schema(description = "创建处方响应")
     public record CreateResponse(
             @Schema(description = "处方编号") String prescriptionId,   // prescription_no
-            @Schema(description = "状态") String status,           // DRAFT
+            @Schema(description = "状态") String status,           // APPROVED
             @Schema(description = "总金额") BigDecimal totalFee
     ) {}
 

@@ -66,7 +66,7 @@
           <div class="section-heading">
             <div>
               <h3 id="structured-prescription-title" class="section-title">结构化处方</h3>
-              <p class="section-subtitle">处方独立提交到审方流转，病历只保留诊疗记录。</p>
+              <p class="section-subtitle">处方确认后直接同步到患者缴费与药房发药流程，病历只保留诊疗记录。</p>
             </div>
             <el-button type="primary" plain class="record-action" @click="addPrescriptionItem">新增药品</el-button>
           </div>
@@ -191,15 +191,18 @@
 
       <div class="form-footer">
         <el-button @click="$router.back()">取消</el-button>
-        <el-button :loading="saving" @click="saveDraft">保存草稿</el-button>
-        <el-button type="primary" :loading="archiving" @click="archiveRecord">
-          确认归档
+        <el-button :loading="saving" :disabled="prescriptionSubmitting" @click="saveDraft">保存草稿</el-button>
+        <el-button
+          type="primary"
+          class="record-action"
+          :loading="prescriptionSubmitting"
+          :disabled="saving || aiLoading"
+          @click="publishPrescription"
+        >
+          开方并通知药房
         </el-button>
-        <el-button type="primary" class="record-action" :loading="prescriptionSubmitting" @click="submitPrescriptionForReview">
-          开方并提交审方
-        </el-button>
-        <el-button type="success" :loading="aiLoading" @click="generateSummary">
-          AI生成摘要
+        <el-button type="success" :loading="aiLoading" :disabled="saving || prescriptionSubmitting" @click="generateSummary">
+          AI整理病历
         </el-button>
         <el-button type="warning" class="record-action" :loading="medAnalysisLoading" @click="openMedAnalysis">
           AI用药分析
@@ -277,19 +280,18 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { ArrowLeft, CircleCheck } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constants'
-import { createRecordApi, updateRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
-import { createPrescriptionApi, submitPrescriptionApi } from '@/api/prescription'
+import { createRecordApi, updateRecordApi, getRecordDetailApi } from '@/api/record'
+import { createPrescriptionApi } from '@/api/prescription'
 import { generateSummaryByTextApi, medicationAnalysisApi } from '@/api/ai'
 import { getDrugListApi } from '@/api/drug'
 import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
-const router = useRouter()
 const userStore = useUserStore()
 
 const patientName = ref('')
@@ -297,7 +299,6 @@ const saving = ref(false)
 // 当前编辑的病历 id：从路由带入（继续编辑草稿）或首次 create 后回填。
 // 保存草稿时据此判断走 update（PUT）而非重复 create（POST），避免草稿越存越多。
 const currentRecordId = ref(route.query.recordId || null)
-const archiving = ref(false)
 const aiLoading = ref(false)
 const currentDate = ref(dayjs().format('YYYY-MM-DD HH:mm'))
 
@@ -489,12 +490,20 @@ const applyPrescriptionDetail = (list) => {
 
 const extractRecordId = (response) => response?.data?.recordId || response?.data?.recordNo || response?.data?.id
 
+const withTimeout = (promise, ms, message) => {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer))
+}
+
 const ensureRecordDraft = async () => {
   if (currentRecordId.value) {
-    await updateRecordApi(currentRecordId.value, buildPayload())
+    await withTimeout(updateRecordApi(currentRecordId.value, buildPayload()), 20000, '保存病历超时，请检查病历服务')
     return currentRecordId.value
   }
-  const created = await createRecordApi(buildPayload())
+  const created = await withTimeout(createRecordApi(buildPayload()), 20000, '保存病历超时，请检查病历服务')
   const newId = extractRecordId(created)
   if (newId) {
     currentRecordId.value = newId
@@ -525,6 +534,7 @@ const buildPayload = () => {
 }
 
 const saveDraft = async () => {
+  if (saving.value || prescriptionSubmitting.value) return
   if (!form.chiefComplaint.trim()) {
     ElMessage.warning('请填写主诉')
     return
@@ -545,46 +555,8 @@ const saveDraft = async () => {
   }
 }
 
-const archiveRecord = async () => {
-  if (!form.chiefComplaint.trim() || !form.initialDiagnosis.trim()) {
-    ElMessage.warning('请完善主诉和诊断信息')
-    return
-  }
-  try {
-    await ElMessageBox.confirm('归档后病历不可直接修改，确认归档吗？', '提示', {
-      confirmButtonText: '确认归档',
-      cancelButtonText: '再编辑',
-      type: 'warning'
-    })
-    archiving.value = true
-    // 归档前必须先拿到真实病历 id：复用 currentRecordId（继续编辑/已保存草稿），
-    // 否则新建病历后回填，不能用 Date.now() 当 recordId（后端必然 404/参数错误）。
-    let recordId = currentRecordId.value
-    if (!recordId) {
-      const created = await createRecordApi(buildPayload())
-      recordId = extractRecordId(created)
-      if (!recordId) {
-        ElMessage.error('保存病历失败，无法归档')
-        return
-      }
-      currentRecordId.value = recordId
-    }
-    await archiveRecordApi(recordId, {
-      // 后端 ArchiveRequest.confirmBy 标了 @NotBlank（医生编号 doctor_no）
-      confirmBy: String(userStore.userInfo?.doctorId || route.query.doctorId || ''),
-      confirmNote: '医生确认归档'
-    })
-    form.status = 'ARCHIVED'
-    ElMessage.success('病历已归档')
-    router.back()
-  } catch (err) {
-    if (err !== 'cancel') console.error(err)
-  } finally {
-    archiving.value = false
-  }
-}
-
-const submitPrescriptionForReview = async () => {
+const publishPrescription = async () => {
+  if (prescriptionSubmitting.value || saving.value) return
   prescriptionError.value = ''
   if (!form.chiefComplaint.trim() || !form.initialDiagnosis.trim()) {
     prescriptionError.value = '请先完善主诉和初步诊断'
@@ -597,28 +569,30 @@ const submitPrescriptionForReview = async () => {
   }
   prescriptionSubmitting.value = true
   try {
+    prescriptionError.value = '正在保存病历并推送处方，请稍候...'
     const recordId = await ensureRecordDraft()
-    const res = await createPrescriptionApi({
+    const res = await withTimeout(createPrescriptionApi({
       recordId: String(recordId),
       patientId: String(route.query.patientId || userStore.userInfo?.patientId || ''),
       doctorId: String(route.query.doctorId || userStore.userInfo?.doctorId || ''),
       departmentId: String(route.query.departmentId || userStore.userInfo?.departmentId || ''),
       source: 'OUTPATIENT',
       items: getPrescriptionDraftItems()
-    })
+    }), 20000, '处方推送超时，请检查病历服务与患者/医生编号')
     const prescriptionId = res.data?.prescriptionId
     if (!prescriptionId) throw new Error('处方创建失败，请重试')
-    await submitPrescriptionApi(prescriptionId)
     submittedPrescriptionId.value = prescriptionId
-    ElMessage.success('处方已提交审方')
+    prescriptionError.value = ''
+    ElMessage.success('处方已推送药房，患者可缴费')
   } catch (e) {
-    prescriptionError.value = e?.response?.data?.message || e?.message || '处方提交失败，请重试'
+    prescriptionError.value = e?.response?.data?.message || e?.message || '处方推送失败，请重试'
   } finally {
     prescriptionSubmitting.value = false
   }
 }
 
 const generateSummary = async () => {
+  if (aiLoading.value || saving.value || prescriptionSubmitting.value) return
   if (!form.chiefComplaint.trim()) {
     ElMessage.warning('请先填写主诉内容')
     return
@@ -627,15 +601,105 @@ const generateSummary = async () => {
   try {
     const text = `主诉：${form.chiefComplaint}\n现病史：${form.presentIllness}\n既往史：${form.pastHistory}\n体格检查：${form.physicalExam}`
     const res = await generateSummaryByTextApi(text)
-    const content = res.data?.summary || {}
-    const diagnosis = Array.isArray(content.diagnosis) ? content.diagnosis.join('，') : (content.diagnosis || '')
+    const content = normalizeSummaryContent(res.data)
+    const chiefComplaintValue = pickSummaryValue(content, ['chiefComplaint', 'chief_complaint', '主诉'])
+    const presentIllnessValue = pickSummaryValue(content, ['presentIllness', 'present_illness', 'historyOfPresentIllness', '现病史'])
+    const pastHistoryValue = pickSummaryValue(content, ['pastHistory', 'past_history', 'medicalHistory', '既往史'])
+    const physicalExamValue = pickSummaryValue(content, ['physicalExam', 'physical_exam', 'examination', '体格检查'])
+    const diagnosisValue = pickSummaryValue(content, ['diagnosis', 'initialDiagnosis', 'initial_diagnosis', 'diagnoses', '初步诊断', '诊断'])
+    const diagnosis = formatSummaryValue(diagnosisValue)
+    if (chiefComplaintValue && !form.chiefComplaint.trim()) form.chiefComplaint = formatSummaryValue(chiefComplaintValue)
+    if (presentIllnessValue) form.presentIllness = formatSummaryValue(presentIllnessValue)
+    if (pastHistoryValue) form.pastHistory = formatSummaryValue(pastHistoryValue)
+    if (physicalExamValue) form.physicalExam = formatSummaryValue(physicalExamValue)
     if (diagnosis) form.initialDiagnosis = diagnosis
-    const adviceParts = [content.treatmentPlan, content.followUpAdvice].filter(Boolean)
+    const adviceParts = [
+      pickSummaryValue(content, ['treatmentPlan', 'treatment_plan', 'treatment', 'plan', '治疗计划', '处理意见']),
+      pickSummaryValue(content, ['followUpAdvice', 'follow_up_advice', 'advice', 'doctorAdvice', 'doctor_advice', '医嘱', '随访建议'])
+    ].map(formatSummaryValue).filter(Boolean)
     if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
-    ElMessage.success('AI摘要已填充，可继续编辑')
+    const filledAny = Boolean(
+      diagnosis ||
+      adviceParts.length ||
+      presentIllnessValue ||
+      pastHistoryValue ||
+      physicalExamValue ||
+      chiefComplaintValue
+    )
+    if (!filledAny) {
+      throw new Error('AI未返回可填入的病历内容')
+    }
+    ElMessage.success('AI已整理诊断和医嘱草稿，可继续编辑')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || 'AI整理病历失败，请稍后重试')
   } finally {
     aiLoading.value = false
   }
+}
+
+const normalizeSummaryContent = (data) => {
+  const raw = data?.summary || data?.summaryContent || data?.result || data?.content || data
+  if (!raw) return {}
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw)
+    } catch (e) {
+      return { advice: raw }
+    }
+  }
+  return raw
+}
+
+const pickSummaryValue = (content, keys) => {
+  const direct = pickSummaryValueDirect(content, keys)
+  if (direct) return direct
+  const sectionValue = pickSummarySectionValue(content, keys)
+  if (sectionValue) return sectionValue
+  for (const value of Object.values(content || {})) {
+    if (value && typeof value === 'object') {
+      const nested = pickSummaryValue(value, keys)
+      if (nested) return nested
+    }
+  }
+  return ''
+}
+
+const pickSummaryValueDirect = (content, keys) => {
+  for (const key of keys) {
+    const value = content?.[key]
+    if (Array.isArray(value) && value.length) return value
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (value && typeof value === 'object') {
+      const formatted = formatSummaryValue(value)
+      if (formatted) return formatted
+    }
+  }
+  return ''
+}
+
+const pickSummarySectionValue = (content, keys) => {
+  const sections = Array.isArray(content?.sections)
+    ? content.sections
+    : Array.isArray(content?.items)
+      ? content.items
+      : []
+  for (const section of sections) {
+    const title = String(section?.title || section?.name || section?.key || section?.label || '')
+    if (!keys.some(key => title.includes(key))) continue
+    const formatted = formatSummaryValue(section?.content ?? section?.value ?? section?.text ?? section?.children)
+    if (formatted) return formatted
+  }
+  return ''
+}
+
+const formatSummaryValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(formatSummaryValue).filter(Boolean).join('；')
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).map(formatSummaryValue).filter(Boolean).join('；')
+  }
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 const openMedAnalysis = async () => {
@@ -664,7 +728,7 @@ const openMedAnalysis = async () => {
 
 onMounted(async () => {
   patientName.value = route.query.patientName || '患者'
-  form.appointmentId = route.query.appointmentId || ''
+  form.appointmentId = route.query.appointmentId || route.query.appointmentid || ''
   // 编辑已有草稿：加载病历详情填充表单
   const recordId = route.query.recordId
   if (recordId) {

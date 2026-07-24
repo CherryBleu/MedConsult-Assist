@@ -84,6 +84,10 @@ const doRefreshToken = async () => {
 }
 
 const handleTokenRefresh = async (config) => {
+  if (config?._retry) {
+    return Promise.reject(new Error('登录状态或下游服务鉴权异常，请刷新页面后重试'))
+  }
+  config._retry = true
   // 未登录状态下（无 access token）的 401 不应触发 forceLogout，
   // 否则注册页等公开页面的 API 401 会把用户闪退到登录页。
   if (!getToken()) {

@@ -67,7 +67,7 @@ public class PrescriptionTxService {
         if (departmentId != null) {
             p.setDepartmentId(departmentId);
         }
-        p.setStatus("DRAFT");
+        p.setStatus("APPROVED");
         p.setPaymentStatus("UNPAID");
         p.setSource(req.getSource() == null || req.getSource().isBlank() ? "OUTPATIENT" : req.getSource());
 
@@ -101,6 +101,20 @@ public class PrescriptionTxService {
 
         log.info("处方创建: prescriptionNo={} items={} totalFee={}",
                 p.getPrescriptionNo(), req.getItems().size(), totalFee);
+        notificationOutboxProducer.enqueuePatient(
+                patientId,
+                "MEDICATION",
+                "待缴费处方",
+                "医生已开具处方 " + p.getPrescriptionNo() + "，请及时缴费。",
+                "PRESCRIPTION",
+                p.getPrescriptionNo());
+        notificationOutboxProducer.enqueueRole(
+                "PHARMACY_ADMIN",
+                "MEDICATION",
+                "待发药处方",
+                "处方 " + p.getPrescriptionNo() + " 已开具，请根据缴费状态调剂发药。",
+                "PRESCRIPTION",
+                p.getPrescriptionNo());
         return new PrescriptionDTO.CreateResponse(p.getPrescriptionNo(), p.getStatus(), totalFee);
     }
 
