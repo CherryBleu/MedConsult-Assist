@@ -482,9 +482,33 @@ const validatePrescriptionItems = () => {
   return ''
 }
 
-const buildPrescriptionSnapshot = () => getPrescriptionDraftItems()
-  .map(item => `${item.drugName}${item.specification ? `（${item.specification}）` : ''} ${[item.route, item.dosage, item.frequency].filter(Boolean).join(' ')} ${item.days}天 ${item.quantity}${item.unit || ''}`)
+const buildPrescriptionSnapshot = () => getPrescriptionSnapshotItems()
+  .map((item, index) => {
+    const usage = [
+      item.route,
+      item.dosage,
+      item.frequency,
+      item.days ? `${item.days}天` : '',
+      item.quantity ? `共${item.quantity}${item.unit || ''}` : ''
+    ].filter(Boolean).join('，')
+    return `${index + 1}. ${item.drugName}${item.specification ? `（${item.specification}）` : ''}${usage ? `：${usage}` : ''}`
+  })
   .join('\n')
+
+const buildAiSummaryText = () => {
+  const prescriptionText = buildPrescriptionSnapshot() || '无结构化处方'
+  return [
+    '请根据以下病历基础信息和药品处方生成结构化病历摘要。',
+    '医嘱要求：必须结合既往史、初步诊断和药品处方，在 followUpAdvice 或 doctorAdvice 字段写一段简短医嘱，控制在80字以内，不要分点，不要为空。',
+    '',
+    `主诉：${form.chiefComplaint || '未填写'}`,
+    `现病史：${form.presentIllness || '未填写'}`,
+    `既往史：${form.pastHistory || '未填写'}`,
+    `体格检查：${form.physicalExam || '未填写'}`,
+    `初步诊断：${form.initialDiagnosis || '未填写'}`,
+    `药品处方：\n${prescriptionText}`
+  ].join('\n')
+}
 
 const applyPrescriptionDetail = (list) => {
   if (!Array.isArray(list) || list.length === 0) return
@@ -653,7 +677,7 @@ const generateSummary = async () => {
   }
   aiLoading.value = true
   try {
-    const text = `主诉：${form.chiefComplaint}\n现病史：${form.presentIllness}\n既往史：${form.pastHistory}\n体格检查：${form.physicalExam}`
+    const text = buildAiSummaryText()
     const res = await generateSummaryByTextApi(text)
     const content = normalizeSummaryContent(res.data)
     const chiefComplaintValue = pickSummaryValue(content, ['chiefComplaint', 'chief_complaint', '主诉'])
@@ -667,25 +691,19 @@ const generateSummary = async () => {
     if (pastHistoryValue) form.pastHistory = formatSummaryValue(pastHistoryValue)
     if (physicalExamValue) form.physicalExam = formatSummaryValue(physicalExamValue)
     if (diagnosis) form.initialDiagnosis = diagnosis
-    const adviceParts = [
-      pickSummaryValue(content, ['treatmentPlan', 'treatment_plan', 'treatment', 'plan', '治疗计划', '处理意见']),
-      pickSummaryValue(content, ['followUpAdvice', 'follow_up_advice', 'advice', 'doctorAdvice', 'doctor_advice', '医嘱', '随访建议'])
-    ].map(formatSummaryValue).filter(Boolean)
-    const normalizedAdviceParts = [
-      pickSummaryValue(content, ['managementPlan', 'management_plan', 'disposition']),
-      pickSummaryValue(content, ['followupAdvice', 'follow_up', 'medicalAdvice', 'medical_advice', 'orders', 'recommendations', 'suggestions'])
-    ].map(formatSummaryValue).filter(Boolean)
-    if (normalizedAdviceParts.length) form.doctorAdvice = normalizedAdviceParts.join('\n')
-    else if (adviceParts.length) form.doctorAdvice = adviceParts.join('\n')
+    const advice = buildAdviceFromSummary(content)
+    if (advice) form.doctorAdvice = advice
     const filledAny = Boolean(
       diagnosis ||
-      normalizedAdviceParts.length ||
-      adviceParts.length ||
+      advice ||
       presentIllnessValue ||
       pastHistoryValue ||
       physicalExamValue ||
       chiefComplaintValue
     )
+    if (!advice) {
+      throw new Error('AI未返回可写入医嘱的内容，请补充病情后重试')
+    }
     if (filledAny) {
       await ensureRecordDraft()
     }
@@ -698,6 +716,16 @@ const generateSummary = async () => {
   } finally {
     aiLoading.value = false
   }
+}
+
+const buildAdviceFromSummary = (content) => {
+  const parts = [
+    pickSummaryValue(content, ['treatmentPlan', 'treatment_plan', 'treatment', 'plan', 'managementPlan', 'management_plan', 'disposition', '治疗计划', '处理意见']),
+    pickSummaryValue(content, ['medications', 'medication', 'medicine', 'medicines', 'drugs', 'drugTherapy', 'drug_therapy', 'prescription', 'prescriptions', '用药', '用药建议', '药物', '药物治疗', '处方', '处方建议']),
+    pickSummaryValue(content, ['followUpAdvice', 'follow_up_advice', 'followupAdvice', 'follow_up', 'followUp', 'followup', 'reviewAdvice', 'review_advice', '随访建议', '复诊建议']),
+    pickSummaryValue(content, ['advice', 'doctorAdvice', 'doctor_advice', 'medicalAdvice', 'medical_advice', 'orders', 'medicalOrders', 'medical_orders', 'recommendations', 'suggestions', 'notes', 'precautions', '医嘱', '注意事项', '检查建议'])
+  ].map(formatSummaryValue).filter(Boolean)
+  return [...new Set(parts)].join('\n')
 }
 
 const normalizeSummaryContent = (data) => {

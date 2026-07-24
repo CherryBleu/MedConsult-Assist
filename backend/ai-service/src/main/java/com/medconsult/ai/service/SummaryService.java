@@ -45,6 +45,10 @@ public class SummaryService {
             You are an electronic medical record summarization assistant.
             Generate JSON only with fields:
             chiefComplaint, diagnosis, treatmentPlan, medications, followUpAdvice.
+            The followUpAdvice field is required. Write one concise Chinese doctor-advice paragraph
+            based on the history, diagnosis, examination, and prescription drugs in the input.
+            Keep followUpAdvice within 80 Chinese characters, do not use bullet points, and do not leave it empty
+            when any useful clinical or prescription information is provided.
             Do not add important facts that are not supported by the record.
             Use empty arrays or empty strings when evidence is insufficient.
             """;
