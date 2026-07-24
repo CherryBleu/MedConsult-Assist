@@ -19,13 +19,15 @@ const mapDrug = (d) => ({
   stock: d.stockQuantity ?? d.stock,
   stockQuantity: d.stockQuantity,
   unit: d.unit,
+  price: d.unitPrice ?? d.price,
+  unitPrice: d.unitPrice ?? d.price,
   status: d.status === 'ACTIVE' ? 'NORMAL' : (d.status ?? 'NORMAL')
 })
 
 // 药品列表（对齐后端 GET /drugs）
 export const getDrugListApi = async (params) => {
   if (USE_MOCK) {
-    return Promise.resolve(mockDrugList())
+    return Promise.resolve(mockDrugList(params))
   }
   const res = await request({ url: '/drugs', method: 'get', params })
   // 各药品视图直接把 res.data 当数组用，这里映射后直接返回数组

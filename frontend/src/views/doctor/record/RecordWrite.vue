@@ -94,11 +94,32 @@
             <div class="prescription-grid">
               <label class="field-control" :for="`rx-drug-name-${index}`">
                 <span>药品名称</span>
-                <el-input :input-id="`rx-drug-name-${index}`" v-model="item.drugName" placeholder="药品名称" />
+                <el-select
+                  v-model="item.drugNo"
+                  class="drug-name-select"
+                  filterable
+                  remote
+                  reserve-keyword
+                  clearable
+                  :remote-method="keyword => searchPrescriptionDrugs(item, keyword)"
+                  :loading="item.drugLoading"
+                  placeholder="输入药品名搜索药品库"
+                  no-data-text="未匹配到药品库药品"
+                  @focus="searchPrescriptionDrugs(item, '')"
+                  @change="drugNo => handleDrugSelect(item, drugNo)"
+                  @clear="clearDrugSelection(item)"
+                >
+                  <el-option
+                    v-for="drug in item.drugOptions"
+                    :key="drug.drugNo"
+                    :label="drug.value"
+                    :value="drug.drugNo"
+                  />
+                </el-select>
               </label>
               <label class="field-control" :for="`rx-spec-${index}`">
                 <span>规格</span>
-                <el-input :input-id="`rx-spec-${index}`" v-model="item.specification" placeholder="规格" />
+                <el-input :input-id="`rx-spec-${index}`" v-model="item.specification" readonly placeholder="选择药品后自动显示" />
               </label>
               <label class="field-control" :for="`rx-dosage-${index}`">
                 <span>单次剂量</span>
@@ -143,7 +164,8 @@
                   v-model="item.unitPrice"
                   aria-label="单价"
                   inputmode="decimal"
-                  placeholder="单价"
+                  readonly
+                  placeholder="选择药品后自动显示"
                 />
               </label>
             </div>
@@ -263,6 +285,7 @@ import { MEDICAL_RECORD_STATUS, getStatusLabel, getStatusType } from '@/constant
 import { createRecordApi, updateRecordApi, archiveRecordApi, getRecordDetailApi } from '@/api/record'
 import { createPrescriptionApi, submitPrescriptionApi } from '@/api/prescription'
 import { generateSummaryByTextApi, medicationAnalysisApi } from '@/api/ai'
+import { getDrugListApi } from '@/api/drug'
 import { useUserStore } from '@/store/modules/user'
 
 const route = useRoute()
@@ -290,6 +313,9 @@ const newPrescriptionItem = () => ({
   key: Date.now() + Math.random(),
   drugNo: '',
   drugName: '',
+  selectedDrugName: '',
+  drugOptions: [],
+  drugLoading: false,
   specification: '',
   dosage: '',
   frequency: '',
@@ -339,6 +365,77 @@ const removePrescriptionItem = (index) => {
   prescriptionItems.value.splice(index, 1)
 }
 
+const getDrugName = (drug) => drug?.name || drug?.drugName || drug?.genericName || ''
+const getDrugNo = (drug) => String(drug?.drugNo || drug?.drugId || drug?.id || '')
+
+const normalizeDrugOption = (drug) => {
+  const name = getDrugName(drug)
+  const unitPrice = drug.unitPrice ?? drug.price ?? ''
+  const priceText = formatUnitPrice(unitPrice)
+  return {
+    ...drug,
+    name,
+    value: `${name}${drug.specification ? `（${drug.specification}）` : ''}${priceText === '-' ? '' : ` ¥${priceText}`}`,
+    drugNo: getDrugNo(drug),
+    unitPrice
+  }
+}
+
+const formatUnitPrice = (value) => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toFixed(2) : '-'
+}
+
+const searchPrescriptionDrugs = async (item, keyword = '') => {
+  const query = keyword?.trim()
+  item.drugLoading = true
+  try {
+    const res = await getDrugListApi({ keyword: query || undefined, page: 1, pageSize: 20 })
+    const list = Array.isArray(res.data) ? res.data : []
+    item.drugOptions = list
+      .map(normalizeDrugOption)
+      .filter(item => item.name && item.status !== 'DISABLED')
+  } catch (e) {
+    item.drugOptions = []
+  } finally {
+    item.drugLoading = false
+  }
+}
+
+const clearDrugSelection = (item) => {
+  item.drugNo = ''
+  item.drugName = ''
+  item.selectedDrugName = ''
+  item.specification = ''
+  item.unitPrice = ''
+}
+
+const handleDrugSelect = (item, drugNo) => {
+  if (!drugNo) {
+    clearDrugSelection(item)
+    return
+  }
+  const option = item.drugOptions.find(drug => String(drug.drugNo) === String(drugNo))
+  if (!option) {
+    clearDrugSelection(item)
+    return
+  }
+  item.drugNo = option.drugNo
+  item.drugName = option.name
+  item.selectedDrugName = option.name
+  item.specification = option.specification || ''
+  item.unit = option.unit || item.unit || ''
+  item.unitPrice = option.unitPrice === '' || option.unitPrice == null ? '' : String(option.unitPrice)
+}
+
+const ensureSelectedDrugOption = (item) => {
+  if (!item.drugNo || !item.drugName) return
+  const exists = item.drugOptions.some(drug => String(drug.drugNo) === String(item.drugNo))
+  if (!exists) {
+    item.drugOptions.unshift(normalizeDrugOption(item))
+  }
+}
+
 const getPrescriptionDraftItems = () => prescriptionItems.value
   .filter(item => item.drugName?.trim())
   .map(item => ({
@@ -357,6 +454,8 @@ const getPrescriptionDraftItems = () => prescriptionItems.value
 const validatePrescriptionItems = () => {
   const items = getPrescriptionDraftItems()
   if (items.length === 0) return '请至少填写一条处方药品'
+  const missingCatalogDrug = prescriptionItems.value.find(item => item.drugName?.trim() && !item.drugNo)
+  if (missingCatalogDrug) return '请选择药品库中的药品，不支持手输库外药品'
   const invalid = items.find(item => !item.drugName || !Number.isFinite(item.days) || item.days < 1 || !Number.isFinite(item.quantity) || item.quantity <= 0)
   if (invalid) return '请完善药品名称、用药天数和数量'
   return ''
@@ -368,18 +467,24 @@ const buildPrescriptionSnapshot = () => getPrescriptionDraftItems()
 
 const applyPrescriptionDetail = (list) => {
   if (!Array.isArray(list) || list.length === 0) return
-  prescriptionItems.value = list.map(item => ({
-    ...newPrescriptionItem(),
-    drugName: item.drugName || item.name || '',
-    specification: item.specification || '',
-    dosage: item.dosage || '',
-    frequency: item.frequency || '',
-    route: item.route || '口服',
-    days: item.days || '',
-    quantity: item.quantity || '',
-    unit: item.unit || '盒',
-    unitPrice: item.unitPrice || ''
-  }))
+  prescriptionItems.value = list.map(item => {
+    const nextItem = {
+      ...newPrescriptionItem(),
+      drugNo: getDrugNo(item),
+      drugName: item.drugName || item.name || '',
+      selectedDrugName: item.drugName || item.name || '',
+      specification: item.specification || '',
+      dosage: item.dosage || '',
+      frequency: item.frequency || '',
+      route: item.route || '口服',
+      days: item.days || '',
+      quantity: item.quantity || '',
+      unit: item.unit || '盒',
+      unitPrice: item.unitPrice || ''
+    }
+    ensureSelectedDrugOption(nextItem)
+    return nextItem
+  })
 }
 
 const extractRecordId = (response) => response?.data?.recordId || response?.data?.recordNo || response?.data?.id
@@ -689,6 +794,11 @@ onMounted(async () => {
 
 .field-control :deep(.el-input__wrapper) {
   min-height: var(--touch-target);
+}
+
+.field-control :deep(.el-select),
+.field-control :deep(.el-select__wrapper) {
+  width: 100%;
 }
 
 .prescription-summary {

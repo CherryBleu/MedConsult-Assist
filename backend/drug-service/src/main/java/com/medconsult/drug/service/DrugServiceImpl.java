@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -118,6 +119,7 @@ public class DrugServiceImpl implements DrugService {
         }
         qw.orderByDesc("created_at");
         IPage<Drug> result = drugMapper.selectPage(p, qw);
+        Map<Long, BigDecimal> unitPriceMap = resolveCurrentUnitPrices(result.getRecords());
         List<DrugDTO.DrugListItem> items = new ArrayList<>();
         for (Drug d : result.getRecords()) {
             items.add(new DrugDTO.DrugListItem(
@@ -127,6 +129,7 @@ public class DrugServiceImpl implements DrugService {
                     d.getManufacturer(),
                     d.getCurrentStock() == null ? 0 : d.getCurrentStock(),
                     d.getUnit(),
+                    unitPriceMap.get(d.getId()),
                     d.getStatus()));
         }
         return PageResult.of((int) result.getCurrent(), (int) result.getSize(), result.getTotal(), items);
@@ -435,6 +438,34 @@ public class DrugServiceImpl implements DrugService {
             map.put(d.getId(), d);
         }
         return map;
+    }
+
+    private Map<Long, BigDecimal> resolveCurrentUnitPrices(List<Drug> drugs) {
+        if (drugs == null || drugs.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        Set<Long> drugIds = new LinkedHashSet<>();
+        for (Drug d : drugs) {
+            if (d.getId() != null) {
+                drugIds.add(d.getId());
+            }
+        }
+        if (drugIds.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        List<DrugStockBatch> batches = batchMapper.selectList(new QueryWrapper<DrugStockBatch>()
+                .in("drug_id", new ArrayList<>(drugIds))
+                .eq("status", "AVAILABLE")
+                .gt("quantity", 0)
+                .ge("expire_date", LocalDate.now())
+                .orderByAsc("expire_date"));
+        Map<Long, BigDecimal> prices = new HashMap<>();
+        for (DrugStockBatch batch : batches) {
+            if (batch.getDrugId() != null && batch.getUnitPrice() != null) {
+                prices.putIfAbsent(batch.getDrugId(), batch.getUnitPrice());
+            }
+        }
+        return prices;
     }
 
     private static List<Long> normalizeDrugIds(List<Long> drugIds) {

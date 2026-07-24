@@ -6,6 +6,7 @@ import {
   mockScheduleManageList, mockCreateSchedule, mockUpdateSchedule, mockDeleteSchedule, mockToggleScheduleStatus,
   mockRefundAppointment
 } from '@/mock/appointment'
+import { getPatientDetailApi } from '@/api/patient'
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
@@ -20,6 +21,8 @@ const mapAppointment = (a) => ({
   patientId: a.patientId,
   patientNo: a.patientNo,
   patientName: a.patientName ?? a.patient?.name ?? a.name ?? a.realName,
+  gender: a.gender ?? a.patient?.gender,
+  age: a.age ?? a.patient?.age,
   deptName: a.departmentName ?? a.deptName,
   departmentName: a.departmentName,
   doctorName: a.doctorName,
@@ -37,6 +40,53 @@ const mapAppointment = (a) => ({
   refundStatus: a.refundStatus,
   createdAt: a.createdAt
 })
+
+const calculateAge = (birthDate) => {
+  if (!birthDate) return undefined
+  const birthday = new Date(birthDate)
+  if (Number.isNaN(birthday.getTime())) return undefined
+  const today = new Date()
+  let age = today.getFullYear() - birthday.getFullYear()
+  const monthDiff = today.getMonth() - birthday.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthday.getDate())) {
+    age -= 1
+  }
+  return age >= 0 ? age : undefined
+}
+
+const mergePatientDetail = (appointment, detail) => ({
+  ...appointment,
+  patientNo: appointment.patientNo || detail.patientNo || detail.patientId,
+  patientId: appointment.patientId || detail.patientId || detail.patientNo,
+  patientName: detail.name || appointment.patientName,
+  gender: detail.gender || appointment.gender,
+  age: detail.age ?? calculateAge(detail.birthDate) ?? appointment.age
+})
+
+const enrichAppointmentsWithPatientDetails = async (appointments) => {
+  const ids = [...new Set(
+    appointments
+      .map(item => item.patientNo || item.patientId)
+      .filter(Boolean)
+  )]
+  if (ids.length === 0) return appointments
+
+  const detailResults = await Promise.allSettled(ids.map(async (id) => {
+    const res = await getPatientDetailApi(id)
+    return [String(id), res.data]
+  }))
+  const detailMap = new Map()
+  detailResults.forEach((result) => {
+    if (result.status === 'fulfilled' && result.value?.[1]) {
+      detailMap.set(result.value[0], result.value[1])
+    }
+  })
+
+  return appointments.map((item) => {
+    const detail = detailMap.get(String(item.patientNo || item.patientId))
+    return detail ? mergePatientDetail(item, detail) : item
+  })
+}
 
 // 排班列表（后端排班在 /schedules/available，按 doctorId/departmentId/date 查询）
 export const getScheduleListApi = async (doctorId, params) => {
@@ -144,7 +194,8 @@ export const getReceptionListApi = async (params) => {
   if (USE_MOCK) return Promise.resolve(mockReceptionList(params))
   const res = await request({ url: '/appointments', method: 'get', params })
   const list = res.data?.items ?? res.data?.records ?? (Array.isArray(res.data) ? res.data : [])
-  res.data = { ...(res.data || {}), records: list.map(mapAppointment), items: list.map(mapAppointment), total: res.data?.total ?? list.length }
+  const mapped = await enrichAppointmentsWithPatientDetails(list.map(mapAppointment))
+  res.data = { ...(res.data || {}), records: mapped, items: mapped, total: res.data?.total ?? list.length }
   return res
 }
 

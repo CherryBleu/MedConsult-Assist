@@ -14,7 +14,7 @@ const delayOnce = async (key, ms = 650) => {
 }
 
 // 药品列表
-export const mockDrugList = () => {
+export const mockDrugList = (params = {}) => {
   const path = typeof window !== 'undefined' ? window.location.pathname : ''
   const isDrugCatalogPage = path === '/pharmacy/drug'
   const isAdminDrugPage = path === '/admin/drug'
@@ -24,18 +24,26 @@ export const mockDrugList = () => {
   if (isAdminDrugPage && consumeFailOnce('mock_admin_drug_list_fail_once')) {
     return Promise.reject(new Error('药品列表加载失败，请重试'))
   }
+  const keyword = (params.keyword || '').trim().toLowerCase()
+  const list = [
+    { id: 1, drugNo: 'DRG001', name: '阿莫西林胶囊', specification: '0.5g*24粒', manufacturer: '华北制药', category: '抗生素', price: 25.5, status: 'NORMAL' },
+    { id: 2, drugNo: 'DRG002', name: '盐酸氨溴索口服溶液', specification: '100ml', manufacturer: '勃林格殷格翰', category: '祛痰药', price: 32.0, status: 'NORMAL' },
+    { id: 3, drugNo: 'DRG003', name: '硝苯地平缓释片', specification: '20mg*30片', manufacturer: '拜耳', category: '降压药', price: 45.8, status: 'LOW_STOCK' },
+    { id: 4, drugNo: 'DRG004', name: '奥美拉唑肠溶胶囊', specification: '20mg*14粒', manufacturer: '阿斯利康', category: '胃药', price: 56.0, status: 'NORMAL' },
+    { id: 5, drugNo: 'DRG005', name: '布洛芬缓释胶囊', specification: '0.3g*20粒', manufacturer: '中美史克', category: '解热镇痛', price: 18.9, status: 'EXPIRED_WARNING' },
+    { id: 6, drugNo: 'DRG006', name: '头孢克肟分散片', specification: '0.1g*12片', manufacturer: '白云山制药', category: '抗生素', price: 38.5, status: 'DISABLED' }
+  ].filter(item => {
+    if (!keyword) return true
+    return [item.name, item.drugName, item.genericName, item.drugNo, item.manufacturer]
+      .filter(Boolean)
+      .some(value => String(value).toLowerCase().includes(keyword))
+  })
+
   return {
     code: 0,
     message: 'success',
-    data: [
-      { id: 1, drugNo: 'DRG001', name: '阿莫西林胶囊', specification: '0.5g*24粒', manufacturer: '华北制药', category: '抗生素', price: 25.5, status: 'NORMAL' },
-      { id: 2, drugNo: 'DRG002', name: '盐酸氨溴索口服溶液', specification: '100ml', manufacturer: '勃林格殷格翰', category: '祛痰药', price: 32.0, status: 'NORMAL' },
-      { id: 3, drugNo: 'DRG003', name: '硝苯地平缓释片', specification: '20mg*30片', manufacturer: '拜耳', category: '降压药', price: 45.8, status: 'LOW_STOCK' },
-      { id: 4, drugNo: 'DRG004', name: '奥美拉唑肠溶胶囊', specification: '20mg*14粒', manufacturer: '阿斯利康', category: '胃药', price: 56.0, status: 'NORMAL' },
-      { id: 5, drugNo: 'DRG005', name: '布洛芬缓释胶囊', specification: '0.3g*20粒', manufacturer: '中美史克', category: '解热镇痛', price: 18.9, status: 'EXPIRED_WARNING' },
-      { id: 6, drugNo: 'DRG006', name: '头孢克肟分散片', specification: '0.1g*12片', manufacturer: '白云山制药', category: '抗生素', price: 38.5, status: 'DISABLED' }
-    ],
-    total: 6
+    data: list,
+    total: list.length
   }
 }
 

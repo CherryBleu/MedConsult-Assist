@@ -67,14 +67,13 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="预约状态" width="100" align="center">
+              <el-table-column label="预约状态" min-width="100" align="center">
                 <template #default="{ row }">
                   <el-tag :type="getStatusType(APPOINTMENT_STATUS, row.appointmentStatus)" size="small">
                     {{ getStatusLabel(APPOINTMENT_STATUS, row.appointmentStatus) }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="visitReason" label="主诉" min-width="150" show-overflow-tooltip />
               <el-table-column label="操作" width="220" align="center" fixed="right">
                 <template #default="{ row }">
                   <div class="operation-actions">
@@ -83,7 +82,7 @@
                         v-if="!isExpired(row)"
                         type="success"
                         size="small"
-                        @click="handleStartVisit(row.id)"
+                        @click="handleStartVisit(row)"
                       >
                         开始就诊
                       </el-button>
@@ -147,15 +146,13 @@
                 </div>
               </dl>
 
-              <p v-if="row.visitReason" class="reception-card__reason">主诉：{{ row.visitReason }}</p>
-
               <div class="reception-card__actions">
                 <template v-if="canStartOrMarkNoShow(row)">
                   <el-button
                     v-if="!isExpired(row)"
                     type="success"
                     plain
-                    @click="handleStartVisit(row.id)"
+                    @click="handleStartVisit(row)"
                   >
                     开始就诊
                   </el-button>
@@ -273,7 +270,7 @@ const periodLabel = (period) => {
   return map[period] || period || '-'
 }
 
-const patientDisplayName = (row) => row.patientName || row.name || '未返回姓名'
+const patientDisplayName = (row) => row.patientName || row.name || row.patientNo || '未返回姓名'
 
 const canStartOrMarkNoShow = (row) =>
   ['BOOKED', 'CHECKED_IN'].includes(row.appointmentStatus) && row.paymentStatus === 'PAID'
@@ -311,11 +308,11 @@ const handleSizeChange = () => {
 const handleCurrentChange = () => {
 }
 
-const handleStartVisit = async (id) => {
+const handleStartVisit = async (row) => {
   try {
-    await startVisitApi(id)
+    await startVisitApi(row.id || row.appointmentId)
     ElMessage.success('已开始就诊')
-    getList()
+    goWriteRecord(row)
   } catch (e) {
     ElMessage.error(e?.message || '开始就诊失败')
   }
@@ -372,7 +369,7 @@ const goWriteRecord = (row) => {
     query: {
       appointmentId: row.id || row.appointmentId,
       patientId: row.patientNo || row.patientId,
-      patientName: row.patientName || row.patientNo
+      patientName: patientDisplayName(row)
     }
   })
 }
@@ -504,8 +501,7 @@ onMounted(() => {
 }
 
 .reception-card__name,
-.reception-card__meta,
-.reception-card__reason {
+.reception-card__meta {
   margin: 0;
 }
 
@@ -552,14 +548,6 @@ onMounted(() => {
   color: var(--text-primary);
   overflow-wrap: anywhere;
   text-align: right;
-}
-
-.reception-card__reason {
-  padding: 10px 12px;
-  border-radius: var(--radius-base);
-  background: rgba(255, 255, 255, .72);
-  color: var(--text-secondary);
-  line-height: 1.6;
 }
 
 .reception-card__actions {

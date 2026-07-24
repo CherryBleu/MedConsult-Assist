@@ -38,10 +38,9 @@
           <div class="patient-list">
             <div v-for="item in pendingList" :key="item.id" class="patient-item">
               <div class="patient-info">
-                <span class="patient-name">{{ item.patientName }}</span>
-                <el-tag size="small">{{ item.gender === 'MALE' ? '男' : '女' }} {{ item.age }}岁</el-tag>
+                <span class="patient-name">{{ patientDisplayName(item) }}</span>
+                <el-tag size="small">{{ patientMeta(item) }}</el-tag>
               </div>
-              <div class="visit-reason">主诉：{{ item.visitReason || '未填写' }}</div>
               <div class="item-footer">
                 <span>第{{ item.queueNo }}号</span>
                 <el-button
@@ -100,12 +99,21 @@ const loadError = ref('')
 const receptionList = ref([])
 
 const pendingList = computed(() => {
-  return receptionList.value.filter(i => ['CHECKED_IN', 'PAID'].includes(i.appointmentStatus)).slice(0, 5)
+  return receptionList.value.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus) && i.paymentStatus === 'PAID').slice(0, 5)
 })
 
 const todayTotal = computed(() => receptionList.value.length)
-const pendingCount = computed(() => receptionList.value.filter(i => ['PAID', 'CHECKED_IN'].includes(i.appointmentStatus)).length)
+const pendingCount = computed(() => receptionList.value.filter(i => ['BOOKED', 'CHECKED_IN'].includes(i.appointmentStatus) && i.paymentStatus === 'PAID').length)
 const completedCount = computed(() => receptionList.value.filter(i => i.appointmentStatus === 'COMPLETED').length)
+
+const genderLabel = (gender) => gender === 'MALE' ? '男' : (gender === 'FEMALE' ? '女' : '-')
+
+const patientDisplayName = (item) => item.patientName || item.name || item.patientNo || '未返回姓名'
+
+const patientMeta = (item) => {
+  const age = item.age == null ? '-' : `${item.age}岁`
+  return `${genderLabel(item.gender)} ${age}`
+}
 
 const getReceptionList = async () => {
   loading.value = true
@@ -128,7 +136,7 @@ const goWriteRecord = (item) => {
     query: {
       appointmentId: item.id,
       patientId: item.patientNo || item.patientId,
-      patientName: item.patientName
+      patientName: patientDisplayName(item)
     }
   })
 }
@@ -209,11 +217,6 @@ onMounted(() => {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-}
-.visit-reason {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
 }
 .item-footer {
   display: flex;

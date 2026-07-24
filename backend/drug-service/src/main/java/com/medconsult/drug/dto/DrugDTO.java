@@ -97,6 +97,7 @@ public class DrugDTO {
             @Schema(description = "生产厂家") String manufacturer,
             @Schema(description = "库存数量") Integer stockQuantity,  // current_stock
             @Schema(description = "单位") String unit,
+            @Schema(description = "当前可用批次单价") BigDecimal unitPrice,
             @Schema(description = "状态：ACTIVE/DISABLED") String status
     ) {}
 
