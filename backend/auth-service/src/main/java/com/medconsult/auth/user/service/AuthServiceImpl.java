@@ -186,6 +186,9 @@ public class AuthServiceImpl implements AuthService {
             resourceType = "USER",
             action = "LOGIN",
             resourceId = "#result.user().userId()",
+            operatorId = "#result.user().userId()",
+            operatorRole = "#result.user().role()",
+            operatorName = "#result.user().name()",
             targetOwnerId = "#result.user().patientId()",
             detail = "'clientType=' + (#p0.clientType == null ? 'DEFAULT' : #p0.clientType)")
     public AuthDTO.LoginResponse login(AuthDTO.LoginRequest req, String ip, String userAgent) {
@@ -285,6 +288,12 @@ public class AuthServiceImpl implements AuthService {
     // ===== 登出 =====
 
     @Override
+    @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "LOGOUT",
+            resourceId = "'CURRENT_SESSION'",
+            detail = "'logout'")
     public boolean logout(AuthDTO.LogoutRequest req) {
         JwtPayload p = jwtCodec.parse(req.getRefreshToken());
         // refresh jti 入黑名单（删除 Redis 中的有效标记）
@@ -447,6 +456,13 @@ public class AuthServiceImpl implements AuthService {
     // ===== 管理员创建用户（#20/#21）=====
 
     @Override
+    @Transactional
+    @AuditLog(
+            resourceType = "USER",
+            action = "CREATE",
+            resourceId = "#result.userId()",
+            targetOwnerId = "#result.patientId()",
+            detail = "'admin create user role=' + #result.role()")
     public AuthDTO.UserInfo createUser(AuthDTO.RegisterRequest req) {
         // 权限校验：仅 HOSPITAL_ADMIN 可创建用户（手动校验，同 listUsers，不依赖 @Permission 切面）。
         JwtPayload payload = SecurityContext.requireUser();

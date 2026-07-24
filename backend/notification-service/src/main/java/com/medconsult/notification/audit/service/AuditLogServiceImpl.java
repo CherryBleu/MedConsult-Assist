@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.notification.audit.dto.AuditLogDTO;
@@ -15,8 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 审计日志服务实现（对齐《修改建议》§2.2 + 《接口文档》§4.1）。
@@ -30,7 +34,10 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AuditLogServiceImpl implements AuditLogService {
 
+    private static final ZoneId AUDIT_ZONE = ZoneId.of("Asia/Shanghai");
+
     private final AuditLogMapper auditLogMapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -44,13 +51,13 @@ public class AuditLogServiceImpl implements AuditLogService {
         a.setAction(req.getAction());
         a.setOperatorId(req.getOperatorId());
         a.setOperatorRole(req.getOperatorRole());
-        a.setOperatorName(req.getOperatorName());
+        a.setOperatorName(normalizeOperatorName(req.getOperatorName()));
         a.setTargetOwnerId(req.getTargetOwnerId());
-        a.setDetail(req.getDetail());
+        a.setDetail(normalizeJsonDetail(req.getDetail()));
         a.setIp(req.getIp());
         a.setUserAgent(req.getUserAgent());
         a.setResult(req.getResult() == null || req.getResult().isBlank() ? "SUCCESS" : req.getResult());
-        a.setCreatedAt(LocalDateTime.now());
+        a.setCreatedAt(LocalDateTime.now(AUDIT_ZONE));
         auditLogMapper.insert(a);
         log.debug("审计写入: auditNo={} resourceType={} action={} operatorId={}",
                 a.getAuditNo(), req.getResourceType(), req.getAction(), req.getOperatorId());
@@ -105,5 +112,29 @@ public class AuditLogServiceImpl implements AuditLogService {
     private static String generateAuditNo() {
         long id = IdWorker.getId();
         return "AL" + Long.toUnsignedString(id, Character.MAX_RADIX).toUpperCase();
+    }
+
+    private String normalizeJsonDetail(String detail) {
+        if (detail == null || detail.isBlank()) {
+            return null;
+        }
+        try {
+            objectMapper.readTree(detail);
+            return detail;
+        } catch (JsonProcessingException ignored) {
+            try {
+                return objectMapper.writeValueAsString(Map.of("message", detail));
+            } catch (JsonProcessingException ex) {
+                throw new IllegalStateException("Failed to serialize audit detail", ex);
+            }
+        }
+    }
+
+    private static String normalizeOperatorName(String operatorName) {
+        if (operatorName == null || operatorName.isBlank()) {
+            return null;
+        }
+        String trimmed = operatorName.trim();
+        return trimmed.matches("\\?+") ? null : trimmed;
     }
 }

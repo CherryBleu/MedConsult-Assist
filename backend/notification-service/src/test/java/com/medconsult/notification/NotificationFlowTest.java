@@ -238,12 +238,23 @@ class NotificationFlowTest {
                         .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
                 .andExpect(jsonPath("$.data.total").value(1));
 
-        // 全量应为 2
-        mvc.perform(get("/api/v1/audit-logs")
+        // resourceType 过滤另一类业务审计
+        mvc.perform(get("/api/v1/audit-logs").param("resourceType", "PRESCRIPTION")
                         .header("X-User-Id", "1")
                         .header("X-User-Roles", "HOSPITAL_ADMIN")
                         .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
-                .andExpect(jsonPath("$.data.total").value(2));
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.items[0].action").value("UPDATE"));
+
+        // 查询审计日志本身也应落一条 VIEW 自审计，供管理员端筛选查看。
+        mvc.perform(get("/api/v1/audit-logs").param("resourceType", "AUDIT_LOG")
+                        .param("action", "VIEW")
+                        .header("X-User-Id", "1")
+                        .header("X-User-Roles", "HOSPITAL_ADMIN")
+                        .header("X-User-Primary-Role", "HOSPITAL_ADMIN"))
+                .andExpect(jsonPath("$.data.total").value(4))
+                .andExpect(jsonPath("$.data.items[0].resourceType").value("AUDIT_LOG"))
+                .andExpect(jsonPath("$.data.items[0].action").value("VIEW"));
     }
 
     @Test

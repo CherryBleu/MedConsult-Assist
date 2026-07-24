@@ -9,6 +9,7 @@ import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.outpatient.department.dto.DepartmentDTO;
 import com.medconsult.outpatient.department.entity.Department;
 import com.medconsult.outpatient.department.mapper.DepartmentMapper;
@@ -70,6 +71,12 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DEPARTMENT",
+            action = "CREATE",
+            resourceId = "#result.departmentId()",
+            resourceName = "#p0.name()",
+            detail = "'enabled=' + (#p0.enabled() == null ? true : #p0.enabled())")
     public DepartmentDTO.MutationResponse create(DepartmentDTO.CreateRequest req) {
         // 科室名称唯一性预检（uk_department_no 仅约束编号，名称重复由业务校验）
         Long nameCount = departmentMapper.selectCount(
@@ -90,6 +97,12 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DEPARTMENT",
+            action = "UPDATE",
+            resourceId = "#p0",
+            resourceName = "#p1.name()",
+            detail = "'department updated'")
     public DepartmentDTO.MutationResponse update(String departmentNo, DepartmentDTO.UpdateRequest req) {
         Department d = requireByNo(departmentNo); // 复用：未找到抛 NOT_FOUND
         // 名称变更时校验唯一性（排除自身）
@@ -116,6 +129,11 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DEPARTMENT",
+            action = "DELETE",
+            resourceId = "#p0",
+            detail = "'department deleted'")
     public void delete(String departmentNo) {
         Department d = requireByNo(departmentNo);
         // 删除前校验：被医生或排班引用的科室不可删（避免破坏医生管理/排班/分诊链路）

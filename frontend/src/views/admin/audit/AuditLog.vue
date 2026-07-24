@@ -15,6 +15,13 @@
             <el-option label="导出" value="EXPORT" />
             <el-option label="登录" value="LOGIN" />
             <el-option label="登出" value="LOGOUT" />
+            <el-option label="支付" value="PAYMENT" />
+            <el-option label="签到" value="CHECK_IN" />
+            <el-option label="状态变更" value="STATUS_CHANGE" />
+            <el-option label="取消" value="CANCEL" />
+            <el-option label="修改密码" value="PASSWORD_CHANGE" />
+            <el-option label="修改手机号" value="PHONE_CHANGE" />
+            <el-option label="绑定患者" value="BIND_PATIENT" />
           </el-select>
           <el-button type="primary" @click="handleSearch">查询</el-button>
           <el-button @click="handleReset">重置</el-button>
@@ -32,19 +39,27 @@
           <template #table>
             <el-table :data="auditList" border stripe>
               <el-table-column prop="auditNo" label="审计编号" width="180" />
-              <el-table-column prop="resourceType" label="资源类型" width="140" />
-              <el-table-column prop="resourceId" label="资源编号" width="160" />
+              <el-table-column label="资源类型" width="140" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span>{{ getResourceTypeLabel(row.resourceType) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="resourceId" label="资源编号" width="170" show-overflow-tooltip />
               <el-table-column label="操作类型" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="getActionType(row.action)">{{ getActionLabel(row.action) }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="operatorName" label="操作人" width="120">
+              <el-table-column label="操作人" width="130" show-overflow-tooltip>
                 <template #default="{ row }">
-                  <span>{{ row.operatorName || row.operatorId || '-' }}</span>
+                  <span>{{ getOperatorLabel(row) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="operatorRole" label="角色" width="120" />
+              <el-table-column label="角色" width="130" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span>{{ getRoleLabel(row.operatorRole) }}</span>
+                </template>
+              </el-table-column>
               <el-table-column label="结果" width="90">
                 <template #default="{ row }">
                   <el-tag v-if="row.result" size="small" effect="plain" :type="row.result === 'SUCCESS' ? 'success' : 'danger'">
@@ -53,7 +68,11 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="createdAt" label="时间" min-width="170" />
+              <el-table-column label="时间" min-width="160">
+                <template #default="{ row }">
+                  <span>{{ formatDateTime(row.createdAt) }}</span>
+                </template>
+              </el-table-column>
             </el-table>
           </template>
 
@@ -67,7 +86,7 @@
               <div class="audit-card__header">
                 <div>
                   <p class="audit-card__title">{{ row.auditNo }}</p>
-                  <p class="audit-card__meta">{{ row.createdAt || '-' }}</p>
+                  <p class="audit-card__meta">{{ formatDateTime(row.createdAt) }}</p>
                 </div>
                 <el-tag size="small" :type="getActionType(row.action)">
                   {{ getActionLabel(row.action) }}
@@ -76,15 +95,15 @@
               <dl class="audit-card__fields">
                 <div>
                   <dt>资源</dt>
-                  <dd>{{ row.resourceType || '-' }} / {{ row.resourceId || '-' }}</dd>
+                  <dd>{{ getResourceTypeLabel(row.resourceType) }} / {{ row.resourceId || '-' }}</dd>
                 </div>
                 <div>
                   <dt>操作人</dt>
-                  <dd>{{ row.operatorName || row.operatorId || '-' }}</dd>
+                  <dd>{{ getOperatorLabel(row) }}</dd>
                 </div>
                 <div>
                   <dt>角色</dt>
-                  <dd>{{ row.operatorRole || '-' }}</dd>
+                  <dd>{{ getRoleLabel(row.operatorRole) }}</dd>
                 </div>
                 <div>
                   <dt>结果</dt>
@@ -181,10 +200,54 @@ const ACTION_META = {
   DELETE: { label: '删除', type: 'danger' },
   EXPORT: { label: '导出', type: 'warning' },
   LOGIN: { label: '登录', type: 'primary' },
-  LOGOUT: { label: '登出', type: 'info' }
+  LOGOUT: { label: '登出', type: 'info' },
+  PAYMENT: { label: '支付', type: 'success' },
+  CHECK_IN: { label: '签到', type: 'success' },
+  STATUS_CHANGE: { label: '状态变更', type: 'warning' },
+  CANCEL: { label: '取消', type: 'danger' },
+  PASSWORD_CHANGE: { label: '修改密码', type: 'warning' },
+  PHONE_CHANGE: { label: '修改手机号', type: 'warning' },
+  BIND_PATIENT: { label: '绑定患者', type: 'primary' }
 }
 const getActionLabel = (a) => ACTION_META[a]?.label || a || '-'
 const getActionType = (a) => ACTION_META[a]?.type || ''
+
+const RESOURCE_TYPE_LABELS = {
+  AUDIT_LOG: '审计日志',
+  USER: '用户',
+  PATIENT: '患者',
+  DEPARTMENT: '科室',
+  DOCTOR: '医生',
+  SCHEDULE: '排班',
+  APPOINTMENT: '预约',
+  MEDICAL_RECORD: '病历',
+  PRESCRIPTION: '处方',
+  DRUG: '药品',
+  STOCK: '库存',
+  AI_IMAGE_DETECTION: '影像 AI'
+}
+
+const ROLE_LABELS = {
+  HOSPITAL_ADMIN: '系统管理员',
+  PHARMACY_ADMIN: '药房管理员',
+  DOCTOR: '医生',
+  PATIENT: '患者',
+  SERVICE: '系统服务'
+}
+
+const isBadText = (value) => !value || /^\?+$/.test(String(value).trim())
+const getResourceTypeLabel = (value) => RESOURCE_TYPE_LABELS[value] || value || '-'
+const getRoleLabel = (value) => ROLE_LABELS[value] || value || '-'
+const getOperatorLabel = (row) => {
+  if (!isBadText(row.operatorName)) return row.operatorName
+  if (row.operatorRole === 'HOSPITAL_ADMIN') return '系统管理员'
+  if (row.operatorRole === 'PHARMACY_ADMIN') return '药房管理员'
+  return row.operatorId || '-'
+}
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').replace(/\.\d+$/, '')
+}
 
 onMounted(() => {
   fetchList()

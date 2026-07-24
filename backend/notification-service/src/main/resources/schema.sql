@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     resource_type   VARCHAR(50)   NOT NULL                 COMMENT '资源类型：PATIENT/MEDICAL_RECORD/PRESCRIPTION/DRUG/SCHEDULE...',
     resource_id     VARCHAR(64)                            COMMENT '资源业务编号',
     resource_name   VARCHAR(200)                           COMMENT '资源名称冗余（便于检索）',
-    action          VARCHAR(20)   NOT NULL                 COMMENT '操作类型：VIEW/CREATE/UPDATE/DELETE/EXPORT/LOGIN/LOGOUT',
+    action          VARCHAR(20)   NOT NULL                 COMMENT '操作类型：VIEW/CREATE/UPDATE/DELETE/EXPORT/LOGIN/LOGOUT/PAYMENT/CHECK_IN/STATUS_CHANGE/CANCEL 等',
     operator_id     VARCHAR(64)                            COMMENT '操作人 ID',
     operator_role   VARCHAR(32)                            COMMENT '操作人角色',
     operator_name   VARCHAR(50)                            COMMENT '操作人姓名冗余',

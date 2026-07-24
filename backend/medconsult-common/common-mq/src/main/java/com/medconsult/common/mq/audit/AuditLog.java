@@ -24,6 +24,12 @@ public @interface AuditLog {
 
     String resourceName() default "";
 
+    String operatorId() default "";
+
+    String operatorRole() default "";
+
+    String operatorName() default "";
+
     String targetOwnerId() default "";
 
     String detail() default "";

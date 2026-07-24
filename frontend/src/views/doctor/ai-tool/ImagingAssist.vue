@@ -548,7 +548,12 @@ const startPolling = () => {
         progressStatus.value = 'success'
         progressText.value = '检测完成！'
         data.patientName = imagingForm.patientName
-        currentTask.value = data
+        currentTask.value = {
+          ...data,
+          imagingType: data.imagingType || imagingForm.imagingType,
+          bodyPart: data.bodyPart || imagingForm.bodyPart,
+          modelName: data.modelName || '当前影像模型'
+        }
         detecting.value = false
         ElMessage.success('检测完成，请审核结果')
         activeTab.value = 'detail'
@@ -582,7 +587,13 @@ const viewTask = async (row) => {
   listLoading.value = true
   try {
     const res = await getImagingResultApi(row.detectionId || row.taskId)
-    currentTask.value = { ...res.data, patientName: row.patientName }
+    currentTask.value = {
+      ...res.data,
+      patientName: row.patientName,
+      imagingType: res.data?.imagingType || row.imagingType || imagingForm.imagingType,
+      bodyPart: res.data?.bodyPart || row.bodyPart || imagingForm.bodyPart,
+      modelName: res.data?.modelName || row.modelName || '当前影像模型'
+    }
     // 还原任务影像原图：用上传时记录的 URL，不替换为第三方域名
     imageUrl.value = row.imageUrl || row.originalImageUrl || ''
     imagingForm.patientName = row.patientName || ''

@@ -365,6 +365,114 @@ class OutpatientFlowTest {
 
     /** 创建排班（总号源 quota），返回 schedule_no */
     @Test
+    void adminMutations_enqueueAuditLogOutboxMessages() throws Exception {
+        String traceId = "trace-admin-audit";
+
+        MvcResult deptCreateResult = mvc.perform(withAdmin(post("/api/v1/departments"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"name\":\"审计科\",\"description\":\"admin audit\",\"location\":\"A1\",\"enabled\":true}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String departmentNo = om.readTree(deptCreateResult.getResponse().getContentAsString())
+                .at("/data/departmentId").asText();
+
+        mvc.perform(withAdmin(patch("/api/v1/departments/" + departmentNo))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"location\":\"A2\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult doctorCreateResult = mvc.perform(withAdmin(post("/api/v1/doctors"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"审计医生","departmentId":"%s","title":"主任医师",
+                                 "specialties":"审计","introduction":"admin audit","enabled":true}""".formatted(departmentNo)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String doctorNo = om.readTree(doctorCreateResult.getResponse().getContentAsString())
+                .at("/data/doctorId").asText();
+
+        mvc.perform(withAdmin(patch("/api/v1/doctors/" + doctorNo))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"title\":\"副主任医师\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult scheduleCreateResult = mvc.perform(withAdmin(post("/api/v1/schedules"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"doctorId":"%s","departmentId":"%s","scheduleDate":"2026-07-16",
+                                 "period":"MORNING","startTime":"08:00","endTime":"12:00",
+                                 "totalQuota":12,"registrationFee":45.00}""".formatted(doctorNo, departmentNo)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String scheduleNo = om.readTree(scheduleCreateResult.getResponse().getContentAsString())
+                .at("/data/scheduleId").asText();
+
+        mvc.perform(withAdmin(put("/api/v1/schedules/" + scheduleNo))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("""
+                                {"scheduleDate":"2026-07-17","period":"MORNING","startTime":"08:00",
+                                 "endTime":"12:00","totalQuota":14,"registrationFee":48.00}"""))
+                .andExpect(status().isOk());
+
+        mvc.perform(withAdmin(patch("/api/v1/schedules/" + scheduleNo + "/status"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"status\":\"SUSPENDED\",\"reason\":\"audit\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult deletableDeptResult = mvc.perform(withAdmin(post("/api/v1/departments"))
+                        .header("X-Trace-Id", traceId)
+                        .contentType("application/json")
+                        .content("{\"name\":\"审计待删科\",\"location\":\"B1\",\"enabled\":true}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String deletableDepartmentNo = om.readTree(deletableDeptResult.getResponse().getContentAsString())
+                .at("/data/departmentId").asText();
+
+        mvc.perform(withAdmin(delete("/api/v1/doctors/" + doctorNo))
+                        .header("X-Trace-Id", traceId))
+                .andExpect(status().isOk());
+
+        mvc.perform(withAdmin(delete("/api/v1/departments/" + deletableDepartmentNo))
+                        .header("X-Trace-Id", traceId))
+                .andExpect(status().isOk());
+
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        java.util.List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT payload_json
+                FROM local_message
+                WHERE routing_key = 'audit.log'
+                  AND message_no LIKE 'audit:%'
+                ORDER BY id
+                """);
+
+        java.util.List<String> events = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : rows) {
+            JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
+            if (traceId.equals(payload.get("traceId").asText())) {
+                events.add(payload.get("resourceType").asText() + ":" + payload.get("action").asText());
+            }
+        }
+        assertEquals(java.util.List.of(
+                "DEPARTMENT:CREATE",
+                "DEPARTMENT:UPDATE",
+                "DOCTOR:CREATE",
+                "DOCTOR:UPDATE",
+                "SCHEDULE:CREATE",
+                "SCHEDULE:UPDATE",
+                "SCHEDULE:UPDATE",
+                "DEPARTMENT:CREATE",
+                "DOCTOR:DELETE",
+                "DEPARTMENT:DELETE"), events);
+    }
+
+    @Test
     void appointmentMutations_enqueueAuditLogOutboxMessages() throws Exception {
         String traceId = "trace-outpatient-audit";
         String scheduleNo = createSchedule(7);
@@ -451,7 +559,7 @@ class OutpatientFlowTest {
                   AND message_no LIKE 'notif:%'
                 ORDER BY id
                 """);
-        assertEquals(7, notificationRows.size());
+        int patientNotificationCount = 0;
         for (java.util.Map<String, Object> row : notificationRows) {
             assertEquals("medconsult.notification", row.get("exchange"));
             assertEquals("notification.send", row.get("routing_key"));
@@ -459,10 +567,13 @@ class OutpatientFlowTest {
             assertEquals(0, ((Number) row.get("retry_count")).intValue());
 
             JsonNode payload = om.readTree(String.valueOf(row.get("payload_json")));
-            assertEquals("PATIENT", payload.get("receiverRole").asText());
-            assertEquals("APPOINTMENT", payload.get("type").asText());
-            assertTrue(payload.get("relatedType").asText().equals("APPOINTMENT"));
+            if ("PATIENT".equals(payload.get("receiverRole").asText())) {
+                assertEquals("APPOINTMENT", payload.get("type").asText());
+                assertTrue(payload.get("relatedType").asText().equals("APPOINTMENT"));
+                patientNotificationCount++;
+            }
         }
+        assertEquals(7, patientNotificationCount);
     }
 
     private String createSchedule(int quota) throws Exception {

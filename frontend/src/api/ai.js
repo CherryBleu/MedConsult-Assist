@@ -367,6 +367,94 @@ export const submitImagingDetectionApi = (data) => {
   })
 }
 
+const toPercent = (value) => {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number <= 0) return 0
+  return Math.round(number <= 1 ? number * 100 : number)
+}
+
+const findingTitle = (finding) => {
+  return finding?.abnormalType || finding?.label || finding?.type || finding?.name || '影像异常'
+}
+
+const findingLocation = (finding) => {
+  return finding?.location || finding?.region || finding?.bodyPart || ''
+}
+
+const normalizeImagingFinding = (finding = {}) => {
+  const confidence = toPercent(finding.confidence)
+  const label = findingTitle(finding)
+  return {
+    ...finding,
+    label,
+    confidence,
+    location: findingLocation(finding),
+    riskLevel: finding.riskLevel || finding.risk || '',
+    suggestion: finding.suggestion || finding.advice || '',
+    x: finding.x,
+    y: finding.y,
+    width: finding.width,
+    height: finding.height
+  }
+}
+
+const buildFindingText = (finding) => {
+  const parts = [finding.label]
+  if (finding.location) parts.push(`位置：${finding.location}`)
+  if (finding.riskLevel) parts.push(`风险等级：${finding.riskLevel}`)
+  if (finding.confidence) parts.push(`置信度：${finding.confidence}%`)
+  return parts.join('；')
+}
+
+const normalizeImagingResult = (data) => {
+  if (!data || typeof data !== 'object') return data
+  const findings = Array.isArray(data.findings)
+    ? data.findings.map(normalizeImagingFinding)
+    : []
+  const hasAbnormal = Boolean(data.hasAbnormal ?? data.abnormalDetected ?? findings.length > 0)
+  const confidence = findings.reduce((max, item) => Math.max(max, toPercent(item.confidence)), 0)
+  const suggestions = findings
+    .map(item => item.suggestion)
+    .filter((item, index, array) => item && array.indexOf(item) === index)
+  const aiFindings = findings.length
+    ? findings.map(buildFindingText).join('\n')
+    : (hasAbnormal ? 'AI提示存在影像异常，请等待医生复核。' : 'AI未提示明显异常。')
+  const aiDiagnosis = suggestions[0] || data.disclaimer || 'AI结果仅供初筛参考，不能替代医生诊断。'
+
+  return {
+    ...data,
+    taskId: data.taskId || data.detectionId,
+    taskNo: data.taskNo || data.detectionId,
+    hasAbnormal,
+    confidence,
+    regions: data.regions || findings,
+    aiFindings,
+    aiDiagnosis,
+    suggestions,
+    modelName: data.modelName || data.externalModel || data.model || '',
+    imagingType: data.imagingType || data.imageType || '',
+    bodyPart: data.bodyPart || ''
+  }
+}
+
+const normalizeImagingResponse = (response) => {
+  if (response?.data) {
+    response.data = normalizeImagingResult(response.data)
+  }
+  return response
+}
+
+const normalizeImagingListResponse = (response) => {
+  if (Array.isArray(response?.data)) {
+    response.data = response.data.map(normalizeImagingResult)
+  } else if (Array.isArray(response?.data?.items)) {
+    response.data.items = response.data.items.map(normalizeImagingResult)
+  } else if (Array.isArray(response?.data?.records)) {
+    response.data.records = response.data.records.map(normalizeImagingResult)
+  }
+  return response
+}
+
 // 上传医学影像文件到 MinIO，后续业务请求仅引用返回的 fileId。
 // 后端 POST /api/v1/files/upload (multipart/form-data) → FileUploadResponse {fileUrl, fileId, ...}
 export const uploadImageFileApi = (file) => {
@@ -393,7 +481,7 @@ export const getImagingResultApi = (detectionId) => {
   return request({
     url: `/ai/imaging-detection/${detectionId}`,
     method: 'get'
-  })
+  }).then(normalizeImagingResponse)
 }
 
 // 医生复核影像检测结果
@@ -423,7 +511,7 @@ export const getImagingHistoryListApi = (patientId) => {
     url: '/ai/imaging-detection/list',
     method: 'get',
     params: patientId ? { patientId } : {}
-  })
+  }).then(normalizeImagingListResponse)
 }
 
 // 提交 AI 结果反馈（patient/doctor 端调用，对齐后端 POST /ai/feedback）

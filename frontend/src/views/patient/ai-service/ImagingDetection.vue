@@ -467,7 +467,12 @@ const startPolling = () => {
         progress.value = 100
         progressStatus.value = 'success'
         progressText.value = '检测完成！'
-        detectionResult.value = data
+        detectionResult.value = {
+          ...data,
+          imagingType: data.imagingType || imagingForm.imagingType,
+          bodyPart: data.bodyPart || imagingForm.bodyPart,
+          modelName: data.modelName || '当前影像模型'
+        }
         detecting.value = false
         ElMessage.success('检测完成')
         nextTick(() => {
@@ -539,7 +544,12 @@ const viewHistory = async (row) => {
 
   try {
     const res = await getImagingResultApi(row.detectionId || row.taskId)
-    detectionResult.value = res.data
+    detectionResult.value = {
+      ...res.data,
+      imagingType: res.data?.imagingType || row.imagingType || imagingForm.imagingType,
+      bodyPart: res.data?.bodyPart || row.bodyPart || imagingForm.bodyPart,
+      modelName: res.data?.modelName || row.modelName || '当前影像模型'
+    }
     // 还原历史影像原图：用上传时记录的 URL，不替换为第三方域名
     imageUrl.value = row.imageUrl || row.originalImageUrl || ''
     nextTick(() => {

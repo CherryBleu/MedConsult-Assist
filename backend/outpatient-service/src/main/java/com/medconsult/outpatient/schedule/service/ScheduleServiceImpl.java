@@ -8,6 +8,7 @@ import com.medconsult.common.core.BusinessException;
 import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.outpatient.appointment.entity.Appointment;
 import com.medconsult.outpatient.appointment.mapper.AppointmentMapper;
 import com.medconsult.outpatient.department.entity.Department;
@@ -67,6 +68,11 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "SCHEDULE",
+            action = "CREATE",
+            resourceId = "#result.scheduleId()",
+            detail = "'doctorId=' + #p0.doctorId + ',departmentId=' + #p0.departmentId + ',date=' + #p0.scheduleDate")
     public ScheduleDTO.CreateResponse create(ScheduleDTO.CreateRequest req) {
         // 时段合法性
         if (!ALLOWED_PERIOD.contains(req.getPeriod())) {
@@ -127,6 +133,11 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "SCHEDULE",
+            action = "UPDATE",
+            resourceId = "#p0",
+            detail = "'schedule updated'")
     public ScheduleDTO.CreateResponse update(String scheduleNo, ScheduleDTO.UpdateRequest req) {
         // 时段合法性
         if (!ALLOWED_PERIOD.contains(req.getPeriod())) {
@@ -311,6 +322,11 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "SCHEDULE",
+            action = "UPDATE",
+            resourceId = "#p0",
+            detail = "'status=' + #result.status() + ',notifiedAppointments=' + #result.notifiedAppointments()")
     public ScheduleDTO.StatusResponse updateStatus(String scheduleNo, ScheduleDTO.StatusUpdateRequest req) {
         DoctorSchedule s = requireByNo(scheduleNo);
         String oldStatus = s.getStatus();

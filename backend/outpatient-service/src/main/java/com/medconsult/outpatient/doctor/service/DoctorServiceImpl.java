@@ -12,6 +12,7 @@ import com.medconsult.common.core.ErrorCode;
 import com.medconsult.common.core.PageResult;
 import com.medconsult.common.core.PageQuery;
 import com.medconsult.common.feign.dto.EntityIdDTO;
+import com.medconsult.common.mq.audit.AuditLog;
 import com.medconsult.outpatient.department.entity.Department;
 import com.medconsult.outpatient.department.mapper.DepartmentMapper;
 import com.medconsult.outpatient.doctor.dto.DoctorDTO;
@@ -181,6 +182,12 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DOCTOR",
+            action = "CREATE",
+            resourceId = "#result.doctorId()",
+            resourceName = "#p0.name()",
+            detail = "'departmentId=' + #p0.departmentId()")
     public DoctorDTO.MutationResponse create(DoctorDTO.CreateRequest req) {
         // 1. 校验 department_no 存在并解析为 BIGINT 主键
         Department dept = departmentMapper.selectOne(
@@ -206,6 +213,12 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DOCTOR",
+            action = "UPDATE",
+            resourceId = "#p0",
+            resourceName = "#p1.name()",
+            detail = "'doctor updated'")
     public DoctorDTO.MutationResponse update(String doctorNo, DoctorDTO.UpdateRequest req) {
         Doctor d = requireByNo(doctorNo); // 复用：未找到抛 NOT_FOUND
         if (StringUtils.hasText(req.name())) {
@@ -238,6 +251,11 @@ public class DoctorServiceImpl implements DoctorService {
 
     @Override
     @Transactional
+    @AuditLog(
+            resourceType = "DOCTOR",
+            action = "DELETE",
+            resourceId = "#p0",
+            detail = "'doctor deleted'")
     public void delete(String doctorNo) {
         Doctor d = requireByNo(doctorNo);
         // 逻辑删除（BaseEntity @TableLogic 自动处理 deleted 字段）

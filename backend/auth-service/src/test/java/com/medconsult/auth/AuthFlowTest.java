@@ -542,6 +542,11 @@ class AuthFlowTest {
             assertEquals("USER", payload.get("resourceType").asText());
             assertEquals("SUCCESS", payload.get("result").asText());
             assertFalse(payload.get("resourceId").asText().isBlank());
+            if ("LOGIN".equals(payload.get("action").asText())) {
+                assertEquals("Audit User", payload.get("operatorName").asText());
+                assertEquals("PATIENT", payload.get("operatorRole").asText());
+                assertEquals(payload.get("resourceId").asText(), payload.get("operatorId").asText());
+            }
             actions.add(payload.get("action").asText());
         }
         assertEquals(List.of("LOGIN", "PASSWORD_CHANGE"), actions);

@@ -52,6 +52,9 @@ public class AuditLogAspect {
         event.setAction(auditLog.action());
         event.setResourceId(stringValue(auditLog.resourceId(), context));
         event.setResourceName(stringValue(auditLog.resourceName(), context));
+        event.setOperatorId(stringValue(auditLog.operatorId(), context));
+        event.setOperatorRole(stringValue(auditLog.operatorRole(), context));
+        event.setOperatorName(stringValue(auditLog.operatorName(), context));
         event.setTargetOwnerId(longValue(auditLog.targetOwnerId(), context));
         event.setDetail(stringValue(auditLog.detail(), context));
         event.setResult("SUCCESS");
@@ -59,13 +62,23 @@ public class AuditLogAspect {
         JwtPayload payload = SecurityContext.getPayload();
         if (payload != null) {
             if (payload.isUser()) {
-                event.setOperatorId(payload.userId() == null ? null : String.valueOf(payload.userId()));
-                event.setOperatorRole(payload.primaryRole());
+                if (isBlank(event.getOperatorId())) {
+                    event.setOperatorId(payload.userId() == null ? null : String.valueOf(payload.userId()));
+                }
+                if (isBlank(event.getOperatorRole())) {
+                    event.setOperatorRole(payload.primaryRole());
+                }
             } else if (payload.isService()) {
-                event.setOperatorId(payload.serviceCode());
-                event.setOperatorRole("SERVICE");
+                if (isBlank(event.getOperatorId())) {
+                    event.setOperatorId(payload.serviceCode());
+                }
+                if (isBlank(event.getOperatorRole())) {
+                    event.setOperatorRole("SERVICE");
+                }
             }
-            event.setOperatorName(payload.name());
+            if (isBlank(event.getOperatorName())) {
+                event.setOperatorName(payload.name());
+            }
         }
 
         HttpServletRequest request = currentRequest();
@@ -161,5 +174,9 @@ public class AuditLogAspect {
             return comma >= 0 ? forwarded.substring(0, comma).trim() : forwarded.trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

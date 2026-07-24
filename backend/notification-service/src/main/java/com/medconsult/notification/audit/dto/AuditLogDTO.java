@@ -26,8 +26,8 @@ public class AuditLogDTO {
         @Size(max = 200, message = "资源名称不能超过 200 字")
         private String resourceName;
         @NotBlank(message = "操作类型不能为空")
-        @Pattern(regexp = "^(VIEW|CREATE|UPDATE|DELETE|EXPORT|LOGIN|LOGOUT)$",
-                message = "操作类型须为 VIEW / CREATE / UPDATE / DELETE / EXPORT / LOGIN / LOGOUT")
+        @Pattern(regexp = "^(VIEW|CREATE|UPDATE|DELETE|EXPORT|LOGIN|LOGOUT|PAYMENT|CHECK_IN|STATUS_CHANGE|CANCEL|PASSWORD_CHANGE|PHONE_CHANGE|BIND_PATIENT)$",
+                message = "操作类型不在审计动作白名单内")
         private String action;
         @Size(max = 64, message = "操作人 ID 不能超过 64 字")
         private String operatorId;
